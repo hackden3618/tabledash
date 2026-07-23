@@ -12,9 +12,11 @@ export const OrderItemSchema = t.Object({
   quantity: t.Integer({ minimum: 1, error: "Quantity must be at least 1" }),
 });
 
+const PhonePattern = "^\\+?\\d{10,13}$";
+
 export const CreateOrderSchema = t.Object({
   customerName: t.String({ minLength: 2, error: "Customer name is required" }),
-  phone: t.String({ minLength: 9, error: "Valid phone number is required" }),
+  phone: t.String({ minLength: 10, maxLength: 14, pattern: PhonePattern, error: "Phone must be 10-13 digits, optionally prefixed with +" }),
   marketSection: t.Optional(t.String()),
   locationDescription: t.Optional(t.String()),
   items: t.Array(OrderItemSchema, { minItems: 1, error: "Order must contain at least one item" }),
@@ -30,6 +32,7 @@ export const UpdateOrderStatusSchema = t.Object({
     t.Literal("DELIVERED"),
     t.Literal("CANCELLED"),
   ]),
+  cancelReason: t.Optional(t.String()),
 });
 
 export const CreateProductSchema = t.Object({
@@ -60,11 +63,11 @@ export const IdParamSchema = t.Object({
 
 export const CustomerRegisterSchema = t.Object({
   firstName: t.String({ minLength: 2, error: "First name is required" }),
-  phone: t.String({ minLength: 9, error: "Valid phone number is required" }),
+  phone: t.String({ minLength: 10, maxLength: 14, pattern: PhonePattern, error: "Phone must be 10-13 digits, optionally prefixed with +" }),
   pin: t.String({ minLength: 4, maxLength: 4, pattern: "^[0-9]{4}$", error: "PIN must be exactly 4 digits" }),
 });
 
 export const CustomerLoginSchema = t.Object({
-  phone: t.String({ minLength: 9, error: "Phone number is required" }),
+  phone: t.String({ minLength: 10, maxLength: 14, pattern: PhonePattern, error: "Phone must be 10-13 digits, optionally prefixed with +" }),
   pin: t.String({ minLength: 4, maxLength: 4, pattern: "^[0-9]{4}$", error: "PIN must be exactly 4 digits" }),
 });

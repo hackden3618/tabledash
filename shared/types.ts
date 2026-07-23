@@ -75,7 +75,8 @@ export type WsEventType =
   | "ORDER_CREATED"
   | "ORDER_STATUS_UPDATED"
   | "MENU_AVAILABILITY_UPDATED"
-  | "ORDER_BOUNCED";   // Fired when an order fails at placement (e.g. stock shortage); urgent flag for admins.
+  | "ORDER_BOUNCED"    // Fired when an order fails at placement (e.g. stock shortage); urgent flag for admins.
+  | "HOTEL_STATUS_UPDATED";  // Fired when hotel open/close status changes
 
 export interface WsMessage<T = unknown> {
   type: WsEventType;

@@ -5,7 +5,7 @@
  * When to modify: When changing API base URLs or adding custom headers.
  */
 
-const API_BASE = "http://localhost:3000/api/v1";
+const API_BASE = import.meta.env.VITE_API_BASE ?? "/api/v1";
 
 /**
  * Standard API response envelope interface.

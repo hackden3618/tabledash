@@ -5,20 +5,29 @@
  * When to modify: When adding default menu items or updating initial admin credentials.
  */
 
+import { env } from "../../shared/config";
 import { prisma } from "../../infrastructure/database/prisma";
 
 export const seedDatabase = async () => {
     console.log("[Seeder] Seeding default menu items and admin user...");
 
     // Seed default admin user
-    const adminUsername = "admin";
+    const adminUsername = env.seedAdminUsername;
+    const adminPassword = env.seedAdminPassword;
+
+    if (!adminUsername || !adminPassword) {
+        throw new Error(
+            "[Seeder] SEED_ADMIN_USERNAME and SEED_ADMIN_PASSWORD must be set in environment"
+        );
+    }
+
     const existingAdmin = await prisma.adminUser.findUnique({
         where: { username: adminUsername },
     });
 
     if (!existingAdmin) {
         // WHY: Using Bun.password.hash for secure password storage compliant with security guidelines
-        const passwordHash = await Bun.password.hash("adminpass");
+        const passwordHash = await Bun.password.hash(adminPassword);
         await prisma.adminUser.create({
             data: {
                 username: adminUsername,
@@ -26,7 +35,7 @@ export const seedDatabase = async () => {
                 name: "Wambu's Corner Hotel Admin",
             },
         });
-        console.log("[Seeder] Created default admin user: 'admin' (password: 'adminpass')");
+        console.log(`[Seeder] Created default admin user: '${adminUsername}'`);
     }
 
     // Seed default menu products matching reference visual design

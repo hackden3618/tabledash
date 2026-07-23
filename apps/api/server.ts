@@ -13,8 +13,7 @@ const port = env.backendPort;
 app.listen(port, () => {
   console.log(`\n==================================================`);
   console.log(`🚀 tableDash Backend API Server Running`);
-  console.log(`🌐 URL: http://localhost:${port}`);
-  console.log(`📚 Swagger OpenAPI: http://localhost:${port}/swagger`);
-  console.log(`⚡ WebSocket Endpoint: ws://localhost:${port}/ws`);
+  console.log(`🌐 Port: ${port}`);
+  console.log(`⚡ WebSocket: /ws`);
   console.log(`==================================================\n`);
 });

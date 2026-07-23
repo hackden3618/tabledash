@@ -25,11 +25,12 @@ const TERMINAL_CONFIG: Record<string, { label: string; color: string; bg: string
 };
 
 export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackOrder }) => {
-  const { customer, isLoggedIn, isLoading, logout } = useCustomerAuth();
+  const { customer, isLoggedIn, isLoading, logout, refreshProfile } = useCustomerAuth();
 
   // Local orders state — seeded from profile, then patched live via WebSocket
   const [orders, setOrders] = useState<any[]>([]);
   const [lastUpdatedId, setLastUpdatedId] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Seed from customer profile whenever it loads / changes
   useEffect(() => {
@@ -37,6 +38,19 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
       setOrders(customer.recentOrders);
     }
   }, [customer?.recentOrders]);
+
+  const handleManualRefresh = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await refreshProfile();
+    } catch (err) {
+      console.error("Failed to manually refresh profile:", err);
+    } finally {
+      // Short delay for visual spin satisfaction
+      setTimeout(() => setIsRefreshing(false), 800);
+    }
+  };
 
   // Live WebSocket patch — surgically update only the affected order in-place
   useWebSocket("customer", undefined, (event) => {
@@ -152,14 +166,44 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
           <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
               <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1E4D36" }}>Recent Orders</h2>
-              <span style={{ fontSize: "0.72rem", color: "#16A34A", fontWeight: 700, display: "flex", alignItems: "center", gap: "4px" }}>
-                <RefreshCw size={11} /> Live
-              </span>
+              <button
+                onClick={handleManualRefresh}
+                disabled={isRefreshing}
+                title="Tap to manually sync orders"
+                style={{
+                  background: "#EBF4F0",
+                  border: "1px solid #C2E2D3",
+                  fontSize: "0.72rem",
+                  color: "#16A34A",
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  cursor: "pointer",
+                  padding: "4px 10px",
+                  borderRadius: "20px",
+                  outline: "none",
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+                  transition: "all 0.2s ease",
+                }}
+                onMouseEnter={(e) => { if (!isRefreshing) e.currentTarget.style.backgroundColor = "#D5ECE0"; }}
+                onMouseLeave={(e) => { if (!isRefreshing) e.currentTarget.style.backgroundColor = "#EBF4F0"; }}
+              >
+                <RefreshCw
+                  size={11}
+                  style={{
+                    animation: isRefreshing ? "spin 1s linear infinite" : "none",
+                    transform: isRefreshing ? undefined : "rotate(0deg)",
+                    transition: "transform 0.3s ease",
+                  }}
+                />
+                {isRefreshing ? "Syncing..." : "Live • Tap to Refresh"}
+              </button>
             </div>
 
             {orders.map((order: any) => {
               const isTerminal  = order.status === "DELIVERED" || order.status === "CANCELLED";
-              const termCfg     = TERMINAL_CONFIG[order.status];
+              const termCfg     = TERMINAL_CONFIG[order.status]!;
               const justUpdated = lastUpdatedId === order.id;
 
               return (
@@ -233,11 +277,15 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
         )}
       </div>
 
-      {/* Pulse animation keyframes */}
+      {/* Animations */}
       <style>{`
         @keyframes pulse {
           0%, 100% { opacity: 1; transform: scale(1); }
           50%       { opacity: 0.4; transform: scale(0.75); }
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
       `}</style>
     </div>
