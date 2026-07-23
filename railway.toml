@@ -2,5 +2,5 @@
 builder = "DOCKERFILE"
 
 [deploy]
-startCommand = "bun run apps/api/server.ts"
+startCommand = "bunx prisma db push --skip-generate && bun run apps/api/server.ts"
 healthcheckPath = "/api/v1/health"
