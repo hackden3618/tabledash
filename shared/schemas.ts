@@ -34,10 +34,10 @@ export const UpdateOrderStatusSchema = t.Object({
 
 export const CreateProductSchema = t.Object({
   name: t.String({ minLength: 2, error: "Product name is required" }),
-  category: t.Optional(t.String({ defaultConfig: "General" })),
+  category: t.Optional(t.String({ default: "General" })),
   imageUrl: t.String({ minLength: 5, error: "Product image URL is required" }),
   price: t.Number({ minimum: 0, error: "Price must be non-negative" }),
-  available: t.Optional(t.Boolean({ defaultConfig: true })),
+  available: t.Optional(t.Boolean({ default: true })),
 });
 
 export const UpdateProductAvailabilitySchema = t.Object({

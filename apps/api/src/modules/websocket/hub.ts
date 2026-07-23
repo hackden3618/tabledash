@@ -42,15 +42,20 @@ export class WebSocketHub {
    */
   public broadcastToAdmins<T>(message: WsMessage<T>): void {
     const payloadStr = JSON.stringify(message);
+    const staleIds: string[] = [];
+
     for (const client of this.clients.values()) {
       if (client.role === "admin") {
         try {
           client.send(payloadStr);
         } catch (err) {
-          console.error(`[WS Hub] Failed to send to admin ${client.id}:`, err);
+          console.error(`[WS Hub] Stale socket detected for admin ${client.id}:`, err);
+          staleIds.push(client.id);
         }
       }
     }
+
+    staleIds.forEach((id) => this.clients.delete(id));
   }
 
   /**
@@ -60,15 +65,20 @@ export class WebSocketHub {
    */
   public notifyOrderStatusUpdate<T>(orderId: string, message: WsMessage<T>): void {
     const payloadStr = JSON.stringify(message);
+    const staleIds: string[] = [];
+
     for (const client of this.clients.values()) {
       if (client.role === "admin" || (client.role === "customer" && client.orderId === orderId)) {
         try {
           client.send(payloadStr);
         } catch (err) {
-          console.error(`[WS Hub] Failed to send to client ${client.id}:`, err);
+          console.error(`[WS Hub] Stale socket detected for client ${client.id}:`, err);
+          staleIds.push(client.id);
         }
       }
     }
+
+    staleIds.forEach((id) => this.clients.delete(id));
   }
 
   /**
@@ -76,13 +86,18 @@ export class WebSocketHub {
    */
   public broadcastMenuUpdate<T>(message: WsMessage<T>): void {
     const payloadStr = JSON.stringify(message);
+    const staleIds: string[] = [];
+
     for (const client of this.clients.values()) {
       try {
         client.send(payloadStr);
       } catch (err) {
-        console.error(`[WS Hub] Failed to broadcast menu update to ${client.id}:`, err);
+        console.error(`[WS Hub] Stale socket detected for client ${client.id}:`, err);
+        staleIds.push(client.id);
       }
     }
+
+    staleIds.forEach((id) => this.clients.delete(id));
   }
 }
 

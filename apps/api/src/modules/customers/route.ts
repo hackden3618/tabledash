@@ -11,7 +11,7 @@ import { IdParamSchema } from "../../../../../shared/schemas";
 import { getAllCustomers, getCustomerHistory } from "./service";
 
 export const customersRoute = new Elysia({
-  prefix: `${env.apiPrefix}customers`,
+  prefix: `${env.apiPrefix}/customers`,
   detail: {
     summary: "Customer profile and order history endpoints",
     tags: ["Customers"],

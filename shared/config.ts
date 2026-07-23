@@ -6,8 +6,8 @@
  */
 
 export class Environment {
-  /** API prefix for all REST endpoints */
-  public readonly apiPrefix: string = process.env.API_PREFIX ?? "api/v1/";
+  /** API prefix for all REST endpoints (leading slash, no trailing slash) */
+  public readonly apiPrefix: string = process.env.API_PREFIX ?? "/api/v1";
 
   /** Database connection string for PostgreSQL */
   public readonly databaseUrl: string = process.env.DATABASE_URL ?? "postgres://development@localhost:5432/tabledash?schema=public";
@@ -15,8 +15,8 @@ export class Environment {
   /** Port for the Elysia backend server */
   public readonly backendPort: number = Number(process.env.PORT ?? 3000);
 
-  /** JWT Secret for Admin authentication */
-  public readonly jwtSecret: string = process.env.JWT_SECRET ?? "tableDash_secret_key_change_in_production_2026";
+  /** JWT Secret used for signing JWT authentication tokens via @elysiajs/jwt */
+  public readonly jwtSecret: string = process.env.JWT_SECRET ?? "tabledash_secret_key_change_in_production_2026";
 
   /** SMS Provider selection: 'textsms' | 'console' */
   public readonly smsProvider: string = process.env.SMS_PROVIDER ?? "textsms";
@@ -28,7 +28,7 @@ export class Environment {
   public readonly textSmsPartnerId: string = process.env.TEXTSMS_PARTNER_ID ?? "";
 
   /** TextSMS.co.ke Sender Shortcode / SenderID */
-  public readonly textSmsShortcode: string = process.env.TEXTSMS_SHORTCODE ?? "TextSMS";
+  public readonly textSmsShortcode: string = process.env.TEXTSMS_SenderID ?? "TextSMS";
 }
 
 export const env = new Environment();

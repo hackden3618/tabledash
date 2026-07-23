@@ -9,7 +9,7 @@ import React, { useState } from "react";
 import { apiPost } from "../../lib/api";
 
 interface AdminLoginPageProps {
-  onLoginSuccess: (token: string, user: any) => void;
+  onLoginSuccess: (token: string) => void;
   onBackToCustomer: () => void;
 }
 
@@ -32,7 +32,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
 
     if (res.success && res.data) {
       localStorage.setItem("tableDash_token", res.data.token);
-      onLoginSuccess(res.data.token, res.data.user);
+      onLoginSuccess(res.data.token);
     } else {
       setError(res.error || "Invalid username or password");
     }

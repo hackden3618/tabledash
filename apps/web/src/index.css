@@ -59,7 +59,7 @@ body {
   padding-bottom: 80px; /* Space for sticky bottom cart bar */
 }
 
-/* Base Responsive Container */
+/* Base Mobile-First Responsive Container */
 .app-container {
   max-width: 480px;
   margin: 0 auto;
@@ -71,12 +71,41 @@ body {
 }
 
 .admin-container {
-  max-width: 768px;
+  max-width: 1000px;
   margin: 0 auto;
   min-height: 100vh;
   background: var(--color-surface);
   box-shadow: 0 0 40px rgba(0, 0, 0, 0.06);
   position: relative;
+}
+
+/* Media Query for Desktop Enhancements while retaining Mobile First Core */
+@media (min-width: 1024px) {
+  body {
+    background-color: #EBF0EC;
+  }
+  
+  .admin-container {
+    margin: 24px auto;
+    min-height: calc(100vh - 48px);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    box-shadow: 0 20px 40px rgba(30, 77, 54, 0.12);
+  }
+
+  .app-container {
+    margin: 24px auto;
+    min-height: calc(100vh - 48px);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-border);
+  }
+
+  .sticky-bottom-bar {
+    border-bottom-left-radius: var(--radius-lg);
+    border-bottom-right-radius: var(--radius-lg);
+    bottom: 24px;
+  }
 }
 
 /* Header Styles */

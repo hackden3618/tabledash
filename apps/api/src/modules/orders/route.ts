@@ -22,7 +22,7 @@ import {
 } from "./service";
 
 export const ordersRoute = new Elysia({
-  prefix: `${env.apiPrefix}orders`,
+  prefix: `${env.apiPrefix}/orders`,
   detail: {
     summary: "Order placement, tracking, and status update endpoints",
     tags: ["Orders"],

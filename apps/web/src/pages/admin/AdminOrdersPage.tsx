@@ -199,7 +199,7 @@ export const AdminOrdersPage: React.FC<AdminOrdersPageProps> = ({
             No orders in this status right now.
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+          <div className="admin-orders-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "16px" }}>
             {filteredOrders.map((ord) => (
               <div
                 key={ord.id}

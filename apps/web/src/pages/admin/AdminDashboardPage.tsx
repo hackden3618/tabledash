@@ -74,7 +74,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         ) : (
           <div>
             {/* Metric Cards Grid */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "24px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "16px", marginBottom: "24px" }}>
               <div className="card" style={{ textAlign: "center", padding: "20px 16px" }}>
                 <div style={{ fontSize: "2rem", fontWeight: 800, color: "#4F46E5" }}>
                   {metrics.totalOrders}

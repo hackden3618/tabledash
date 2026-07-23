@@ -166,7 +166,7 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
             Loading menu catalog...
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "14px" }}>
             {products.map((item) => (
               <div
                 key={item.id}

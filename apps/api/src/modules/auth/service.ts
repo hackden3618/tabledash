@@ -6,7 +6,6 @@
  */
 
 import { prisma } from "../../../../../infrastructure/database/prisma";
-import { env } from "../../../../../shared/config";
 
 export interface AdminAuthResult {
   token: string;
@@ -18,9 +17,13 @@ export interface AdminAuthResult {
 }
 
 /**
- * Authenticates an admin user using username and plain text password against stored Bun password hash.
+ * Authenticates an admin user using username and plain text password against stored Bun password hash, issuing a JWT.
  */
-export const loginAdmin = async (username: string, password: string): Promise<AdminAuthResult> => {
+export const loginAdmin = async (
+  username: string,
+  password: string,
+  jwtSign: (payload: Record<string, any>) => Promise<string>
+): Promise<AdminAuthResult> => {
   const user = await prisma.adminUser.findUnique({
     where: { username },
   });
@@ -35,15 +38,11 @@ export const loginAdmin = async (username: string, password: string): Promise<Ad
     throw new Error("Invalid username or password");
   }
 
-  // Simple token format: base64 encoded JSON string signed with env.jwtSecret
-  const payload = {
+  const token = await jwtSign({
     sub: user.id,
     username: user.username,
     name: user.name,
-    iat: Date.now(),
-  };
-
-  const token = Buffer.from(JSON.stringify(payload)).toString("base64");
+  });
 
   return {
     token,
@@ -56,12 +55,18 @@ export const loginAdmin = async (username: string, password: string): Promise<Ad
 };
 
 /**
- * Verifies an authentication token and returns user details.
+ * Verifies an authentication JWT token and returns user details.
  */
-export const verifyAdminToken = async (token: string) => {
+export const verifyAdminToken = async (
+  token: string,
+  jwtVerify: (token: string) => Promise<Record<string, any> | false>
+) => {
   try {
-    const jsonStr = Buffer.from(token, "base64").toString("utf-8");
-    const payload = JSON.parse(jsonStr);
+    const payload = await jwtVerify(token);
+
+    if (!payload || typeof payload !== "object" || typeof payload.sub !== "string") {
+      throw new Error("Invalid token payload structure");
+    }
 
     const user = await prisma.adminUser.findUnique({
       where: { id: payload.sub },

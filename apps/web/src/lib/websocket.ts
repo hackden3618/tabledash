@@ -13,7 +13,7 @@ export interface WsEventPayload<T = unknown> {
 }
 
 /**
- * Custom React hook for connecting to tableDash WebSocket server.
+ * Custom React hook for connecting to the tableDash WebSocket server with auto-reconnect.
  * @param role Client role ('admin' | 'customer').
  * @param orderId Optional order ID for customer order tracking topic.
  * @param onMessage Callback function executed when an event message arrives.
@@ -27,43 +27,59 @@ export function useWebSocket<T = unknown>(
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    let query = `role=${role}`;
-    if (orderId) {
-      query += `&orderId=${orderId}`;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+    let isDisposed = false;
+
+    function connect() {
+      if (isDisposed) return;
+
+      let query = `role=${role}`;
+      if (orderId) {
+        query += `&orderId=${orderId}`;
+      }
+
+      const wsUrl = `ws://localhost:3000/ws?${query}`;
+      const socket = new WebSocket(wsUrl);
+
+      socket.onopen = () => {
+        if (!isDisposed) {
+          console.log(`[WS Client] Connected to ${wsUrl}`);
+          setIsConnected(true);
+        }
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const parsed: WsEventPayload<T> = JSON.parse(event.data);
+          if (onMessage && !isDisposed) {
+            onMessage(parsed);
+          }
+        } catch (err) {
+          console.error("[WS Client] Error parsing incoming message:", err);
+        }
+      };
+
+      socket.onclose = () => {
+        if (!isDisposed) {
+          console.log("[WS Client] Connection closed. Retrying in 3 seconds...");
+          setIsConnected(false);
+          timerId = setTimeout(connect, 3000);
+        }
+      };
+
+      socket.onerror = (err) => {
+        console.error("[WS Client] Socket error:", err);
+      };
+
+      wsRef.current = socket;
     }
 
-    const wsUrl = `ws://localhost:3000/ws?${query}`;
-    const socket = new WebSocket(wsUrl);
-
-    socket.onopen = () => {
-      console.log(`[WS Client] Connected to ${wsUrl}`);
-      setIsConnected(true);
-    };
-
-    socket.onmessage = (event) => {
-      try {
-        const parsed: WsEventPayload<T> = JSON.parse(event.data);
-        if (onMessage) {
-          onMessage(parsed);
-        }
-      } catch (err) {
-        console.error("[WS Client] Error parsing incoming message:", err);
-      }
-    };
-
-    socket.onclose = () => {
-      console.log("[WS Client] Connection closed");
-      setIsConnected(false);
-    };
-
-    socket.onerror = (err) => {
-      console.error("[WS Client] Socket error:", err);
-    };
-
-    wsRef.current = socket;
+    connect();
 
     return () => {
-      socket.close();
+      isDisposed = true;
+      if (timerId) clearTimeout(timerId);
+      if (wsRef.current) wsRef.current.close();
     };
   }, [role, orderId]);
 

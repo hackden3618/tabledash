@@ -5,23 +5,30 @@
  * When to modify: When adding new authentication endpoints or changing auth response structures.
  */
 
+import { jwt } from "@elysiajs/jwt";
 import { Elysia } from "elysia";
 import { env } from "../../../../../shared/config";
 import { AdminLoginSchema } from "../../../../../shared/schemas";
 import { loginAdmin, verifyAdminToken } from "./service";
 
 export const authRoute = new Elysia({
-  prefix: `${env.apiPrefix}auth`,
+  prefix: `${env.apiPrefix}/auth`,
   detail: {
     summary: "Admin Authentication Endpoints",
     tags: ["Auth"],
   },
 })
+  .use(
+    jwt({
+      name: "jwt",
+      secret: env.jwtSecret,
+    })
+  )
   .post(
     "/login",
-    async ({ body, set }) => {
+    async ({ body, jwt, set }) => {
       try {
-        const result = await loginAdmin(body.username, body.password);
+        const result = await loginAdmin(body.username, body.password, (payload) => jwt.sign(payload));
         return {
           success: true,
           data: result,
@@ -38,7 +45,7 @@ export const authRoute = new Elysia({
       body: AdminLoginSchema,
     }
   )
-  .get("/me", async ({ headers, set }) => {
+  .get("/me", async ({ headers, jwt, set }) => {
     const authHeader = headers["authorization"];
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       set.status = 401;
@@ -47,7 +54,7 @@ export const authRoute = new Elysia({
 
     const token = authHeader.split(" ")[1] ?? "";
     try {
-      const user = await verifyAdminToken(token);
+      const user = await verifyAdminToken(token, (t) => jwt.verify(t));
       return { success: true, data: user };
     } catch (error: any) {
       set.status = 401;

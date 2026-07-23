@@ -20,7 +20,7 @@ import {
 } from "./service";
 
 export const menuRoute = new Elysia({
-  prefix: `${env.apiPrefix}menu`,
+  prefix: `${env.apiPrefix}/menu`,
   detail: {
     summary: "Menu and product catalog management endpoints",
     tags: ["Menu"],

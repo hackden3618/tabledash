@@ -49,6 +49,8 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({
     { key: "DELIVERED", label: "Delivered" },
   ];
 
+  const isCancelled = order?.status === "CANCELLED";
+
   const getStatusIndex = (status: string) => {
     return statuses.findIndex((s) => s.key === status);
   };
@@ -85,6 +87,27 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({
         ) : !order ? (
           <div style={{ textAlign: "center", padding: "40px 0", color: "#6B7280" }}>
             Order not found.
+          </div>
+        ) : isCancelled ? (
+          <div
+            style={{
+              background: "#FEE2E2",
+              border: "2px solid #EF4444",
+              borderRadius: "16px",
+              padding: "24px",
+              textAlign: "center",
+            }}
+          >
+            <div style={{ fontSize: "2.5rem", marginBottom: "8px" }}>⚠️</div>
+            <h2 style={{ fontSize: "1.25rem", fontWeight: 800, color: "#DC2626" }}>
+              Order Cancelled
+            </h2>
+            <p style={{ fontSize: "0.9rem", color: "#991B1B", marginTop: "6px" }}>
+              This order was cancelled. Please contact Mama's Hotel directly if you have any questions.
+            </p>
+            <button onClick={onBackToHome} className="btn btn-secondary" style={{ marginTop: "20px" }}>
+              Back to Menu
+            </button>
           </div>
         ) : (
           <div>

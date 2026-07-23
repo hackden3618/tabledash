@@ -43,7 +43,7 @@ export const app = new Elysia()
   // WebSocket connection endpoint for real-time notifications
   .ws("/ws", {
     query: t.Object({
-      role: t.Optional(t.String({ defaultConfig: "customer" })),
+      role: t.Optional(t.String({ default: "customer" })),
       orderId: t.Optional(t.String()),
     }),
     open(ws) {
