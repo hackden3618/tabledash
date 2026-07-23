@@ -3,6 +3,8 @@ WORKDIR /app
 
 # ── frontend build ─────────────────────────────────────────────
 FROM base AS frontend
+COPY shared/ ./shared/
+COPY tsconfig.json ./
 WORKDIR /app/apps/web
 COPY apps/web/package.json apps/web/bun.lock ./
 RUN bun install --frozen-lockfile
