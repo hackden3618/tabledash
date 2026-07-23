@@ -6,6 +6,7 @@
  * When to modify: When adding new customer endpoints or altering route parameters.
  */
 
+import { jwt } from "@elysiajs/jwt";
 import { Elysia, t } from "elysia";
 import { env } from "../../../../../shared/config";
 import {
@@ -15,6 +16,7 @@ import {
 } from "../../../../../shared/schemas";
 import { getAllCustomers, getCustomerHistory } from "./service";
 import { decodeCustomerToken, getCustomerProfile, loginCustomer, registerCustomer } from "./auth.service";
+import { verifyAdminToken } from "../auth/service";
 
 export const customersRoute = new Elysia({
   prefix: `${env.apiPrefix}/customers`,
@@ -23,8 +25,26 @@ export const customersRoute = new Elysia({
     tags: ["Customers"],
   },
 })
+  .use(
+    jwt({
+      name: "jwt",
+      secret: env.jwtSecret,
+    })
+  )
   // ─── Admin: List all customers ───────────────────────────────────────────────
-  .get("/", async () => {
+  .get("/", async ({ headers, jwt, set }) => {
+    const authHeader = headers["authorization"];
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      set.status = 401;
+      return { success: false, error: "Missing or invalid authorization header" };
+    }
+    const token = authHeader.split(" ")[1] ?? "";
+    try {
+      await verifyAdminToken(token, (t) => jwt.verify(t));
+    } catch {
+      set.status = 401;
+      return { success: false, error: "Invalid or expired session token" };
+    }
     const customers = await getAllCustomers();
     return { success: true, data: customers };
   })
@@ -32,7 +52,19 @@ export const customersRoute = new Elysia({
   // ─── Admin: Customer order history ───────────────────────────────────────────
   .get(
     "/:id/orders",
-    async ({ params, set }) => {
+    async ({ params, headers, jwt, set }) => {
+      const authHeader = headers["authorization"];
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        set.status = 401;
+        return { success: false, error: "Missing or invalid authorization header" };
+      }
+      const token = authHeader.split(" ")[1] ?? "";
+      try {
+        await verifyAdminToken(token, (t) => jwt.verify(t));
+      } catch {
+        set.status = 401;
+        return { success: false, error: "Invalid or expired session token" };
+      }
       try {
         const history = await getCustomerHistory(params.id);
         return { success: true, data: history };

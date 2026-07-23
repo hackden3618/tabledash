@@ -55,7 +55,8 @@ export const uploadRoute = new Elysia({ prefix: "/api/v1" })
       const arrayBuffer = await file.arrayBuffer();
       await Bun.write(destination, arrayBuffer);
 
-      const imageUrl = `http://localhost:3000/api/v1/uploads/${filename}`;
+      const publicUrl = process.env.PUBLIC_URL ?? "http://localhost:3000";
+      const imageUrl = `${publicUrl}/api/v1/uploads/${filename}`;
 
       return {
         success: true,

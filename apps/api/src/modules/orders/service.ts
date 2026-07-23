@@ -8,7 +8,7 @@
 import { prisma } from "../../../../../infrastructure/database/prisma";
 import type { DashboardMetrics, OrderStatus } from "../../../../../shared/types";
 import { smsService } from "../notifications/sms.service";
-import { getHotelIsOpen, getStaffPhone } from "../settings/service";
+import { getHotelIsOpen, getSmsRecipients } from "../settings/service";
 import { wsHub } from "../websocket/hub";
 
 export interface CreateOrderInputItem {
@@ -195,13 +195,21 @@ export const placeOrder = async (input: CreateOrderInput) => {
     payload: formattedOrder,
   });
 
-  // Dispatch SMS notification to Hotel Staff phone configured in settings
-  const staffPhone = await getStaffPhone();
-  if (staffPhone) {
+  // Dispatch SMS notification to all configured Hotel Staff members who have receiveSms active
+  const staffPhones = await getSmsRecipients();
+  if (staffPhones.length > 0) {
     const itemsSummary = formattedOrder.orderItems?.map((it: any) => `${it.quantity}x ${it.name}`).join(", ") || "";
     const staffSmsMessage = `[Wambu's Corner Hotel] NEW ORDER #${formattedOrder.orderNumber} from ${input.customerName} (${input.phone}). Total: KSh ${formattedOrder.totalAmount}. Location: ${input.marketSection || "N/A"} - ${input.locationDescription || ""}. Items: ${itemsSummary}`;
-    smsService.sendSms(staffPhone, staffSmsMessage).catch((err) => {
-      console.error("[Staff SMS Dispatch Error]:", err);
+    
+    // Send to all staff phone numbers in parallel
+    Promise.all(
+      staffPhones.map((phone) =>
+        smsService.sendSms(phone, staffSmsMessage).catch((err) => {
+          console.error(`[Staff SMS Dispatch Error to ${phone}]:`, err);
+        })
+      )
+    ).catch((err) => {
+      console.error("[Staff SMS Promise.all Outer Error]:", err);
     });
   }
 
@@ -263,7 +271,7 @@ const STATUS_RANK: Record<string, number> = {
  * Sends SMS notification to customer when status changes to OUT_FOR_DELIVERY.
  * Enforces forward-only progression: an order can never be reverted to a previous status.
  */
-export const updateOrderStatus = async (id: string, newStatus: OrderStatus) => {
+export const updateOrderStatus = async (id: string, newStatus: OrderStatus, cancelReason?: string) => {
   const existing = await prisma.order.findUnique({ where: { id } });
   if (!existing) {
     throw new Error("Order not found");
@@ -291,6 +299,7 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus) => {
     data: {
       status: newStatus,
       completedAt: newStatus === "DELIVERED" ? new Date() : existing.completedAt,
+      cancelReason: newStatus === "CANCELLED" ? (cancelReason || "Staff unavailable to deliver at this time") : existing.cancelReason,
     },
     include: {
       customer: true,
@@ -311,6 +320,15 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus) => {
     const customerSmsMessage = `Hello ${formattedOrder.customer.firstName}, your order #${formattedOrder.orderNumber} from Wambu's Corner Hotel is OUT FOR DELIVERY! Our rider is on the way to your stall. Total: KSh ${formattedOrder.totalAmount}.`;
     smsService.sendSms(formattedOrder.customer.phone, customerSmsMessage).catch((err) => {
       console.error("[Customer Out-For-Delivery SMS Error]:", err);
+    });
+  }
+
+  // Dispatch SMS to customer when order is CANCELLED politely
+  if (newStatus === "CANCELLED" && formattedOrder.customer?.phone) {
+    const reasonStr = cancelReason || "we are unable to deliver your order at this time";
+    const customerSmsMessage = `Hello ${formattedOrder.customer.firstName}, we are sorry to inform you that order #${formattedOrder.orderNumber} has been cancelled. Reason: ${reasonStr}. We appreciate your understanding and hope to serve you next time!`;
+    smsService.sendSms(formattedOrder.customer.phone, customerSmsMessage).catch((err) => {
+      console.error("[Customer Cancel SMS Error]:", err);
     });
   }
 

@@ -29,6 +29,18 @@ export class Environment {
 
   /** TextSMS.co.ke Sender Shortcode / SenderID */
   public readonly textSmsShortcode: string = process.env.TEXTSMS_SENDER_ID ?? process.env.TEXTSMS_SenderID ?? "TextSMS";
+
+  /** Admin username for database seeding (used only by seed.ts) */
+  public readonly seedAdminUsername: string = process.env.SEED_ADMIN_USERNAME ?? "admin";
+
+  /** Admin password for database seeding (used only by seed.ts) */
+  public readonly seedAdminPassword: string = process.env.SEED_ADMIN_PASSWORD ?? "adminpass";
+
+  /** Public URL for generating absolute URLs (upload URLs, etc.) */
+  public readonly publicUrl: string = process.env.PUBLIC_URL ?? "http://localhost:3000";
+
+  /** Allowed CORS origin (set to frontend URL in production, * for development) */
+  public readonly corsOrigin: string = process.env.CORS_ORIGIN ?? "*";
 }
 
 export const env = new Environment();

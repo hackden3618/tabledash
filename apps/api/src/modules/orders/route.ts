@@ -5,6 +5,7 @@
  * When to modify: When adding new order endpoints or modifying response formats.
  */
 
+import { jwt } from "@elysiajs/jwt";
 import { Elysia, t } from "elysia";
 import { env } from "../../../../../shared/config";
 import {
@@ -20,6 +21,7 @@ import {
   placeOrder,
   updateOrderStatus,
 } from "./service";
+import { verifyAdminToken } from "../auth/service";
 
 export const ordersRoute = new Elysia({
   prefix: `${env.apiPrefix}/orders`,
@@ -28,6 +30,12 @@ export const ordersRoute = new Elysia({
     tags: ["Orders"],
   },
 })
+  .use(
+    jwt({
+      name: "jwt",
+      secret: env.jwtSecret,
+    })
+  )
   .post(
     "/",
     async ({ body, set }) => {
@@ -57,7 +65,19 @@ export const ordersRoute = new Elysia({
       }),
     }
   )
-  .get("/dashboard/metrics", async () => {
+  .get("/dashboard/metrics", async ({ headers, jwt, set }) => {
+    const authHeader = headers["authorization"];
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      set.status = 401;
+      return { success: false, error: "Missing or invalid authorization header" };
+    }
+    const token = authHeader.split(" ")[1] ?? "";
+    try {
+      await verifyAdminToken(token, (t) => jwt.verify(t));
+    } catch {
+      set.status = 401;
+      return { success: false, error: "Invalid or expired session token" };
+    }
     const metrics = await getDashboardMetrics();
     return { success: true, data: metrics };
   })
@@ -78,9 +98,21 @@ export const ordersRoute = new Elysia({
   )
   .patch(
     "/:id/status",
-    async ({ params, body, set }) => {
+    async ({ params, body, headers, jwt, set }) => {
+      const authHeader = headers["authorization"];
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        set.status = 401;
+        return { success: false, error: "Missing or invalid authorization header" };
+      }
+      const token = authHeader.split(" ")[1] ?? "";
       try {
-        const updated = await updateOrderStatus(params.id, body.status as OrderStatus);
+        await verifyAdminToken(token, (t) => jwt.verify(t));
+      } catch {
+        set.status = 401;
+        return { success: false, error: "Invalid or expired session token" };
+      }
+      try {
+        const updated = await updateOrderStatus(params.id, body.status as OrderStatus, body.cancelReason);
         return { success: true, data: updated };
       } catch (err: any) {
         set.status = 400;

@@ -18,6 +18,9 @@
     "verbatimModuleSyntax": true,
     "noEmit": true,
 
+    // JSX support (web app uses React/TSX)
+    "jsx": "react-jsx",
+
     // Best practices
     "strict": true,
     "skipLibCheck": true,

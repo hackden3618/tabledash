@@ -99,6 +99,7 @@ model Order {
     locationDescription String?     @map("location_description")
     orderedAt           DateTime    @default(now()) @map("ordered_at") @db.Timestamptz()
     completedAt         DateTime?   @map("completed_at") @db.Timestamptz()
+    cancelReason        String?     @map("cancel_reason")
 
     customer   Customer    @relation(fields: [customerId], references: [id])
     orderItems OrderItem[]
@@ -138,4 +139,14 @@ model Setting {
     updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
 
     @@map("settings")
+}
+
+model StaffUser {
+    id         String   @id @default(uuid()) @db.Uuid
+    name       String
+    phone      String   @unique
+    receiveSms Boolean  @default(true) @map("receive_sms")
+    createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+    @@map("staff_users")
 }

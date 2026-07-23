@@ -25,6 +25,8 @@ export function useWebSocket<T = unknown>(
 ) {
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const onMessageRef = useRef(onMessage);
+  onMessageRef.current = onMessage;
 
   useEffect(() => {
     let timerId: ReturnType<typeof setTimeout> | null = null;
@@ -38,7 +40,9 @@ export function useWebSocket<T = unknown>(
         query += `&orderId=${orderId}`;
       }
 
-      const wsUrl = `ws://localhost:3000/ws?${query}`;
+      const proto = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:";
+      const base = typeof window !== "undefined" ? `${proto}//${window.location.host}` : "ws://localhost:3000";
+      const wsUrl = `${base}/ws?${query}`;
       const socket = new WebSocket(wsUrl);
 
       socket.onopen = () => {
@@ -51,8 +55,8 @@ export function useWebSocket<T = unknown>(
       socket.onmessage = (event) => {
         try {
           const parsed: WsEventPayload<T> = JSON.parse(event.data);
-          if (onMessage && !isDisposed) {
-            onMessage(parsed);
+          if (onMessageRef.current && !isDisposed) {
+            onMessageRef.current(parsed);
           }
         } catch (err) {
           console.error("[WS Client] Error parsing incoming message:", err);

@@ -1,0 +1,6 @@
+[build]
+builder = "DOCKERFILE"
+
+[deploy]
+startCommand = "bun run apps/api/server.ts"
+healthcheckPath = "/api/v1/health"

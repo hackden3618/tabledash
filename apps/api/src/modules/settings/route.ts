@@ -7,7 +7,16 @@
 
 import { Elysia, t } from "elysia";
 import { env } from "../../../../../shared/config";
-import { getHotelIsOpen, getStaffPhone, updateHotelIsOpen, updateStaffPhone } from "./service";
+import {
+  getHotelIsOpen,
+  getStaffPhone,
+  updateHotelIsOpen,
+  updateStaffPhone,
+  getStaffUsers,
+  addStaffUser,
+  updateStaffUser,
+  deleteStaffUser,
+} from "./service";
 
 export const settingsRoute = new Elysia({
   prefix: `${env.apiPrefix}/settings`,
@@ -58,9 +67,60 @@ export const settingsRoute = new Elysia({
     },
     {
       body: t.Object({
-        staffPhone: t.Optional(t.String()),
+        staffPhone: t.Optional(t.String({ minLength: 10, maxLength: 14, pattern: "^\\+?\\d{10,13}$" })),
         hotelIsOpen: t.Optional(t.Boolean()),
         autoCloseAt: t.Optional(t.Nullable(t.String())),
       }),
     }
-  );
+  )
+  .get("/staff", async () => {
+    const staff = await getStaffUsers();
+    return { success: true, data: staff };
+  })
+  .post(
+    "/staff",
+    async ({ body, set }) => {
+      try {
+        const created = await addStaffUser(body);
+        return { success: true, data: created };
+      } catch (err: any) {
+        set.status = 400;
+        return { success: false, error: err.message };
+      }
+    },
+    {
+      body: t.Object({
+        name: t.String({ minLength: 2 }),
+        phone: t.String({ minLength: 10, maxLength: 14, pattern: "^\\+?\\d{10,13}$" }),
+        receiveSms: t.Boolean(),
+      }),
+    }
+  )
+  .patch(
+    "/staff/:id",
+    async ({ params, body, set }) => {
+      try {
+        const updated = await updateStaffUser(params.id, body);
+        return { success: true, data: updated };
+      } catch (err: any) {
+        set.status = 400;
+        return { success: false, error: err.message };
+      }
+    },
+    {
+      body: t.Object({
+        name: t.Optional(t.String({ minLength: 2 })),
+        phone: t.Optional(t.String({ minLength: 10, maxLength: 14, pattern: "^\\+?\\d{10,13}$" })),
+        receiveSms: t.Optional(t.Boolean()),
+      }),
+    }
+  )
+  .delete("/staff/:id", async ({ params, set }) => {
+    try {
+      await deleteStaffUser(params.id);
+      return { success: true };
+    } catch (err: any) {
+      set.status = 400;
+      return { success: false, error: err.message };
+    }
+  });

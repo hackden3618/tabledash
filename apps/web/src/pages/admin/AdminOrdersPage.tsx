@@ -203,12 +203,16 @@ export const AdminOrdersPage: React.FC<AdminOrdersPageProps> = ({
         ) : filteredOrders.length === 0 ? (
           <div style={{ textAlign: "center", padding: "40px 0", color: "#6B7280" }}>
             <div style={{ fontSize: "2rem", marginBottom: "8px" }}>📭</div>
-            No orders in this status right now.
+            {activeTab === "NEW"
+              ? "There are currently no new orders."
+              : activeTab === "PREPARING"
+                ? "There are currently no orders being prepared."
+                : "There are currently no orders out for delivery."}
           </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "16px" }}>
             {filteredOrders.map((ord) => {
-              const badge = STATUS_BADGE_COLORS[ord.status] ?? STATUS_BADGE_COLORS["NEW"];
+              const badge = STATUS_BADGE_COLORS[ord.status] ?? STATUS_BADGE_COLORS["NEW"]!;
               return (
                 <div
                   key={ord.id}

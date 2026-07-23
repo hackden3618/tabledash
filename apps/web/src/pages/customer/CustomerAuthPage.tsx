@@ -10,6 +10,9 @@ import React, { useRef, useState } from "react";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
 import { ChevronLeft, Lock, LogIn, Phone, User, UserPlus } from "lucide-react";
 
+const cleanPhone = (raw: string): string => raw.replace(/[^\d+]/g, "");
+const isValidPhone = (v: string): boolean => /^\+?\d{10,13}$/.test(v);
+
 type AuthTab = "login" | "register";
 
 interface CustomerAuthPageProps {
@@ -43,7 +46,7 @@ const PinBoxes: React.FC<PinBoxesProps> = ({ value, onChange }) => {
     onChange(next);
     // Auto-advance to next box if filled
     if (digit && idx < 3) {
-      refs[idx + 1].current?.focus();
+      refs[idx + 1]!.current?.focus();
     }
   };
 
@@ -57,13 +60,13 @@ const PinBoxes: React.FC<PinBoxesProps> = ({ value, onChange }) => {
         const arr = digits.map((d) => d.trim());
         arr[idx - 1] = "";
         onChange(arr.join(""));
-        refs[idx - 1].current?.focus();
+        refs[idx - 1]!.current?.focus();
       }
       e.preventDefault();
     } else if (e.key === "ArrowLeft" && idx > 0) {
-      refs[idx - 1].current?.focus();
+      refs[idx - 1]!.current?.focus();
     } else if (e.key === "ArrowRight" && idx < 3) {
-      refs[idx + 1].current?.focus();
+      refs[idx + 1]!.current?.focus();
     }
   };
 
@@ -72,7 +75,7 @@ const PinBoxes: React.FC<PinBoxesProps> = ({ value, onChange }) => {
     const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 4);
     onChange(pasted);
     const lastFilled = Math.min(pasted.length, 3);
-    refs[lastFilled].current?.focus();
+    refs[lastFilled]!.current?.focus();
   };
 
   const boxStyle = (idx: number): React.CSSProperties => {
@@ -138,7 +141,7 @@ export const CustomerAuthPage: React.FC<CustomerAuthPageProps> = ({ onBack, onSu
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError("");
-    if (!loginPhone) { setLoginError("Please enter your phone number."); return; }
+    if (!isValidPhone(loginPhone)) { setLoginError("Enter a valid phone (10-13 digits, e.g. 0712345678)."); return; }
     if (loginPin.length < 4) { setLoginError("Please enter your full 4-digit PIN."); return; }
     setLoginLoading(true);
     const res = await login(loginPhone.trim(), loginPin);
@@ -151,7 +154,7 @@ export const CustomerAuthPage: React.FC<CustomerAuthPageProps> = ({ onBack, onSu
     e.preventDefault();
     setRegError("");
     if (!regFirstName) { setRegError("Please enter your first name."); return; }
-    if (!regPhone) { setRegError("Please enter your phone number."); return; }
+    if (!isValidPhone(regPhone)) { setRegError("Enter a valid phone (10-13 digits, e.g. 0712345678)."); return; }
     if (regPin.length < 4) { setRegError("Please choose a 4-digit PIN."); return; }
     if (regPin !== regPinConfirm) { setRegError("PINs do not match. Please re-enter."); return; }
     setRegLoading(true);
@@ -210,9 +213,10 @@ export const CustomerAuthPage: React.FC<CustomerAuthPageProps> = ({ onBack, onSu
                 type="tel"
                 placeholder="07XXXXXXXX"
                 value={loginPhone}
-                onChange={(e) => setLoginPhone(e.target.value)}
+                onChange={(e) => setLoginPhone(cleanPhone(e.target.value))}
                 className="input-field"
                 autoComplete="tel"
+                maxLength={14}
               />
             </div>
 
@@ -229,7 +233,7 @@ export const CustomerAuthPage: React.FC<CustomerAuthPageProps> = ({ onBack, onSu
               </div>
             )}
 
-            <button type="submit" disabled={loginLoading} className="btn btn-primary">
+            <button type="submit" disabled={loginLoading || !isValidPhone(loginPhone)} className="btn btn-primary">
               {loginLoading ? "Signing in…" : "Sign In"}
             </button>
 
@@ -271,9 +275,10 @@ export const CustomerAuthPage: React.FC<CustomerAuthPageProps> = ({ onBack, onSu
                 type="tel"
                 placeholder="07XXXXXXXX"
                 value={regPhone}
-                onChange={(e) => setRegPhone(e.target.value)}
+                onChange={(e) => setRegPhone(cleanPhone(e.target.value))}
                 className="input-field"
                 autoComplete="tel"
+                maxLength={14}
               />
             </div>
 
@@ -297,7 +302,7 @@ export const CustomerAuthPage: React.FC<CustomerAuthPageProps> = ({ onBack, onSu
               </div>
             )}
 
-            <button type="submit" disabled={regLoading} className="btn btn-primary">
+            <button type="submit" disabled={regLoading || !isValidPhone(regPhone)} className="btn btn-primary">
               {regLoading ? "Creating account…" : "Create Account"}
             </button>
 

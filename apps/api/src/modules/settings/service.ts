@@ -104,3 +104,78 @@ export const updateHotelIsOpen = async (
 
   return result;
 };
+
+export interface StaffUserPayload {
+  name: string;
+  phone: string;
+  receiveSms: boolean;
+}
+
+export const getStaffUsers = async () => {
+  return await prisma.staffUser.findMany({
+    orderBy: { createdAt: "desc" },
+  });
+};
+
+export const addStaffUser = async (data: StaffUserPayload) => {
+  // Enforce unique phone check
+  const existing = await prisma.staffUser.findUnique({
+    where: { phone: data.phone },
+  });
+  if (existing) {
+    throw new Error("A staff member with this phone number already exists.");
+  }
+
+  return await prisma.staffUser.create({
+    data: {
+      name: data.name,
+      phone: data.phone,
+      receiveSms: data.receiveSms,
+    },
+  });
+};
+
+export const updateStaffUser = async (id: string, data: Partial<StaffUserPayload>) => {
+  if (data.phone) {
+    const existing = await prisma.staffUser.findFirst({
+      where: {
+        phone: data.phone,
+        NOT: { id },
+      },
+    });
+    if (existing) {
+      throw new Error("Another staff member with this phone number already exists.");
+    }
+  }
+
+  return await prisma.staffUser.update({
+    where: { id },
+    data,
+  });
+};
+
+export const deleteStaffUser = async (id: string) => {
+  return await prisma.staffUser.delete({
+    where: { id },
+  });
+};
+
+/**
+ * Returns an array of phone numbers for all staff configured to receive SMS.
+ * If no staff users exist, falls back to the legacy settings-based staff_phone configuration
+ * to maintain backward compatibility.
+ */
+export const getSmsRecipients = async (): Promise<string[]> => {
+  const staff = await prisma.staffUser.findMany({
+    where: { receiveSms: true },
+    select: { phone: true },
+  });
+
+  if (staff.length > 0) {
+    return staff.map((s) => s.phone);
+  }
+
+  // Fallback to legacy single setting if no specific staff users are configured
+  const legacyPhone = await getStaffPhone();
+  return legacyPhone ? [legacyPhone] : [];
+};

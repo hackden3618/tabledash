@@ -12,6 +12,9 @@ import { apiPost } from "../../lib/api";
 import { MarketMapModal } from "./MarketMapModal";
 import { Modal } from "../../components/Modal";
 
+const cleanPhone = (raw: string): string => raw.replace(/[^\d+]/g, "");
+const isValidPhone = (v: string): boolean => /^\+?\d{10,13}$/.test(v);
+
 interface LocationPageProps {
   onBackToCart: () => void;
   onOrderPlaced: (orderData: any) => void;
@@ -63,7 +66,7 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
       });
       return;
     }
-    if (!phone.trim() || phone.length < 9) {
+    if (!isValidPhone(phone.trim())) {
       setModalConfig({
         isOpen: true,
         type: "warning",
@@ -191,8 +194,9 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
               type="tel"
               placeholder="07XXXXXXXX"
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={(e) => setPhone(cleanPhone(e.target.value))}
               className="input-field"
+              maxLength={14}
             />
           </div>
 
@@ -218,7 +222,7 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
 
             <button
               onClick={handlePlaceOrder}
-              disabled={isSubmitting}
+              disabled={isSubmitting || !isValidPhone(phone.trim())}
               className="btn btn-primary"
             >
               {isSubmitting ? "Placing Order..." : "Place Order"}

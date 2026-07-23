@@ -8,6 +8,7 @@
 import { cors } from "@elysiajs/cors";
 import { openapi } from "@elysia/openapi";
 import { Elysia, t } from "elysia";
+import { join } from "node:path";
 
 // Feature module routes & WS hub
 import { authRoute } from "./src/modules/auth/route";
@@ -17,11 +18,15 @@ import { ordersRoute } from "./src/modules/orders/route";
 import { settingsRoute } from "./src/modules/settings/route";
 import { uploadRoute } from "./src/modules/upload/route";
 import { wsHub } from "./src/modules/websocket/hub";
+import { env } from "../../shared/config";
 
 export const app = new Elysia()
 
   // Global CORS enabling frontend web app to communicate with API
-  .use(cors())
+  .use(cors({ origin: env.corsOrigin }))
+
+  // Platform health check endpoint
+  .get("/api/v1/health", () => ({ status: "ok", timestamp: new Date().toISOString() }))
 
   // Swagger OpenAPI documentation
   .use(
@@ -75,4 +80,14 @@ export const app = new Elysia()
   .use(ordersRoute)
   .use(customersRoute)
   .use(settingsRoute)
-  .use(uploadRoute);
+  .use(uploadRoute)
+
+  // Serve the built frontend SPA for any non-API route
+  .get("/*", ({ params }) => {
+    const dist = join(import.meta.dir, "..", "web", "dist");
+    const wild = params["*"] as string;
+    const filePath = !wild ? "/index.html" : `/${wild}`;
+    const file = Bun.file(join(dist, filePath));
+    if (file.size > 0) return file;
+    return Bun.file(join(dist, "index.html"));
+  });
