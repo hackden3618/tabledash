@@ -1,7 +1,9 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
+/**
+ * Purpose: Prisma database schema definition for tableDash.
+ * Responsibilities: Defines database tables, relations, enums, and generator configs.
+ * Dependencies: PostgreSQL database, Prisma ORM generator.
+ * When to modify: When adding new entity models, changing field constraints, or modifying order lifecycle statuses.
+ */
 
 generator client {
     provider = "prisma-client"
@@ -18,8 +20,20 @@ datasource db {
  * ========================
  */
 
+enum OrderStatus {
+    NEW
+    ACCEPTED
+    PREPARING
+    READY_FOR_DELIVERY
+    OUT_FOR_DELIVERY
+    DELIVERED
+    CANCELLED
+}
+
 enum EventName {
     order_created
+    order_status_updated
+    menu_availability_updated
 }
 
 enum EventStatus {
@@ -28,26 +42,47 @@ enum EventStatus {
     done
 }
 
+/**
+ * ========================
+ * MODELS
+ * ========================
+ */
+
+model AdminUser {
+    id           String   @id @default(uuid()) @db.Uuid
+    username     String   @unique
+    passwordHash String   @map("password_hash")
+    name         String
+    createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+    @@map("admin_users")
+}
+
 model Customer {
-    id        String  @id @default(uuid()) @db.Uuid
-    firstName String  @map("first_name")
-    lastName  String? @map("last_name")
-    knownName String  @map("known_name")
-    phone     String
-    location  String
+    id                  String   @id @default(uuid()) @db.Uuid
+    firstName           String   @map("first_name")
+    lastName            String?  @map("last_name")
+    phone               String   @unique
+    pinHash             String?  @map("pin_hash") // Argon2id via Bun.password; null = guest (no account)
+    locationDescription String?  @map("location_description")
+    marketSection       String?  @map("market_section")
+    createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
     orders Order[]
 
-    @@unique([firstName, knownName, phone])
     @@map("customers")
 }
 
 model Product {
-    id        String  @id @default(uuid()) @db.Uuid
+    id        String   @id @default(uuid()) @db.Uuid
     name      String
-    imageUrl  String  @map("image_url")
-    price     Decimal
-    available Boolean @default(false)
+    category  String   @default("General")
+    imageUrl  String   @map("image_url")
+    price     Decimal  @db.Decimal(10, 2)
+    available Boolean  @default(true)
+    stockQty  Int      @default(0) @map("stock_qty") // Available portions; 0 = out of stock
+    deleted   Boolean  @default(false)
+    createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
     orderItems OrderItem[]
 
@@ -55,11 +90,15 @@ model Product {
 }
 
 model Order {
-    id          String   @id @default(uuid()) @db.Uuid
-    customerId  String   @map("customer_id") @db.Uuid
-    orderedAt   DateTime @default(now()) @map("ordered_at") @db.Timestamptz()
-    completedAt DateTime @map("completed_at") @db.Timestamptz()
-    completed   Boolean  @default(false)
+    id                  String      @id @default(uuid()) @db.Uuid
+    orderNumber         Int         @default(autoincrement()) @map("order_number")
+    customerId          String      @map("customer_id") @db.Uuid
+    status              OrderStatus @default(NEW)
+    totalAmount         Decimal     @map("total_amount") @db.Decimal(10, 2)
+    marketSection       String?     @map("market_section")
+    locationDescription String?     @map("location_description")
+    orderedAt           DateTime    @default(now()) @map("ordered_at") @db.Timestamptz()
+    completedAt         DateTime?   @map("completed_at") @db.Timestamptz()
 
     customer   Customer    @relation(fields: [customerId], references: [id])
     orderItems OrderItem[]
@@ -68,13 +107,16 @@ model Order {
 }
 
 model OrderItem {
-    id        String @id @default(uuid()) @db.Uuid
-    orderId   String @db.Uuid
-    productId String @map("product_id") @db.Uuid
+    id        String  @id @default(uuid()) @db.Uuid
+    orderId   String  @map("order_id") @db.Uuid
+    productId String  @map("product_id") @db.Uuid
     name      String
+    quantity  Int     @default(1)
+    unitPrice Decimal @map("unit_price") @db.Decimal(10, 2)
+    subtotal  Decimal @db.Decimal(10, 2)
 
     product Product @relation(fields: [productId], references: [id])
-    order   Order   @relation(fields: [orderId], references: [id])
+    order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
     @@map("order_items")
 }
@@ -82,9 +124,18 @@ model OrderItem {
 model EventOutbox {
     id          String      @id @default(uuid()) @db.Uuid
     eventName   EventName   @map("event_name")
+    payload     String      @db.Text
     status      EventStatus @default(initialized)
     createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz()
-    completedAt DateTime    @map("completed_at") @db.Timestamptz()
+    completedAt DateTime?   @map("completed_at") @db.Timestamptz()
 
     @@map("event_outbox")
+}
+
+model Setting {
+    key       String   @id
+    value     String
+    updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+
+    @@map("settings")
 }

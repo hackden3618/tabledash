@@ -1,30 +1,87 @@
-import { Elysia } from "elysia"
+/**
+ * Purpose: REST API endpoints for Menu & Product Management.
+ * Responsibilities: Exposes GET, POST, PATCH, and DELETE endpoints for menu items.
+ * Dependencies: Elysia, shared/config.ts, shared/schemas.ts, menu service.
+ * When to modify: When adding new menu endpoints or changing routing parameters.
+ */
 
-
-// custom imports
-import { Environment } from "../../../../../shared/config";
-import { getAllMenu } from "./service";
-
-const env = new Environment
-const { apiPrefix } = env
+import { Elysia } from "elysia";
+import { env } from "../../../../../shared/config";
+import {
+  CreateProductSchema,
+  IdParamSchema,
+  UpdateProductAvailabilitySchema,
+  UpdateProductStockSchema,
+} from "../../../../../shared/schemas";
+import {
+  createMenuItem,
+  deleteMenuItem,
+  getAllMenuItems,
+  updateProductAvailability,
+  updateProductStock,
+} from "./service";
 
 export const menuRoute = new Elysia({
-    prefix: `${apiPrefix}menu`, detail: {
-        summary: "All menu items and actions to them",
-        tags: ["Menu"]
-    }
-});
-const app = menuRoute;
-app.get("/", async () => {
-    console.log(await getAllMenu());
-    return "List all menu items"
+  prefix: `${env.apiPrefix}/menu`,
+  detail: {
+    summary: "Menu and product catalog management endpoints",
+    tags: ["Menu"],
+  },
 })
-app.post("/", () => {
-    return "Add a menu item"
-})
-app.patch("/:id", ({ params }) => {
-    return `Update a menu item with id ${params.id}`
-})
-app.delete("/:id", ({ params }) => {
-    return `Delete a menu item with id ${params.id}`
-})
+  .get("/", async () => {
+    const items = await getAllMenuItems();
+    return { success: true, data: items };
+  })
+  .post(
+    "/",
+    async ({ body, set }) => {
+      try {
+        const product = await createMenuItem(body);
+        set.status = 201;
+        return { success: true, data: product };
+      } catch (err: any) {
+        set.status = 400;
+        return { success: false, error: err.message };
+      }
+    },
+    { body: CreateProductSchema }
+  )
+  .patch(
+    "/:id/availability",
+    async ({ params, body, set }) => {
+      try {
+        const updated = await updateProductAvailability(params.id, body.available);
+        return { success: true, data: updated };
+      } catch (err: any) {
+        set.status = 400;
+        return { success: false, error: err.message };
+      }
+    },
+    { params: IdParamSchema, body: UpdateProductAvailabilitySchema }
+  )
+  .patch(
+    "/:id/stock",
+    async ({ params, body, set }) => {
+      try {
+        const updated = await updateProductStock(params.id, body.stockQty);
+        return { success: true, data: updated };
+      } catch (err: any) {
+        set.status = 400;
+        return { success: false, error: err.message };
+      }
+    },
+    { params: IdParamSchema, body: UpdateProductStockSchema }
+  )
+  .delete(
+    "/:id",
+    async ({ params, set }) => {
+      try {
+        await deleteMenuItem(params.id);
+        return { success: true, message: "Product deleted successfully" };
+      } catch (err: any) {
+        set.status = 400;
+        return { success: false, error: err.message };
+      }
+    },
+    { params: IdParamSchema }
+  );
