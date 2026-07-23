@@ -1,12 +1,14 @@
 /**
  * Purpose: Analytical Dashboard View for tableDash hotel management.
  * Responsibilities: Renders daily metrics summary cards (Total Orders, Delivered, Pending, Total Sales KSh) and Top Items table.
- * Dependencies: React, apiGet helper.
+ *   Clicking on any metric card navigates back to the Orders Management view.
+ * Dependencies: React, apiGet helper, lucide-react.
  * When to modify: When adding new business KPIs or time period filters.
  */
 
 import React, { useEffect, useState } from "react";
 import { apiGet } from "../../lib/api";
+import { ArrowLeft, CheckCircle2, Clock, ShoppingBag, TrendingUp } from "lucide-react";
 
 interface AdminDashboardPageProps {
   token: string;
@@ -46,9 +48,10 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               color: "white",
               fontSize: "1.2rem",
               cursor: "pointer",
+              display: "flex",
             }}
           >
-            ←
+            <ArrowLeft size={20} />
           </button>
           <div className="header-title">📊 Analytics Dashboard</div>
         </div>
@@ -75,39 +78,115 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           <div>
             {/* Metric Cards Grid */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "16px", marginBottom: "24px" }}>
-              <div className="card" style={{ textAlign: "center", padding: "20px 16px" }}>
+              {/* Card 1: Total Orders */}
+              <div
+                onClick={onBackToOrders}
+                className="card"
+                style={{
+                  textAlign: "center",
+                  padding: "20px 16px",
+                  cursor: "pointer",
+                  transition: "transform 0.15s, box-shadow 0.15s",
+                  border: "1.5px solid #E5E7EB",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#4F46E5"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#E5E7EB"; }}
+              >
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: "6px", color: "#4F46E5" }}>
+                  <ShoppingBag size={24} />
+                </div>
                 <div style={{ fontSize: "2rem", fontWeight: 800, color: "#4F46E5" }}>
                   {metrics.totalOrders}
                 </div>
                 <div style={{ fontSize: "0.85rem", color: "#6B7280", fontWeight: 600, marginTop: "4px" }}>
                   Total Orders
                 </div>
+                <div style={{ fontSize: "0.72rem", color: "#4F46E5", marginTop: "6px", fontWeight: 700 }}>
+                  View All Orders →
+                </div>
               </div>
 
-              <div className="card" style={{ textAlign: "center", padding: "20px 16px" }}>
+              {/* Card 2: Delivered */}
+              <div
+                onClick={onBackToOrders}
+                className="card"
+                style={{
+                  textAlign: "center",
+                  padding: "20px 16px",
+                  cursor: "pointer",
+                  transition: "transform 0.15s, box-shadow 0.15s",
+                  border: "1.5px solid #E5E7EB",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#22C55E"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#E5E7EB"; }}
+              >
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: "6px", color: "#22C55E" }}>
+                  <CheckCircle2 size={24} />
+                </div>
                 <div style={{ fontSize: "2rem", fontWeight: 800, color: "#22C55E" }}>
                   {metrics.deliveredOrders}
                 </div>
                 <div style={{ fontSize: "0.85rem", color: "#6B7280", fontWeight: 600, marginTop: "4px" }}>
                   Delivered
                 </div>
+                <div style={{ fontSize: "0.72rem", color: "#22C55E", marginTop: "6px", fontWeight: 700 }}>
+                  View Orders →
+                </div>
               </div>
 
-              <div className="card" style={{ textAlign: "center", padding: "20px 16px" }}>
+              {/* Card 3: Pending */}
+              <div
+                onClick={onBackToOrders}
+                className="card"
+                style={{
+                  textAlign: "center",
+                  padding: "20px 16px",
+                  cursor: "pointer",
+                  transition: "transform 0.15s, box-shadow 0.15s",
+                  border: "1.5px solid #E5E7EB",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#D97706"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#E5E7EB"; }}
+              >
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: "6px", color: "#D97706" }}>
+                  <Clock size={24} />
+                </div>
                 <div style={{ fontSize: "2rem", fontWeight: 800, color: "#D97706" }}>
                   {metrics.pendingOrders}
                 </div>
                 <div style={{ fontSize: "0.85rem", color: "#6B7280", fontWeight: 600, marginTop: "4px" }}>
                   Pending
                 </div>
+                <div style={{ fontSize: "0.72rem", color: "#D97706", marginTop: "6px", fontWeight: 700 }}>
+                  View Pending →
+                </div>
               </div>
 
-              <div className="card" style={{ textAlign: "center", padding: "20px 16px" }}>
+              {/* Card 4: Total Sales */}
+              <div
+                onClick={onBackToOrders}
+                className="card"
+                style={{
+                  textAlign: "center",
+                  padding: "20px 16px",
+                  cursor: "pointer",
+                  transition: "transform 0.15s, box-shadow 0.15s",
+                  border: "1.5px solid #E5E7EB",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#1E4D36"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#E5E7EB"; }}
+              >
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: "6px", color: "#1E4D36" }}>
+                  <TrendingUp size={24} />
+                </div>
                 <div style={{ fontSize: "1.6rem", fontWeight: 800, color: "#1E4D36" }}>
                   KSh {metrics.totalSales}
                 </div>
                 <div style={{ fontSize: "0.85rem", color: "#6B7280", fontWeight: 600, marginTop: "4px" }}>
                   Total Sales
+                </div>
+                <div style={{ fontSize: "0.72rem", color: "#1E4D36", marginTop: "6px", fontWeight: 700 }}>
+                  View Orders →
                 </div>
               </div>
             </div>

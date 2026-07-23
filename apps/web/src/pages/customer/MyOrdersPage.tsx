@@ -129,8 +129,11 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
               const StatusIcon = cfg.Icon;
               const isActive = !["DELIVERED", "CANCELLED"].includes(order.status);
               return (
-                <div key={order.id} className="card" style={{ cursor: isActive ? "pointer" : "default" }}
-                  onClick={() => isActive && onTrackOrder(order.id)}
+                <div
+                  key={order.id}
+                  className="card"
+                  style={{ cursor: "pointer", transition: "transform 0.15s, box-shadow 0.15s" }}
+                  onClick={() => onTrackOrder(order.id)}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
                     <div>
@@ -151,11 +154,9 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
                     <div style={{ fontWeight: 700, color: "#1E4D36" }}>KSh {order.totalAmount}</div>
                   </div>
 
-                  {isActive && (
-                    <div style={{ marginTop: "8px", fontSize: "0.8rem", color: "#0284C7", fontWeight: 600 }}>
-                      Tap to track →
-                    </div>
-                  )}
+                  <div style={{ marginTop: "8px", fontSize: "0.8rem", color: "#1E4D36", fontWeight: 600 }}>
+                    {isActive ? "Tap to track live order →" : "View order details →"}
+                  </div>
                 </div>
               );
             })}
