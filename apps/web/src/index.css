@@ -1,0 +1,263 @@
+/**
+ * Purpose: Global CSS Design System & Theme Styles for tableDash ("Mama's Hotel").
+ * Responsibilities: Defines HSL/Hex color tokens, modern typography, glassmorphism cards, responsive layouts, badge states, and animations.
+ * Dependencies: Google Fonts (Inter / Outfit).
+ * When to modify: When altering global brand colors, button styles, typography, or UI design tokens.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  /* Brand Emerald Green Palette */
+  --color-primary: #1E4D36;
+  --color-primary-hover: #163E2B;
+  --color-primary-light: #EBF4F0;
+  --color-accent: #22C55E;
+  --color-accent-hover: #16A34A;
+  
+  /* Neutral Tones */
+  --color-bg: #F3F5F4;
+  --color-surface: #FFFFFF;
+  --color-text-main: #1F2937;
+  --color-text-muted: #6B7280;
+  --color-border: #E5E7EB;
+  
+  /* Status Colors */
+  --status-new-bg: #FEE2E2;
+  --status-new-text: #DC2626;
+  --status-preparing-bg: #FEF3C7;
+  --status-preparing-text: #D97706;
+  --status-out-bg: #E0E7FF;
+  --status-out-text: #4F46E5;
+  --status-delivered-bg: #DCFCE7;
+  --status-delivered-text: #15803D;
+
+  /* Typography */
+  --font-family: 'Outfit', 'Inter', system-ui, -apple-system, sans-serif;
+
+  /* Elevation Shadows & Radius */
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 8px 24px rgba(30, 77, 54, 0.08);
+  --shadow-lg: 0 16px 36px rgba(0, 0, 0, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--color-bg);
+  color: var(--color-text-main);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  padding-bottom: 80px; /* Space for sticky bottom cart bar */
+}
+
+/* Base Responsive Container */
+.app-container {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+  background: var(--color-surface);
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.06);
+  position: relative;
+  overflow-x: hidden;
+}
+
+.admin-container {
+  max-width: 768px;
+  margin: 0 auto;
+  min-height: 100vh;
+  background: var(--color-surface);
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.06);
+  position: relative;
+}
+
+/* Header Styles */
+.header-bar {
+  background: var(--color-primary);
+  color: #FFFFFF;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  box-shadow: var(--shadow-sm);
+}
+
+.header-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Buttons & Inputs */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 20px;
+  border-radius: var(--radius-md);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+
+.btn-primary {
+  background: var(--color-primary);
+  color: #FFFFFF;
+}
+
+.btn-primary:hover {
+  background: var(--color-primary-hover);
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  background: #FFFFFF;
+  color: var(--color-primary);
+  border: 1.5px solid var(--color-primary);
+}
+
+.btn-secondary:hover {
+  background: var(--color-primary-light);
+}
+
+.btn-whatsapp {
+  background: #25D366;
+  color: #FFFFFF;
+}
+
+.btn-whatsapp:hover {
+  background: #20BA5A;
+}
+
+.input-field {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--color-border);
+  font-size: 1rem;
+  font-family: var(--font-family);
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.input-field:focus {
+  border-color: var(--color-primary);
+}
+
+/* Card Components */
+.card {
+  background: #FFFFFF;
+  border-radius: var(--radius-md);
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+/* Badge Status Pill */
+.badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.badge-new {
+  background: var(--status-new-bg);
+  color: var(--status-new-text);
+}
+
+.badge-preparing {
+  background: var(--status-preparing-bg);
+  color: var(--status-preparing-text);
+}
+
+.badge-out {
+  background: var(--status-out-bg);
+  color: var(--status-out-text);
+}
+
+.badge-delivered {
+  background: var(--status-delivered-bg);
+  color: var(--status-delivered-text);
+}
+
+/* Sticky Bottom Action Bar */
+.sticky-bottom-bar {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 480px;
+  padding: 16px 20px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--color-border);
+  z-index: 100;
+}
+
+/* Market Map Selector */
+.market-map-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.market-zone {
+  padding: 24px 16px;
+  border-radius: var(--radius-md);
+  text-align: center;
+  font-weight: 600;
+  cursor: pointer;
+  border: 2px dashed var(--color-border);
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.market-zone.selected {
+  border-style: solid;
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+.market-zone-pin {
+  width: 24px;
+  height: 24px;
+  background: #EF4444;
+  border-radius: 50%;
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 12px;
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.4);
+}

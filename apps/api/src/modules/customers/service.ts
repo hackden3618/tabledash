@@ -1,50 +1,56 @@
-import { prisma } from "../../../../../infrastructure/database/prisma"
+/**
+ * Purpose: Customer Data & Order History Service for tableDash.
+ * Responsibilities: Provides functions to retrieve customer profiles and historical orders.
+ * Dependencies: Prisma database client.
+ * When to modify: When extending customer profile data fields or history filters.
+ */
 
-export const createCustomer = async (body: any) => {
-    const data = {
-        firstName: body.firstName,
-        knownName: body.knownName,
-        phone: body.phone,
-        location: body.location
+import { prisma } from "../../../../../infrastructure/database/prisma";
 
-    }
-    const existingCustomer = await prisma.customer.findFirst({
-        where: {
-            firstName: data.firstName,
-            phone: data.phone
-        }
-    })
-    if (existingCustomer) return "Customer already exists, updating their records..."
-    try {
-        const creationData = await prisma.customer.create({ data })
-        return creationData
-    } catch (error: any) {
-        console.log(error.message);
-        return "failed to create customer"
-    }
-}
-
+/**
+ * Retrieves all registered customer records.
+ */
 export const getAllCustomers = async () => {
-    return await prisma.customer.findMany()
-}
+  return await prisma.customer.findMany({
+    orderBy: { createdAt: "desc" },
+    include: {
+      _count: {
+        select: { orders: true },
+      },
+    },
+  });
+};
 
-export const updateCustomerDetails = async (params: any, body: any)=>{
-    const updatedCustomer = await prisma.customer.update({
-        where: {
-            id: params.id
+/**
+ * Retrieves customer details and order history by Customer ID.
+ */
+export const getCustomerHistory = async (customerId: string) => {
+  const customer = await prisma.customer.findUnique({
+    where: { id: customerId },
+    include: {
+      orders: {
+        include: {
+          orderItems: true,
         },
-        data: {
-            location: body.newLocation
-        } 
-    })
-    return updatedCustomer
-}
+        orderBy: { orderedAt: "desc" },
+      },
+    },
+  });
 
-export const deleteCustomerDetails = async (params: any)=>{
-    const deletedCustomer = await prisma.customer.delete({
-        where: {
-            id: params.id
-        }
-    })
-    return deletedCustomer
-}
+  if (!customer) {
+    throw new Error("Customer record not found");
+  }
+
+  return {
+    ...customer,
+    orders: customer.orders.map((order) => ({
+      ...order,
+      totalAmount: Number(order.totalAmount),
+      orderItems: order.orderItems.map((item) => ({
+        ...item,
+        unitPrice: Number(item.unitPrice),
+        subtotal: Number(item.subtotal),
+      })),
+    })),
+  };
+};
