@@ -1,3 +1,4 @@
+ARG CACHEBUST=1
 FROM oven/bun:1-alpine AS base
 WORKDIR /app
 
@@ -20,6 +21,8 @@ COPY infrastructure/ ./infrastructure/
 COPY prisma/ ./prisma/
 COPY --from=frontend /app/apps/web/dist ./apps/web/dist
 
+ARG CACHEBUST
+RUN echo "build ${CACHEBUST}"
 RUN bun install --frozen-lockfile --production
 RUN bunx prisma generate
 
