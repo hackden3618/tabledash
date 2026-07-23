@@ -59,7 +59,12 @@ export class WebSocketHub {
   }
 
   /**
-   * Broadcasts a status update to a specific customer order channel and all admins.
+   * Broadcasts a status update to:
+   *   - All admin clients
+   *   - Customers subscribed to this specific orderId (Order Tracker page)
+   *   - Customers with NO orderId subscription (My Orders page — browsing history)
+   * WHY: My Orders page connects without an orderId, so it must also receive status
+   *   patches to stay live without requiring a full profile refetch.
    * @param orderId Target order ID being updated.
    * @param message Payload message containing updated order data.
    */
@@ -68,7 +73,11 @@ export class WebSocketHub {
     const staleIds: string[] = [];
 
     for (const client of this.clients.values()) {
-      if (client.role === "admin" || (client.role === "customer" && client.orderId === orderId)) {
+      const isAdmin             = client.role === "admin";
+      const isOrderTracker      = client.role === "customer" && client.orderId === orderId;
+      const isMyOrdersBrowser   = client.role === "customer" && !client.orderId;
+
+      if (isAdmin || isOrderTracker || isMyOrdersBrowser) {
         try {
           client.send(payloadStr);
         } catch (err) {

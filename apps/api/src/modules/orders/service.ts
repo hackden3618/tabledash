@@ -8,7 +8,7 @@
 import { prisma } from "../../../../../infrastructure/database/prisma";
 import type { DashboardMetrics, OrderStatus } from "../../../../../shared/types";
 import { smsService } from "../notifications/sms.service";
-import { getStaffPhone } from "../settings/service";
+import { getHotelIsOpen, getStaffPhone } from "../settings/service";
 import { wsHub } from "../websocket/hub";
 
 export interface CreateOrderInputItem {
@@ -37,6 +37,11 @@ interface OrderItemDraft {
  * WHY: Uses Prisma transaction to guarantee atomic execution of customer record updates, order creation, line-item pricing, and event log creation.
  */
 export const placeOrder = async (input: CreateOrderInput) => {
+  // Check if hotel is open for orders
+  const hotelStatus = await getHotelIsOpen();
+  if (!hotelStatus.isOpen) {
+    throw new Error("Wambu's Corner Hotel is currently closed for new orders. Please check back later!");
+  }
   // Fetch requested products to calculate authoritative unit prices and totals
   const productIds = input.items.map((item) => item.productId);
   const products = await prisma.product.findMany({
@@ -149,18 +154,40 @@ export const placeOrder = async (input: CreateOrderInput) => {
       },
     });
 
-    // Atomically decrement stock for each ordered product
+    // Atomically decrement stock for each ordered product & auto-trigger unavailable when stock reaches 0
+    const updatedProducts: any[] = [];
     for (const item of orderItemData) {
-      await tx.product.update({
+      const updated = await tx.product.update({
         where: { id: item.productId },
         data: { stockQty: { decrement: item.quantity } },
       });
+
+      if (updated.stockQty <= 0) {
+        const markedUnavailable = await tx.product.update({
+          where: { id: item.productId },
+          data: { available: false, stockQty: Math.max(0, updated.stockQty) },
+        });
+        updatedProducts.push(markedUnavailable);
+      } else {
+        updatedProducts.push(updated);
+      }
     }
 
-    return order;
+    return { order, updatedProducts };
   });
 
-  const formattedOrder = formatOrderResponse(result);
+  const formattedOrder = formatOrderResponse(result.order);
+
+  // Broadcast menu availability updates to all connected customers
+  for (const prod of result.updatedProducts) {
+    wsHub.broadcastMenuUpdate({
+      type: "MENU_AVAILABILITY_UPDATED",
+      payload: {
+        ...prod,
+        price: Number(prod.price),
+      },
+    });
+  }
 
   // Broadcast real-time order alert to admin clients
   wsHub.broadcastToAdmins({
@@ -217,13 +244,46 @@ export const getOrderById = async (id: string) => {
 };
 
 /**
+ * Canonical forward-only order status pipeline.
+ * WHY: Orders must always progress forward. Lower rank = earlier stage.
+ * CANCELLED is treated as a terminal exit from any non-terminal state.
+ */
+const STATUS_RANK: Record<string, number> = {
+  NEW:                1,
+  ACCEPTED:           2,
+  PREPARING:          3,
+  READY_FOR_DELIVERY: 4,
+  OUT_FOR_DELIVERY:   5,
+  DELIVERED:          6,
+  CANCELLED:          99, // always permitted as an exit from any active state
+};
+
+/**
  * Updates an order status and broadcasts the update via WebSockets to customer and admin.
  * Sends SMS notification to customer when status changes to OUT_FOR_DELIVERY.
+ * Enforces forward-only progression: an order can never be reverted to a previous status.
  */
 export const updateOrderStatus = async (id: string, newStatus: OrderStatus) => {
   const existing = await prisma.order.findUnique({ where: { id } });
   if (!existing) {
     throw new Error("Order not found");
+  }
+
+  const currentRank = STATUS_RANK[existing.status] ?? 0;
+  const newRank     = STATUS_RANK[newStatus]       ?? 0;
+
+  // Block reverting to a previous step or re-applying the same step
+  if (newStatus !== "CANCELLED" && newRank <= currentRank) {
+    throw new Error(
+      `Cannot move order from "${existing.status}" back to "${newStatus}". Status can only advance forward.`
+    );
+  }
+
+  // Block updating a terminal order (already delivered or cancelled)
+  if (existing.status === "DELIVERED" || existing.status === "CANCELLED") {
+    throw new Error(
+      `Order is already "${existing.status}" and cannot be changed further.`
+    );
   }
 
   const updated = await prisma.order.update({

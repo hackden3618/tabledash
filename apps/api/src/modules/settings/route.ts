@@ -1,13 +1,13 @@
 /**
  * Purpose: REST API endpoints for Application Settings Management.
- * Responsibilities: Exposes GET and PATCH endpoints for reading/updating settings like hotel staff phone.
+ * Responsibilities: Exposes GET and PATCH endpoints for reading/updating settings like hotel staff phone and hotel open/closed status with auto-close time.
  * Dependencies: Elysia, shared/config.ts, settings service.
  * When to modify: When adding new settings endpoints or changing route parameters.
  */
 
 import { Elysia, t } from "elysia";
 import { env } from "../../../../../shared/config";
-import { getStaffPhone, updateStaffPhone } from "./service";
+import { getHotelIsOpen, getStaffPhone, updateHotelIsOpen, updateStaffPhone } from "./service";
 
 export const settingsRoute = new Elysia({
   prefix: `${env.apiPrefix}/settings`,
@@ -18,14 +18,39 @@ export const settingsRoute = new Elysia({
 })
   .get("/", async () => {
     const staffPhone = await getStaffPhone();
-    return { success: true, data: { staffPhone } };
+    const status = await getHotelIsOpen();
+    return {
+      success: true,
+      data: {
+        staffPhone,
+        hotelIsOpen: status.isOpen,
+        autoCloseAt: status.autoCloseAt,
+      },
+    };
   })
   .patch(
     "/",
     async ({ body, set }) => {
       try {
-        const staffPhone = await updateStaffPhone(body.staffPhone);
-        return { success: true, data: { staffPhone } };
+        let staffPhone = await getStaffPhone();
+        let status = await getHotelIsOpen();
+
+        if (body.staffPhone !== undefined) {
+          staffPhone = await updateStaffPhone(body.staffPhone);
+        }
+
+        if (body.hotelIsOpen !== undefined) {
+          status = await updateHotelIsOpen(body.hotelIsOpen, body.autoCloseAt);
+        }
+
+        return {
+          success: true,
+          data: {
+            staffPhone,
+            hotelIsOpen: status.isOpen,
+            autoCloseAt: status.autoCloseAt,
+          },
+        };
       } catch (err: any) {
         set.status = 400;
         return { success: false, error: err.message };
@@ -33,7 +58,9 @@ export const settingsRoute = new Elysia({
     },
     {
       body: t.Object({
-        staffPhone: t.String({ minLength: 9, error: "Valid staff phone number is required" }),
+        staffPhone: t.Optional(t.String()),
+        hotelIsOpen: t.Optional(t.Boolean()),
+        autoCloseAt: t.Optional(t.Nullable(t.String())),
       }),
     }
   );

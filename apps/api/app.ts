@@ -15,6 +15,7 @@ import { customersRoute } from "./src/modules/customers/route";
 import { menuRoute } from "./src/modules/menu/route";
 import { ordersRoute } from "./src/modules/orders/route";
 import { settingsRoute } from "./src/modules/settings/route";
+import { uploadRoute } from "./src/modules/upload/route";
 import { wsHub } from "./src/modules/websocket/hub";
 
 export const app = new Elysia()
@@ -73,4 +74,5 @@ export const app = new Elysia()
   .use(menuRoute)
   .use(ordersRoute)
   .use(customersRoute)
-  .use(settingsRoute);
+  .use(settingsRoute)
+  .use(uploadRoute);

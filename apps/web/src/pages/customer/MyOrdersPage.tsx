@@ -1,34 +1,68 @@
 /**
  * Purpose: Customer "My Orders" history page for tableDash.
- * Responsibilities: Shows the logged-in customer's recent orders with status badges and totals.
- *   If not logged in, renders a persuasive prompt instead of the order list.
- * Dependencies: React, CustomerAuthContext.
- * When to modify: When adding order detail drill-down or live tracking from history.
+ * Responsibilities: Shows the logged-in customer's recent orders with live real-time status updates
+ *   via WebSockets. On ORDER_STATUS_UPDATED, surgically patches the specific order in local state
+ *   immediately. Only terminal statuses (DELIVERED, CANCELLED) show a badge — active orders show
+ *   a pulsing "In Progress" indicator so stale labels are never shown.
+ * Dependencies: React, CustomerAuthContext, useWebSocket hook.
+ * When to modify: When adding order detail drill-down or altering order status indicators.
  */
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
-import { ClipboardList, LogIn, Package, CheckCircle, Clock, Truck, AlertCircle } from "lucide-react";
-
-const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; Icon: any }> = {
-  NEW:                { label: "Received",     color: "#1D4ED8", bg: "#DBEAFE", Icon: Package },
-  ACCEPTED:           { label: "Accepted",     color: "#7C3AED", bg: "#EDE9FE", Icon: CheckCircle },
-  PREPARING:          { label: "Preparing",    color: "#D97706", bg: "#FEF3C7", Icon: Clock },
-  READY_FOR_DELIVERY: { label: "Ready",        color: "#059669", bg: "#D1FAE5", Icon: CheckCircle },
-  OUT_FOR_DELIVERY:   { label: "On the way",   color: "#0284C7", bg: "#E0F2FE", Icon: Truck },
-  DELIVERED:          { label: "Delivered",    color: "#15803D", bg: "#DCFCE7", Icon: CheckCircle },
-  CANCELLED:          { label: "Cancelled",    color: "#DC2626", bg: "#FEE2E2", Icon: AlertCircle },
-};
+import { useWebSocket } from "../../lib/websocket";
+import { ClipboardList, LogIn, Package, RefreshCw } from "lucide-react";
 
 interface MyOrdersPageProps {
   onGoToAuth: () => void;
   onTrackOrder: (orderId: string) => void;
 }
 
+/** Only used for terminal states where we are 100% certain of the label. */
+const TERMINAL_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  DELIVERED: { label: "✓ Delivered", color: "#15803D", bg: "#DCFCE7" },
+  CANCELLED: { label: "✕ Cancelled", color: "#DC2626", bg: "#FEE2E2" },
+};
+
 export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackOrder }) => {
   const { customer, isLoggedIn, isLoading, logout } = useCustomerAuth();
 
-  // ─── Loading state ────────────────────────────────────────────────────────────
+  // Local orders state — seeded from profile, then patched live via WebSocket
+  const [orders, setOrders] = useState<any[]>([]);
+  const [lastUpdatedId, setLastUpdatedId] = useState<string | null>(null);
+
+  // Seed from customer profile whenever it loads / changes
+  useEffect(() => {
+    if (customer?.recentOrders) {
+      setOrders(customer.recentOrders);
+    }
+  }, [customer?.recentOrders]);
+
+  // Live WebSocket patch — surgically update only the affected order in-place
+  useWebSocket("customer", undefined, (event) => {
+    if (event.type === "ORDER_STATUS_UPDATED") {
+      const updated = event.payload as any;
+      setOrders((prev) => {
+        const exists = prev.some((o) => o.id === updated.id);
+        if (exists) {
+          return prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o));
+        }
+        return [updated, ...prev];
+      });
+      setLastUpdatedId(updated.id);
+      setTimeout(() => setLastUpdatedId(null), 3000);
+    } else if (event.type === "ORDER_CREATED") {
+      const newOrder = event.payload as any;
+      setOrders((prev) => {
+        if (prev.some((o) => o.id === newOrder.id)) return prev;
+        return [newOrder, ...prev];
+      });
+      setLastUpdatedId(newOrder.id);
+      setTimeout(() => setLastUpdatedId(null), 3000);
+    }
+  });
+
+  // ─── Loading state ─────────────────────────────────────────────────────────
   if (isLoading) {
     return (
       <div className="app-container" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
@@ -37,7 +71,7 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
     );
   }
 
-  // ─── Logged-out state: persuasion prompt ──────────────────────────────────────
+  // ─── Logged-out state ──────────────────────────────────────────────────────
   if (!isLoggedIn) {
     return (
       <div className="app-container">
@@ -52,14 +86,12 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
           <div style={{ width: "80px", height: "80px", borderRadius: "50%", background: "#EBF4F0", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <ClipboardList size={36} color="#1E4D36" />
           </div>
-
           <div>
             <h2 style={{ fontSize: "1.3rem", fontWeight: 700, color: "#1F2937", marginBottom: "8px" }}>Track your orders</h2>
             <p style={{ fontSize: "0.9rem", color: "#6B7280", lineHeight: 1.6, maxWidth: "300px" }}>
               Sign in or create a free account to see your order history and have your delivery location saved for next time.
             </p>
           </div>
-
           <div style={{ background: "#F0FDF4", border: "1.5px solid #BBF7D0", borderRadius: "14px", padding: "16px", width: "100%", maxWidth: "340px" }}>
             <p style={{ fontSize: "0.85rem", color: "#15803D", fontWeight: 600, marginBottom: "8px" }}>✓ Why create an account?</p>
             <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "6px" }}>
@@ -74,7 +106,6 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
               ))}
             </ul>
           </div>
-
           <button onClick={onGoToAuth} className="btn btn-primary" style={{ width: "100%", maxWidth: "340px", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
             <LogIn size={18} /> Sign In / Create Account
           </button>
@@ -83,9 +114,7 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
     );
   }
 
-  // ─── Logged-in state: order history ──────────────────────────────────────────
-  const orders = customer?.recentOrders ?? [];
-
+  // ─── Logged-in state ───────────────────────────────────────────────────────
   return (
     <div className="app-container">
       <header className="header-bar">
@@ -121,30 +150,70 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-            <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1E4D36", marginBottom: "4px" }}>
-              Recent Orders
-            </h2>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+              <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1E4D36" }}>Recent Orders</h2>
+              <span style={{ fontSize: "0.72rem", color: "#16A34A", fontWeight: 700, display: "flex", alignItems: "center", gap: "4px" }}>
+                <RefreshCw size={11} /> Live
+              </span>
+            </div>
+
             {orders.map((order: any) => {
-              const cfg = STATUS_CONFIG[order.status] ?? STATUS_CONFIG["NEW"];
-              const StatusIcon = cfg.Icon;
-              const isActive = !["DELIVERED", "CANCELLED"].includes(order.status);
+              const isTerminal  = order.status === "DELIVERED" || order.status === "CANCELLED";
+              const termCfg     = TERMINAL_CONFIG[order.status];
+              const justUpdated = lastUpdatedId === order.id;
+
               return (
                 <div
                   key={order.id}
                   className="card"
-                  style={{ cursor: "pointer", transition: "transform 0.15s, box-shadow 0.15s" }}
                   onClick={() => onTrackOrder(order.id)}
+                  style={{
+                    cursor: "pointer",
+                    transition: "transform 0.15s, box-shadow 0.15s, border-color 0.4s",
+                    border: justUpdated ? "2px solid #22C55E" : undefined,
+                    boxShadow: justUpdated ? "0 0 0 3px rgba(34,197,94,0.12)" : undefined,
+                  }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
                     <div>
-                      <div style={{ fontWeight: 700, color: "#1F2937" }}>Order #{order.orderNumber}</div>
+                      <div style={{ fontWeight: 700, color: "#1F2937", display: "flex", alignItems: "center", gap: "8px" }}>
+                        Order #{order.orderNumber}
+                        {justUpdated && (
+                          <span style={{ fontSize: "0.68rem", background: "#DCFCE7", color: "#15803D", padding: "2px 7px", borderRadius: "20px", fontWeight: 700 }}>
+                            Just updated!
+                          </span>
+                        )}
+                      </div>
                       <div style={{ fontSize: "0.8rem", color: "#9CA3AF", marginTop: "2px" }}>
                         {new Date(order.orderedAt).toLocaleDateString("en-KE", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
                       </div>
                     </div>
-                    <span style={{ background: cfg.bg, color: cfg.color, borderRadius: "8px", padding: "4px 10px", fontWeight: 700, fontSize: "0.78rem", display: "flex", alignItems: "center", gap: "5px" }}>
-                      <StatusIcon size={13} /> {cfg.label}
-                    </span>
+
+                    {/* Only show a badge for terminal statuses. Active orders get a pulsing dot. */}
+                    {isTerminal ? (
+                      <span style={{
+                        background: termCfg.bg, color: termCfg.color,
+                        borderRadius: "8px", padding: "4px 10px",
+                        fontWeight: 700, fontSize: "0.78rem", flexShrink: 0,
+                      }}>
+                        {termCfg.label}
+                      </span>
+                    ) : (
+                      <span style={{
+                        display: "flex", alignItems: "center", gap: "6px",
+                        background: "#FEF3C7", color: "#D97706",
+                        borderRadius: "8px", padding: "4px 10px",
+                        fontWeight: 700, fontSize: "0.78rem", flexShrink: 0,
+                      }}>
+                        {/* Pulsing live dot */}
+                        <span style={{
+                          width: "7px", height: "7px", borderRadius: "50%",
+                          background: "#F59E0B", display: "inline-block",
+                          animation: "pulse 1.4s ease-in-out infinite",
+                        }} />
+                        In Progress
+                      </span>
+                    )}
                   </div>
 
                   <div style={{ borderTop: "1px solid #F3F4F6", paddingTop: "10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -155,7 +224,7 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
                   </div>
 
                   <div style={{ marginTop: "8px", fontSize: "0.8rem", color: "#1E4D36", fontWeight: 600 }}>
-                    {isActive ? "Tap to track live order →" : "View order details →"}
+                    {!isTerminal ? "Tap to track live →" : "View details →"}
                   </div>
                 </div>
               );
@@ -163,6 +232,14 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
           </div>
         )}
       </div>
+
+      {/* Pulse animation keyframes */}
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50%       { opacity: 0.4; transform: scale(0.75); }
+        }
+      `}</style>
     </div>
   );
 };

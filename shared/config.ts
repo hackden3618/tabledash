@@ -28,7 +28,7 @@ export class Environment {
   public readonly textSmsPartnerId: string = process.env.TEXTSMS_PARTNER_ID ?? "";
 
   /** TextSMS.co.ke Sender Shortcode / SenderID */
-  public readonly textSmsShortcode: string = process.env.TEXTSMS_SenderID ?? "TextSMS";
+  public readonly textSmsShortcode: string = process.env.TEXTSMS_SENDER_ID ?? process.env.TEXTSMS_SenderID ?? "TextSMS";
 }
 
 export const env = new Environment();

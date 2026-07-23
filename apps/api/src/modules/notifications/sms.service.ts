@@ -23,7 +23,14 @@ export interface ISmsDriver {
  * Production driver utilizing TextSMS.co.ke REST API.
  */
 export class TextSmsDriver implements ISmsDriver {
-  private readonly apiUrl = "https://textsms.co.ke/api/services/sendsms/";
+  private readonly apiUrl = "https://sms.textsms.co.ke/api/services/sendsms/";
+
+  constructor() {
+    console.log("[SMS Driver Loaded] TextSMS.co.ke credentials check:");
+    console.log(`  → Partner ID : ${env.textSmsPartnerId ? env.textSmsPartnerId : "❌ MISSING"}`);
+    console.log(`  → API Key    : ${env.textSmsApiKey ? env.textSmsApiKey.slice(0, 8) + "..." : "❌ MISSING"}`);
+    console.log(`  → Sender ID  : ${env.textSmsShortcode}`);
+  }
 
   /**
    * Formats Kenyan phone numbers into international format (2547XXXXXXXX).
@@ -67,9 +74,25 @@ export class TextSmsDriver implements ISmsDriver {
         }),
       });
 
-      const data = await response.json();
-      console.log("[SMS Dispatched successfully via TextSMS.co.ke]:", data);
-      return response.ok;
+      // Read the raw text first — TextSMS.co.ke may return plain text or JSON
+      const rawText = await response.text();
+      console.log(`[SMS Gateway Response] HTTP ${response.status} to ${formattedPhone}:`, rawText);
+
+      // Try parsing JSON; if it fails, treat raw text as the result payload
+      let data: unknown;
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        data = rawText;
+      }
+
+      if (response.ok) {
+        console.log("[SMS Dispatched successfully via TextSMS.co.ke]:", data);
+        return true;
+      } else {
+        console.error(`[SMS Dispatch Failed] HTTP ${response.status}:`, data);
+        return false;
+      }
     } catch (error) {
       console.error("[SMS Dispatch Error via TextSMS.co.ke]:", error);
       return false;

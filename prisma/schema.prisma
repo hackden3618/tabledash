@@ -81,6 +81,7 @@ model Product {
     price     Decimal  @db.Decimal(10, 2)
     available Boolean  @default(true)
     stockQty  Int      @default(0) @map("stock_qty") // Available portions; 0 = out of stock
+    deleted   Boolean  @default(false)
     createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
     orderItems OrderItem[]
