@@ -8,6 +8,7 @@
 import { prisma } from "../../../../../infrastructure/database/prisma";
 import type { DashboardMetrics, OrderStatus } from "../../../../../shared/types";
 import { smsService } from "../notifications/sms.service";
+import { getStaffPhone } from "../settings/service";
 import { wsHub } from "../websocket/hub";
 
 export interface CreateOrderInputItem {
@@ -53,7 +54,35 @@ export const placeOrder = async (input: CreateOrderInput) => {
       throw new Error(`Product with ID ${item.productId} not found`);
     }
     if (!product.available) {
-      throw new Error(`Product "${product.name}" is currently unavailable`);
+      // Broadcast bounced-order alert to admins
+      wsHub.broadcastOrderBounced({
+        type: "ORDER_BOUNCED",
+        payload: {
+          reason: "unavailable",
+          productName: product.name,
+          customerPhone: input.phone,
+          customerName: input.customerName,
+          requestedQty: item.quantity,
+        },
+      });
+      throw new Error(`"${product.name}" is currently unavailable`);
+    }
+    if (product.stockQty < item.quantity) {
+      // Broadcast bounced-order alert to admins with full stock context
+      wsHub.broadcastOrderBounced({
+        type: "ORDER_BOUNCED",
+        payload: {
+          reason: "out_of_stock",
+          productName: product.name,
+          customerPhone: input.phone,
+          customerName: input.customerName,
+          requestedQty: item.quantity,
+          availableQty: product.stockQty,
+        },
+      });
+      throw new Error(
+        `Only ${product.stockQty} portion(s) of "${product.name}" left in stock (you requested ${item.quantity})`
+      );
     }
 
     const unitPrice = Number(product.price);
@@ -120,6 +149,14 @@ export const placeOrder = async (input: CreateOrderInput) => {
       },
     });
 
+    // Atomically decrement stock for each ordered product
+    for (const item of orderItemData) {
+      await tx.product.update({
+        where: { id: item.productId },
+        data: { stockQty: { decrement: item.quantity } },
+      });
+    }
+
     return order;
   });
 
@@ -131,11 +168,15 @@ export const placeOrder = async (input: CreateOrderInput) => {
     payload: formattedOrder,
   });
 
-  // Dispatch SMS notification to customer and admin
-  const smsMessage = `Order #${formattedOrder.orderNumber} received! Thank you for ordering from Mama's Hotel. We will call you shortly to confirm.`;
-  smsService.sendSms(formattedOrder.customer?.phone ?? input.phone, smsMessage).catch((err) => {
-    console.error("[SMS Dispatch Error]:", err);
-  });
+  // Dispatch SMS notification to Hotel Staff phone configured in settings
+  const staffPhone = await getStaffPhone();
+  if (staffPhone) {
+    const itemsSummary = formattedOrder.orderItems?.map((it: any) => `${it.quantity}x ${it.name}`).join(", ") || "";
+    const staffSmsMessage = `[Wambu's Corner Hotel] NEW ORDER #${formattedOrder.orderNumber} from ${input.customerName} (${input.phone}). Total: KSh ${formattedOrder.totalAmount}. Location: ${input.marketSection || "N/A"} - ${input.locationDescription || ""}. Items: ${itemsSummary}`;
+    smsService.sendSms(staffPhone, staffSmsMessage).catch((err) => {
+      console.error("[Staff SMS Dispatch Error]:", err);
+    });
+  }
 
   return formattedOrder;
 };
@@ -177,6 +218,7 @@ export const getOrderById = async (id: string) => {
 
 /**
  * Updates an order status and broadcasts the update via WebSockets to customer and admin.
+ * Sends SMS notification to customer when status changes to OUT_FOR_DELIVERY.
  */
 export const updateOrderStatus = async (id: string, newStatus: OrderStatus) => {
   const existing = await prisma.order.findUnique({ where: { id } });
@@ -203,6 +245,14 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus) => {
     type: "ORDER_STATUS_UPDATED",
     payload: formattedOrder,
   });
+
+  // Dispatch SMS to customer when order is marked OUT_FOR_DELIVERY
+  if (newStatus === "OUT_FOR_DELIVERY" && formattedOrder.customer?.phone) {
+    const customerSmsMessage = `Hello ${formattedOrder.customer.firstName}, your order #${formattedOrder.orderNumber} from Wambu's Corner Hotel is OUT FOR DELIVERY! Our rider is on the way to your stall. Total: KSh ${formattedOrder.totalAmount}.`;
+    smsService.sendSms(formattedOrder.customer.phone, customerSmsMessage).catch((err) => {
+      console.error("[Customer Out-For-Delivery SMS Error]:", err);
+    });
+  }
 
   return formattedOrder;
 };

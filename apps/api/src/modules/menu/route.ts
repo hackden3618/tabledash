@@ -11,12 +11,14 @@ import {
   CreateProductSchema,
   IdParamSchema,
   UpdateProductAvailabilitySchema,
+  UpdateProductStockSchema,
 } from "../../../../../shared/schemas";
 import {
   createMenuItem,
   deleteMenuItem,
   getAllMenuItems,
   updateProductAvailability,
+  updateProductStock,
 } from "./service";
 
 export const menuRoute = new Elysia({
@@ -42,9 +44,7 @@ export const menuRoute = new Elysia({
         return { success: false, error: err.message };
       }
     },
-    {
-      body: CreateProductSchema,
-    }
+    { body: CreateProductSchema }
   )
   .patch(
     "/:id/availability",
@@ -57,10 +57,20 @@ export const menuRoute = new Elysia({
         return { success: false, error: err.message };
       }
     },
-    {
-      params: IdParamSchema,
-      body: UpdateProductAvailabilitySchema,
-    }
+    { params: IdParamSchema, body: UpdateProductAvailabilitySchema }
+  )
+  .patch(
+    "/:id/stock",
+    async ({ params, body, set }) => {
+      try {
+        const updated = await updateProductStock(params.id, body.stockQty);
+        return { success: true, data: updated };
+      } catch (err: any) {
+        set.status = 400;
+        return { success: false, error: err.message };
+      }
+    },
+    { params: IdParamSchema, body: UpdateProductStockSchema }
   )
   .delete(
     "/:id",
@@ -73,7 +83,5 @@ export const menuRoute = new Elysia({
         return { success: false, error: err.message };
       }
     },
-    {
-      params: IdParamSchema,
-    }
+    { params: IdParamSchema }
   );

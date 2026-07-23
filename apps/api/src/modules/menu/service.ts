@@ -1,8 +1,8 @@
 /**
  * Purpose: Menu & Product Management Service for tableDash.
- * Responsibilities: Handles querying menu items, creating products, updating details, and toggling availability with real-time WebSocket broadcast.
+ * Responsibilities: Handles querying menu items, creating products, updating details/stock, and toggling availability with real-time WebSocket broadcast.
  * Dependencies: Prisma database client, WebSocket Hub for live broadcasts.
- * When to modify: When adding new product fields, menu categories, or altering availability logic.
+ * When to modify: When adding new product fields, menu categories, or altering availability/stock logic.
  */
 
 import { prisma } from "../../../../../infrastructure/database/prisma";
@@ -14,10 +14,11 @@ export interface CreateProductInput {
   imageUrl: string;
   price: number;
   available?: boolean;
+  stockQty?: number;
 }
 
 /**
- * Retrieves all menu items.
+ * Retrieves all menu items ordered oldest-first (stable display order).
  */
 export const getAllMenuItems = async () => {
   const products = await prisma.product.findMany({
@@ -31,7 +32,7 @@ export const getAllMenuItems = async () => {
 };
 
 /**
- * Creates a new menu item.
+ * Creates a new menu item with an initial stock quantity.
  */
 export const createMenuItem = async (input: CreateProductInput) => {
   const product = await prisma.product.create({
@@ -41,6 +42,7 @@ export const createMenuItem = async (input: CreateProductInput) => {
       imageUrl: input.imageUrl,
       price: input.price,
       available: input.available ?? true,
+      stockQty: input.stockQty ?? 0,
     },
   });
 
@@ -58,6 +60,30 @@ export const updateProductAvailability = async (id: string, available: boolean) 
   const product = await prisma.product.update({
     where: { id },
     data: { available },
+  });
+
+  const formattedProduct = {
+    ...product,
+    price: Number(product.price),
+  };
+
+  wsHub.broadcastMenuUpdate({
+    type: "MENU_AVAILABILITY_UPDATED",
+    payload: formattedProduct,
+  });
+
+  return formattedProduct;
+};
+
+/**
+ * Updates the available stock quantity for a product.
+ * Admin uses this to set how many portions are available for the day.
+ * WHY: Broadcasts immediately so all customer screens reflect the new count in real time.
+ */
+export const updateProductStock = async (id: string, stockQty: number) => {
+  const product = await prisma.product.update({
+    where: { id },
+    data: { stockQty },
   });
 
   const formattedProduct = {

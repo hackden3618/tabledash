@@ -14,6 +14,7 @@ import { authRoute } from "./src/modules/auth/route";
 import { customersRoute } from "./src/modules/customers/route";
 import { menuRoute } from "./src/modules/menu/route";
 import { ordersRoute } from "./src/modules/orders/route";
+import { settingsRoute } from "./src/modules/settings/route";
 import { wsHub } from "./src/modules/websocket/hub";
 
 export const app = new Elysia()
@@ -35,6 +36,7 @@ export const app = new Elysia()
           { name: "Menu", description: "Menu product catalog endpoints" },
           { name: "Orders", description: "Order placement, lifecycle, and analytics" },
           { name: "Customers", description: "Customer records and order histories" },
+          { name: "Settings", description: "Application settings management" },
         ],
       },
     })
@@ -70,4 +72,5 @@ export const app = new Elysia()
   .use(authRoute)
   .use(menuRoute)
   .use(ordersRoute)
-  .use(customersRoute);
+  .use(customersRoute)
+  .use(settingsRoute);

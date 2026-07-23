@@ -1,13 +1,16 @@
 /**
  * Purpose: Real-time Order Tracking View for tableDash customers.
- * Responsibilities: Fetches order status, listens for live WebSocket `ORDER_STATUS_UPDATED` events, and renders step-by-step progress timeline.
- * Dependencies: React, apiGet helper, useWebSocket hook.
+ * Responsibilities: Fetches order status, listens for live WebSocket `ORDER_STATUS_UPDATED` events,
+ *   renders step-by-step progress timeline, and triggers live toast feedback when status advances.
+ * Dependencies: React, apiGet helper, useWebSocket hook, NotificationsContext, lucide-react.
  * When to modify: When adding new status steps or changing progress timeline design.
  */
 
 import React, { useEffect, useState } from "react";
 import { apiGet } from "../../lib/api";
 import { useWebSocket } from "../../lib/websocket";
+import { useNotifications } from "../../context/NotificationsContext";
+import { Truck } from "lucide-react";
 
 interface OrderTrackingPageProps {
   orderId: string;
@@ -20,6 +23,7 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({
 }) => {
   const [order, setOrder] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const { pushNotification } = useNotifications();
 
   const fetchOrder = async () => {
     const res = await apiGet<any>(`/orders/${orderId}`);
@@ -36,7 +40,36 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({
   // Connect WebSocket to receive real-time updates for this specific order
   useWebSocket("customer", orderId, (event) => {
     if (event.type === "ORDER_STATUS_UPDATED" && (event.payload as any)?.id === orderId) {
-      setOrder(event.payload);
+      const updated = event.payload as any;
+      setOrder(updated);
+
+      if (updated.status === "OUT_FOR_DELIVERY") {
+        pushNotification(
+          "delivery",
+          "🚀 Order Out for Delivery!",
+          "Your meal is on its way to your market location. An SMS notification has also been sent.",
+          { duration: 7000 }
+        );
+      } else if (updated.status === "DELIVERED") {
+        pushNotification(
+          "success",
+          "🎉 Order Delivered!",
+          "Enjoy your meal from Wambu's Corner Hotel!",
+          { duration: 7000 }
+        );
+      } else if (updated.status === "PREPARING") {
+        pushNotification(
+          "info",
+          "👨‍🍳 Meal in Preparation",
+          "The kitchen is now preparing your fresh order."
+        );
+      } else if (updated.status === "CANCELLED") {
+        pushNotification(
+          "danger",
+          "⚠️ Order Cancelled",
+          "Your order was cancelled by the kitchen."
+        );
+      }
     }
   });
 
@@ -103,7 +136,7 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({
               Order Cancelled
             </h2>
             <p style={{ fontSize: "0.9rem", color: "#991B1B", marginTop: "6px" }}>
-              This order was cancelled. Please contact Mama's Hotel directly if you have any questions.
+              This order was cancelled. Please contact Wambu's Corner Hotel directly if you have any questions.
             </p>
             <button onClick={onBackToHome} className="btn btn-secondary" style={{ marginTop: "20px" }}>
               Back to Menu
@@ -111,6 +144,47 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({
           </div>
         ) : (
           <div>
+            {/* Out for Delivery Banner */}
+            {order.status === "OUT_FOR_DELIVERY" && (
+              <div
+                style={{
+                  background: "#EFF6FF",
+                  border: "1.5px solid #60A5FA",
+                  borderRadius: "16px",
+                  padding: "16px",
+                  marginBottom: "20px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  animation: "pulseGlow 2s infinite",
+                }}
+              >
+                <div
+                  style={{
+                    width: "40px",
+                    height: "40px",
+                    borderRadius: "12px",
+                    background: "#DBEAFE",
+                    color: "#1D4ED8",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <Truck size={22} />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 800, color: "#1E40AF", fontSize: "0.95rem" }}>
+                    🚀 Out for Delivery!
+                  </div>
+                  <div style={{ fontSize: "0.8rem", color: "#1D4ED8", marginTop: "2px" }}>
+                    An SMS update was sent to your phone. Keep your phone handy!
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div
               style={{
                 background: "#EBF4F0",

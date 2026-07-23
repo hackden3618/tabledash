@@ -62,7 +62,8 @@ model Customer {
     id                  String   @id @default(uuid()) @db.Uuid
     firstName           String   @map("first_name")
     lastName            String?  @map("last_name")
-    phone               String
+    phone               String   @unique
+    pinHash             String?  @map("pin_hash") // Argon2id via Bun.password; null = guest (no account)
     locationDescription String?  @map("location_description")
     marketSection       String?  @map("market_section")
     createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz()
@@ -73,13 +74,14 @@ model Customer {
 }
 
 model Product {
-    id          String   @id @default(uuid()) @db.Uuid
-    name        String
-    category    String   @default("General")
-    imageUrl    String   @map("image_url")
-    price       Decimal  @db.Decimal(10, 2)
-    available   Boolean  @default(true)
-    createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+    id        String   @id @default(uuid()) @db.Uuid
+    name      String
+    category  String   @default("General")
+    imageUrl  String   @map("image_url")
+    price     Decimal  @db.Decimal(10, 2)
+    available Boolean  @default(true)
+    stockQty  Int      @default(0) @map("stock_qty") // Available portions; 0 = out of stock
+    createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
     orderItems OrderItem[]
 
@@ -127,4 +129,12 @@ model EventOutbox {
     completedAt DateTime?   @map("completed_at") @db.Timestamptz()
 
     @@map("event_outbox")
+}
+
+model Setting {
+    key       String   @id
+    value     String
+    updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+
+    @@map("settings")
 }

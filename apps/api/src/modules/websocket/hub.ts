@@ -99,6 +99,15 @@ export class WebSocketHub {
 
     staleIds.forEach((id) => this.clients.delete(id));
   }
+
+  /**
+   * Broadcasts a bounced-order alert to all connected admin clients.
+   * WHY: When an order fails at placement (e.g. stock shortage), admins need immediate
+   *      visibility so they can restock or reach the customer. Shown as an urgent red alert.
+   */
+  public broadcastOrderBounced<T>(message: WsMessage<T>): void {
+    this.broadcastToAdmins(message);
+  }
 }
 
 export const wsHub = new WebSocketHub();

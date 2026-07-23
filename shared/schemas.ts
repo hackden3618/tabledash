@@ -38,6 +38,11 @@ export const CreateProductSchema = t.Object({
   imageUrl: t.String({ minLength: 5, error: "Product image URL is required" }),
   price: t.Number({ minimum: 0, error: "Price must be non-negative" }),
   available: t.Optional(t.Boolean({ default: true })),
+  stockQty: t.Optional(t.Integer({ minimum: 0, default: 0 })),
+});
+
+export const UpdateProductStockSchema = t.Object({
+  stockQty: t.Integer({ minimum: 0, error: "Stock quantity must be a non-negative integer" }),
 });
 
 export const UpdateProductAvailabilitySchema = t.Object({
@@ -51,4 +56,15 @@ export const AdminLoginSchema = t.Object({
 
 export const IdParamSchema = t.Object({
   id: t.String({ format: "uuid", error: "Invalid UUID parameter" }),
+});
+
+export const CustomerRegisterSchema = t.Object({
+  firstName: t.String({ minLength: 2, error: "First name is required" }),
+  phone: t.String({ minLength: 9, error: "Valid phone number is required" }),
+  pin: t.String({ minLength: 4, maxLength: 4, pattern: "^[0-9]{4}$", error: "PIN must be exactly 4 digits" }),
+});
+
+export const CustomerLoginSchema = t.Object({
+  phone: t.String({ minLength: 9, error: "Phone number is required" }),
+  pin: t.String({ minLength: 4, maxLength: 4, pattern: "^[0-9]{4}$", error: "PIN must be exactly 4 digits" }),
 });

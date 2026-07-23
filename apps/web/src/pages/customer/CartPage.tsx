@@ -22,7 +22,7 @@ export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDe
       .join("\n");
 
     const message = encodeURIComponent(
-      `Hello Mama's Hotel! I would like to order:\n\n${text}\n\nTotal: KSh ${totalAmount}`
+      `Hello Wambu's Corner Hotel! I would like to order:\n\n${text}\n\nTotal: KSh ${totalAmount}`
     );
 
     window.open(`https://wa.me/254700000000?text=${message}`, "_blank");

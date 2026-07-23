@@ -1,19 +1,26 @@
 /**
  * Purpose: Admin Orders Management Dashboard for tableDash.
- * Responsibilities: Displays categorized order tabs (New, Preparing, Out for Delivery), renders order cards with quick Accept/View triggers, and listens to real-time WS order alerts.
- * Dependencies: React, apiGet helper, apiPatch helper, useWebSocket hook.
+ * Responsibilities: Displays categorized order tabs (New, Preparing, Out for Delivery),
+ *   renders order cards with quick Accept/View triggers, listens to real-time WS order alerts,
+ *   and shows meaningful in-app notifications for ORDER_CREATED, ORDER_STATUS_UPDATED,
+ *   ORDER_BOUNCED events via the notification panel.
+ * Dependencies: React, apiGet/apiPatch helpers, useWebSocket, NotificationsContext.
  * When to modify: When changing status tab filters or order card action buttons.
  */
 
 import React, { useEffect, useState } from "react";
 import { apiGet, apiPatch } from "../../lib/api";
 import { useWebSocket } from "../../lib/websocket";
+import { useNotifications } from "../../context/NotificationsContext";
+import { AdminNotificationBell, AdminNotificationPanel } from "../../components/AdminNotificationPanel";
+import { LayoutDashboard, LogOut, Settings, Utensils } from "lucide-react";
 
 interface AdminOrdersPageProps {
   token: string;
   onSelectOrder: (order: any) => void;
   onNavigateDashboard: () => void;
   onNavigateMenuManage: () => void;
+  onNavigateSettings?: () => void;
   onLogout: () => void;
 }
 
@@ -22,11 +29,14 @@ export const AdminOrdersPage: React.FC<AdminOrdersPageProps> = ({
   onSelectOrder,
   onNavigateDashboard,
   onNavigateMenuManage,
+  onNavigateSettings,
   onLogout,
 }) => {
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"NEW" | "PREPARING" | "OUT_FOR_DELIVERY">("NEW");
+  const [panelOpen, setPanelOpen] = useState(false);
+  const { pushNotification } = useNotifications();
 
   const fetchOrders = async () => {
     const res = await apiGet<any[]>("/orders", token);
@@ -40,14 +50,48 @@ export const AdminOrdersPage: React.FC<AdminOrdersPageProps> = ({
     fetchOrders();
   }, []);
 
-  // Connect WebSocket to receive live admin broadcasts
-  useWebSocket("admin", undefined, (event) => {
+  // Connect WebSocket for live admin broadcasts
+  useWebSocket("admin", undefined, (event: any) => {
     if (event.type === "ORDER_CREATED") {
-      setOrders((prev) => [event.payload, ...prev]);
+      const order = event.payload as any;
+      setOrders((prev) => [order, ...prev]);
+      pushNotification(
+        "info",
+        `🛎 New Order #${order.orderNumber}`,
+        `${order.customer?.firstName} (${order.customer?.phone}) ordered ${
+          order.orderItems?.map((it: any) => `${it.quantity}× ${it.name}`).join(", ")
+        } — KSh ${order.totalAmount}`
+      );
+
     } else if (event.type === "ORDER_STATUS_UPDATED") {
-      const updatedOrder = event.payload as any;
-      setOrders((prev) =>
-        prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o))
+      const updated = event.payload as any;
+      setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+
+      const statusLabels: Record<string, string> = {
+        ACCEPTED:           "Accepted by Kitchen",
+        PREPARING:          "Now Preparing",
+        READY_FOR_DELIVERY: "Ready for Delivery",
+        OUT_FOR_DELIVERY:   "Out for Delivery",
+        DELIVERED:          "Delivered",
+        CANCELLED:          "Cancelled",
+      };
+      const label = statusLabels[updated.status] ?? updated.status;
+      pushNotification(
+        updated.status === "CANCELLED" ? "danger" : updated.status === "DELIVERED" ? "success" : "info",
+        `Order #${updated.orderNumber} — ${label}`,
+        `Customer: ${updated.customer?.firstName} · KSh ${updated.totalAmount} · ${updated.marketSection || "—"}`
+      );
+
+    } else if (event.type === "ORDER_BOUNCED") {
+      const b = (event.payload as any);
+      const reason = b.reason === "out_of_stock"
+        ? `Only ${b.availableQty} portion(s) available, customer requested ${b.requestedQty}`
+        : "Item is currently marked unavailable";
+      pushNotification(
+        "danger",
+        `⚠️ Order Bounced — ${b.productName}`,
+        `Customer ${b.customerName} (${b.customerPhone}) could not order. Reason: ${reason}. Restock or mark item available.`,
+        { duration: 9000 }
       );
     }
   });
@@ -71,54 +115,52 @@ export const AdminOrdersPage: React.FC<AdminOrdersPageProps> = ({
   const countPreparing = orders.filter((o) => o.status === "PREPARING" || o.status === "READY_FOR_DELIVERY").length;
   const countOut = orders.filter((o) => o.status === "OUT_FOR_DELIVERY").length;
 
+  const STATUS_BADGE_COLORS: Record<string, { bg: string; color: string }> = {
+    NEW:                { bg: "#FEE2E2", color: "#DC2626" },
+    ACCEPTED:           { bg: "#EDE9FE", color: "#7C3AED" },
+    PREPARING:          { bg: "#FEF3C7", color: "#D97706" },
+    READY_FOR_DELIVERY: { bg: "#DBEAFE", color: "#1D4ED8" },
+    OUT_FOR_DELIVERY:   { bg: "#E0E7FF", color: "#4F46E5" },
+    DELIVERED:          { bg: "#DCFCE7", color: "#15803D" },
+    CANCELLED:          { bg: "#F3F4F6", color: "#6B7280" },
+  };
+
   return (
     <div className="admin-container">
       {/* Admin Header */}
       <header className="header-bar">
-        <div className="header-title">📋 Orders Management</div>
-        <div style={{ display: "flex", gap: "8px" }}>
+        <div className="header-title" style={{ fontSize: "1.1rem" }}>Orders</div>
+        <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
           <button
             onClick={onNavigateDashboard}
-            style={{
-              background: "rgba(255,255,255,0.15)",
-              border: "none",
-              color: "white",
-              padding: "6px 12px",
-              borderRadius: "6px",
-              fontSize: "0.8rem",
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
+            title="Dashboard"
+            style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "white", padding: "6px 10px", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}
           >
-            Dashboard
-          </button>          <button
-            onClick={onNavigateMenuManage}
-            style={{
-              background: "rgba(255,255,255,0.15)",
-              border: "none",
-              color: "white",
-              padding: "6px 12px",
-              borderRadius: "6px",
-              fontSize: "0.8rem",
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            Menu
+            <LayoutDashboard size={15} /> Dashboard
           </button>
           <button
-            onClick={onLogout}
-            style={{
-              background: "rgba(239,68,68,0.3)",
-              border: "none",
-              color: "white",
-              padding: "6px 10px",
-              borderRadius: "6px",
-              fontSize: "0.8rem",
-              cursor: "pointer",
-            }}
+            onClick={onNavigateMenuManage}
+            title="Manage Menu"
+            style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "white", padding: "6px 10px", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}
           >
-            Logout
+            <Utensils size={15} /> Menu
+          </button>
+          {onNavigateSettings && (
+            <button
+              onClick={onNavigateSettings}
+              title="Settings"
+              style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "white", padding: "6px 10px", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}
+            >
+              <Settings size={15} />
+            </button>
+          )}
+          <AdminNotificationBell onClick={() => setPanelOpen(true)} />
+          <button
+            onClick={onLogout}
+            title="Logout"
+            style={{ background: "rgba(239,68,68,0.3)", border: "none", color: "white", padding: "6px 10px", borderRadius: "6px", fontSize: "0.8rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}
+          >
+            <LogOut size={15} />
           </button>
         </div>
       </header>
@@ -126,155 +168,108 @@ export const AdminOrdersPage: React.FC<AdminOrdersPageProps> = ({
       {/* Main Content */}
       <div style={{ padding: "20px" }}>
         {/* Status Tabs */}
-        <div
-          style={{
-            display: "flex",
-            gap: "8px",
-            background: "#F3F4F6",
-            padding: "4px",
-            borderRadius: "12px",
-            marginBottom: "20px",
-          }}
-        >
-          <button
-            onClick={() => setActiveTab("NEW")}
-            style={{
-              flex: 1,
-              padding: "10px",
-              borderRadius: "8px",
-              border: "none",
-              background: activeTab === "NEW" ? "#FFFFFF" : "transparent",
-              color: activeTab === "NEW" ? "#1E4D36" : "#6B7280",
-              fontWeight: 700,
-              fontSize: "0.85rem",
-              cursor: "pointer",
-              boxShadow: activeTab === "NEW" ? "0 2px 4px rgba(0,0,0,0.05)" : "none",
-            }}
-          >
-            New ({countNew})
-          </button>
-          <button
-            onClick={() => setActiveTab("PREPARING")}
-            style={{
-              flex: 1,
-              padding: "10px",
-              borderRadius: "8px",
-              border: "none",
-              background: activeTab === "PREPARING" ? "#FFFFFF" : "transparent",
-              color: activeTab === "PREPARING" ? "#1E4D36" : "#6B7280",
-              fontWeight: 700,
-              fontSize: "0.85rem",
-              cursor: "pointer",
-              boxShadow: activeTab === "PREPARING" ? "0 2px 4px rgba(0,0,0,0.05)" : "none",
-            }}
-          >
-            Preparing ({countPreparing})
-          </button>
-          <button
-            onClick={() => setActiveTab("OUT_FOR_DELIVERY")}
-            style={{
-              flex: 1,
-              padding: "10px",
-              borderRadius: "8px",
-              border: "none",
-              background: activeTab === "OUT_FOR_DELIVERY" ? "#FFFFFF" : "transparent",
-              color: activeTab === "OUT_FOR_DELIVERY" ? "#1E4D36" : "#6B7280",
-              fontWeight: 700,
-              fontSize: "0.85rem",
-              cursor: "pointer",
-              boxShadow: activeTab === "OUT_FOR_DELIVERY" ? "0 2px 4px rgba(0,0,0,0.05)" : "none",
-            }}
-          >
-            Out ({countOut})
-          </button>
+        <div style={{ display: "flex", gap: "8px", background: "#F3F4F6", padding: "4px", borderRadius: "12px", marginBottom: "20px" }}>
+          {[
+            { key: "NEW", label: "New", count: countNew },
+            { key: "PREPARING", label: "Preparing", count: countPreparing },
+            { key: "OUT_FOR_DELIVERY", label: "Out", count: countOut },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key as any)}
+              style={{
+                flex: 1, padding: "10px", borderRadius: "8px", border: "none",
+                background: activeTab === tab.key ? "#FFFFFF" : "transparent",
+                color: activeTab === tab.key ? "#1E4D36" : "#6B7280",
+                fontWeight: 700, fontSize: "0.85rem", cursor: "pointer",
+                boxShadow: activeTab === tab.key ? "0 2px 4px rgba(0,0,0,0.05)" : "none",
+                transition: "all 0.15s",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
+              }}
+            >
+              {tab.label}
+              {tab.count > 0 && (
+                <span style={{ background: activeTab === tab.key ? "#1E4D36" : "#D1D5DB", color: activeTab === tab.key ? "white" : "#6B7280", borderRadius: "999px", fontSize: "0.72rem", fontWeight: 800, padding: "1px 6px" }}>
+                  {tab.count}
+                </span>
+              )}
+            </button>
+          ))}
         </div>
 
         {/* Orders Cards List */}
         {loading ? (
-          <div style={{ textAlign: "center", padding: "40px 0", color: "#6B7280" }}>
-            Loading incoming orders...
-          </div>
+          <div style={{ textAlign: "center", padding: "40px 0", color: "#6B7280" }}>Loading incoming orders...</div>
         ) : filteredOrders.length === 0 ? (
           <div style={{ textAlign: "center", padding: "40px 0", color: "#6B7280" }}>
+            <div style={{ fontSize: "2rem", marginBottom: "8px" }}>📭</div>
             No orders in this status right now.
           </div>
         ) : (
-          <div className="admin-orders-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "16px" }}>
-            {filteredOrders.map((ord) => (
-              <div
-                key={ord.id}
-                onClick={() => onSelectOrder(ord)}
-                className="card"
-                style={{ cursor: "pointer", position: "relative" }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
-                  <div>
-                    <span style={{ fontWeight: 800, fontSize: "1.05rem", color: "#1E4D36" }}>
-                      #{ord.orderNumber}
-                    </span>
-                    <span style={{ fontSize: "0.75rem", color: "#6B7280", marginLeft: "8px" }}>
-                      {new Date(ord.orderedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "16px" }}>
+            {filteredOrders.map((ord) => {
+              const badge = STATUS_BADGE_COLORS[ord.status] ?? STATUS_BADGE_COLORS["NEW"];
+              return (
+                <div
+                  key={ord.id}
+                  onClick={() => onSelectOrder(ord)}
+                  className="card"
+                  style={{ cursor: "pointer", position: "relative", transition: "all 0.18s" }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px", alignItems: "flex-start" }}>
+                    <div>
+                      <span style={{ fontWeight: 800, fontSize: "1.05rem", color: "#1E4D36" }}>#{ord.orderNumber}</span>
+                      <span style={{ fontSize: "0.75rem", color: "#6B7280", marginLeft: "8px" }}>
+                        {new Date(ord.orderedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    </div>
+                    <span style={{ background: badge.bg, color: badge.color, borderRadius: "8px", padding: "3px 10px", fontWeight: 700, fontSize: "0.73rem" }}>
+                      {ord.status.replace(/_/g, " ")}
                     </span>
                   </div>
-                  <span
-                    className={`badge ${
-                      ord.status === "NEW"
-                        ? "badge-new"
-                        : ord.status === "PREPARING"
-                        ? "badge-preparing"
-                        : ord.status === "OUT_FOR_DELIVERY"
-                        ? "badge-out"
-                        : "badge-delivered"
-                    }`}
-                  >
-                    {ord.status}
-                  </span>
-                </div>
 
-                <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1F2937" }}>
-                  {ord.customer?.firstName} ({ord.customer?.phone})
-                </div>
+                  <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1F2937" }}>
+                    {ord.customer?.firstName} ({ord.customer?.phone})
+                  </div>
 
-                <div style={{ fontSize: "0.85rem", color: "#4B5563", marginTop: "4px" }}>
-                  {ord.orderItems?.map((it: any) => `${it.quantity}x ${it.name}`).join(", ")}
-                </div>
+                  <div style={{ fontSize: "0.85rem", color: "#4B5563", marginTop: "4px" }}>
+                    {ord.orderItems?.map((it: any) => `${it.quantity}× ${it.name}`).join(", ")}
+                  </div>
 
-                <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.8rem", color: "#6B7280", marginTop: "8px" }}>
-                  📍 <span>{ord.marketSection} — {ord.locationDescription}</span>
-                </div>
+                  <div style={{ fontSize: "0.8rem", color: "#6B7280", marginTop: "6px", display: "flex", alignItems: "center", gap: "4px" }}>
+                    📍 {ord.marketSection} — {ord.locationDescription}
+                  </div>
 
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "12px", paddingTop: "8px", borderTop: "1px solid #F3F4F6" }}>
-                  <span style={{ fontWeight: 800, fontSize: "1rem", color: "#1F2937" }}>
-                    Total: KSh {ord.totalAmount}
-                  </span>
-
-                  <div style={{ display: "flex", gap: "8px" }}>
-                    {ord.status === "NEW" && (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "12px", paddingTop: "8px", borderTop: "1px solid #F3F4F6" }}>
+                    <span style={{ fontWeight: 800, fontSize: "1rem", color: "#1F2937" }}>KSh {ord.totalAmount}</span>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      {ord.status === "NEW" && (
+                        <button
+                          onClick={(e) => handleAcceptOrder(ord.id, e)}
+                          className="btn btn-primary"
+                          style={{ padding: "6px 14px", fontSize: "0.85rem" }}
+                        >
+                          Accept
+                        </button>
+                      )}
                       <button
-                        onClick={(e) => handleAcceptOrder(ord.id, e)}
-                        className="btn btn-primary"
+                        onClick={(e) => { e.stopPropagation(); onSelectOrder(ord); }}
+                        className="btn btn-secondary"
                         style={{ padding: "6px 14px", fontSize: "0.85rem" }}
                       >
-                        Accept
+                        View
                       </button>
-                    )}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelectOrder(ord);
-                      }}
-                      className="btn btn-secondary"
-                      style={{ padding: "6px 14px", fontSize: "0.85rem" }}
-                    >
-                      View Details
-                    </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
+
+      {/* Notification Panel */}
+      <AdminNotificationPanel isOpen={panelOpen} onClose={() => setPanelOpen(false)} />
     </div>
   );
 };

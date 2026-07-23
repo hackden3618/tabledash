@@ -10,15 +10,13 @@ import { apiPost } from "../../lib/api";
 
 interface AdminLoginPageProps {
   onLoginSuccess: (token: string) => void;
-  onBackToCustomer: () => void;
 }
 
 export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
   onLoginSuccess,
-  onBackToCustomer,
 }) => {
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("adminpass");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -44,7 +42,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
         <div style={{ textAlign: "center", marginBottom: "24px" }}>
           <span style={{ fontSize: "3rem" }}>🔑</span>
           <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#1E4D36", marginTop: "8px" }}>
-            Mama's Hotel Admin
+            Wambu's Corner Hotel Admin
           </h1>
           <p style={{ fontSize: "0.875rem", color: "#6B7280" }}>Sign in to manage orders & menu</p>
         </div>
@@ -84,10 +82,6 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
 
           <button type="submit" disabled={loading} className="btn btn-primary">
             {loading ? "Signing in..." : "Sign In"}
-          </button>
-
-          <button type="button" onClick={onBackToCustomer} className="btn btn-secondary">
-            Back to Customer View
           </button>
         </form>
       </div>

@@ -31,6 +31,7 @@ export interface ProductData {
   imageUrl: string;
   price: number;
   available: boolean;
+  stockQty: number;
   createdAt: string;
 }
 
@@ -73,9 +74,22 @@ export interface DashboardMetrics {
 export type WsEventType =
   | "ORDER_CREATED"
   | "ORDER_STATUS_UPDATED"
-  | "MENU_AVAILABILITY_UPDATED";
+  | "MENU_AVAILABILITY_UPDATED"
+  | "ORDER_BOUNCED";   // Fired when an order fails at placement (e.g. stock shortage); urgent flag for admins.
 
 export interface WsMessage<T = unknown> {
   type: WsEventType;
   payload: T;
+}
+
+/** Logged-in customer profile returned from /customers/me */
+export interface CustomerProfileData {
+  id: string;
+  firstName: string;
+  lastName?: string | null;
+  phone: string;
+  marketSection?: string | null;
+  locationDescription?: string | null;
+  hasPin: boolean;       // true when a pinHash exists (i.e. the customer has an account)
+  recentOrders?: OrderData[];
 }

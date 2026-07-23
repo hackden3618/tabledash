@@ -5,10 +5,12 @@
  * When to modify: When adding new location fields or changing order submission payload format.
  */
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useCart } from "../../context/CartContext";
+import { useCustomerAuth } from "../../context/CustomerAuthContext";
 import { apiPost } from "../../lib/api";
 import { MarketMapModal } from "./MarketMapModal";
+import { Modal } from "../../components/Modal";
 
 interface LocationPageProps {
   onBackToCart: () => void;
@@ -17,24 +19,58 @@ interface LocationPageProps {
 
 export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrderPlaced }) => {
   const { cart, totalAmount, clearCart } = useCart();
+  const { customer, isLoggedIn } = useCustomerAuth();
 
-  const [marketSection, setMarketSection] = useState("Food Section");
-  const [locationDescription, setLocationDescription] = useState("Near the butcher");
-  const [customerName, setCustomerName] = useState("");
-  const [phone, setPhone] = useState("");
+  const [marketSection, setMarketSection] = useState(isLoggedIn && customer?.marketSection ? customer.marketSection : "");
+  const [locationDescription, setLocationDescription] = useState(isLoggedIn && customer?.locationDescription ? customer.locationDescription : "");
+  const [customerName, setCustomerName] = useState(isLoggedIn && customer?.firstName ? customer.firstName : "");
+  const [phone, setPhone] = useState(isLoggedIn && customer?.phone ? customer.phone : "");
   const [showMapModal, setShowMapModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
+
+  // Modal State
+  const [modalConfig, setModalConfig] = useState<{
+    isOpen: boolean;
+    type?: "info" | "warning" | "danger" | "success" | "confirm";
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+  });
+
+  // Re-sync if the customer profile loads after this component mounts
+  useEffect(() => {
+    if (isLoggedIn && customer) {
+      if (!customerName && customer.firstName) setCustomerName(customer.firstName);
+      if (!phone && customer.phone) setPhone(customer.phone);
+      if (!marketSection && customer.marketSection) setMarketSection(customer.marketSection);
+      if (!locationDescription && customer.locationDescription) setLocationDescription(customer.locationDescription);
+    }
+  }, [isLoggedIn, customer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePlaceOrder = async () => {
-    setErrorMessage("");
-
     if (!customerName.trim()) {
-      setErrorMessage("Please enter your name.");
+      setModalConfig({
+        isOpen: true,
+        type: "warning",
+        title: "Missing Information",
+        message: "Please enter your name before placing the order.",
+        onConfirm: () => setModalConfig((prev) => ({ ...prev, isOpen: false })),
+      });
       return;
     }
     if (!phone.trim() || phone.length < 9) {
-      setErrorMessage("Please enter a valid phone number (e.g. 0712345678).");
+      setModalConfig({
+        isOpen: true,
+        type: "warning",
+        title: "Invalid Phone Number",
+        message: "Please enter a valid phone number (e.g. 0712345678).",
+        onConfirm: () => setModalConfig((prev) => ({ ...prev, isOpen: false })),
+      });
       return;
     }
 
@@ -58,7 +94,13 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
       clearCart();
       onOrderPlaced(res.data);
     } else {
-      setErrorMessage(res.error || "Failed to place order. Please try again.");
+      setModalConfig({
+        isOpen: true,
+        type: "danger",
+        title: "Order Failed",
+        message: res.error || "Failed to place order. Please try again.",
+        onConfirm: () => setModalConfig((prev) => ({ ...prev, isOpen: false })),
+      });
     }
   };
 
@@ -85,6 +127,13 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
 
       {/* Main Content */}
       <div style={{ padding: "20px" }}>
+        {/* Logged-in pre-fill banner */}
+        {isLoggedIn && customer && (
+          <div style={{ background: "#DCFCE7", border: "1px solid #BBF7D0", borderRadius: "10px", padding: "10px 14px", marginBottom: "16px", fontSize: "0.85rem", color: "#15803D", fontWeight: 600, display: "flex", alignItems: "center", gap: "8px" }}>
+            ✓ Delivery details pre-filled from your saved account — {customer.firstName}
+          </div>
+        )}
+
         <h2 style={{ fontSize: "1.1rem", fontWeight: 700, color: "#1F2937", marginBottom: "16px" }}>
           How would you like to set your location?
         </h2>
@@ -161,21 +210,6 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
             />
           </div>
 
-          {errorMessage && (
-            <div
-              style={{
-                padding: "12px",
-                borderRadius: "8px",
-                background: "#FEE2E2",
-                color: "#DC2626",
-                fontSize: "0.875rem",
-                fontWeight: 600,
-              }}
-            >
-              {errorMessage}
-            </div>
-          )}
-
           {/* Total & Submit Button */}
           <div style={{ marginTop: "12px" }}>
             <div style={{ fontSize: "0.9rem", color: "#6B7280", marginBottom: "8px" }}>
@@ -205,6 +239,15 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
           onClose={() => setShowMapModal(false)}
         />
       )}
+
+      {/* Reusable Modal Dialog */}
+      <Modal
+        isOpen={modalConfig.isOpen}
+        type={modalConfig.type}
+        title={modalConfig.title}
+        message={modalConfig.message}
+        onConfirm={modalConfig.onConfirm}
+      />
     </div>
   );
 };

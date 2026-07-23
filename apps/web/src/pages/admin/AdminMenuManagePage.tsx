@@ -6,7 +6,9 @@
  */
 
 import React, { useEffect, useState } from "react";
-import { apiGet, apiPatch, apiPost } from "../../lib/api";
+import { apiDelete, apiGet, apiPatch, apiPost } from "../../lib/api";
+import { ArrowLeft, Plus, Trash2, Utensils } from "lucide-react";
+import { Modal } from "../../components/Modal";
 
 interface AdminMenuManagePageProps {
   token: string;
@@ -20,13 +22,32 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Modal State
+  const [modalConfig, setModalConfig] = useState<{
+    isOpen: boolean;
+    type?: "info" | "warning" | "danger" | "success" | "confirm";
+    title: string;
+    message: string;
+    confirmText?: string;
+    onConfirm: () => void;
+    onCancel?: () => void;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+  });
+
   // New Product Form State
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
   const [imageUrl, setImageUrl] = useState("");
   const [category, setCategory] = useState("Meals");
+  const [stockQty, setStockQty] = useState("10");
   const [showAddForm, setShowAddForm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Per-product inline stock editing state
+  const [editingStock, setEditingStock] = useState<Record<string, string>>({});
 
   const fetchMenu = async () => {
     setLoading(true);
@@ -49,6 +70,33 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
     }
   };
 
+  const handleDeleteProduct = (productId: string, productName: string) => {
+    setModalConfig({
+      isOpen: true,
+      type: "danger",
+      title: "Delete Item",
+      message: `Are you sure you want to permanently delete "${productName}"?`,
+      confirmText: "Delete",
+      onCancel: () => setModalConfig((prev) => ({ ...prev, isOpen: false })),
+      onConfirm: async () => {
+        setModalConfig((prev) => ({ ...prev, isOpen: false }));
+        const res = await apiDelete<any>(`/menu/${productId}`, token);
+        if (res.success) {
+          setProducts((prev) => prev.filter((p) => p.id !== productId));
+        } else {
+          setModalConfig({
+            isOpen: true,
+            type: "danger",
+            title: "Delete Failed",
+            message: res.error || "Failed to delete product.",
+            confirmText: "Close",
+            onConfirm: () => setModalConfig((prev) => ({ ...prev, isOpen: false })),
+          });
+        }
+      },
+    });
+  };
+
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !price || !imageUrl) return;
@@ -62,6 +110,7 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
         imageUrl,
         category,
         available: true,
+        stockQty: Number(stockQty) || 0,
       },
       token
     );
@@ -72,7 +121,26 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
       setName("");
       setPrice("");
       setImageUrl("");
+      setStockQty("10");
       setShowAddForm(false);
+    } else {
+      setModalConfig({
+        isOpen: true,
+        type: "danger",
+        title: "Add Product Failed",
+        message: res.error || "Failed to create menu item. Please check fields and try again.",
+        confirmText: "OK",
+        onConfirm: () => setModalConfig((prev) => ({ ...prev, isOpen: false })),
+      });
+    }
+  };
+
+  const handleSetStock = async (productId: string, value: string) => {
+    const qty = parseInt(value, 10);
+    if (isNaN(qty) || qty < 0) return;
+    const res = await apiPatch<any>(`/menu/${productId}/stock`, { stockQty: qty }, token);
+    if (res.success && res.data) {
+      setProducts((prev) => prev.map((p) => (p.id === productId ? res.data : p)));
     }
   };
 
@@ -87,13 +155,16 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
               background: "none",
               border: "none",
               color: "white",
-              fontSize: "1.2rem",
+              display: "flex",
+              alignItems: "center",
               cursor: "pointer",
             }}
           >
-            ←
+            <ArrowLeft size={20} />
           </button>
-          <div className="header-title">🍲 Manage Menu Catalog</div>
+          <div className="header-title" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <Utensils size={20} /> Wambu's Corner Hotel Catalog
+          </div>
         </div>
         <button
           onClick={() => setShowAddForm(!showAddForm)}
@@ -105,9 +176,12 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
             borderRadius: "6px",
             fontWeight: 700,
             cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "4px",
           }}
         >
-          {showAddForm ? "Close" : "+ Add Item"}
+          {showAddForm ? "Close" : <><Plus size={16} /> Add Item</>}
         </button>
       </header>
 
@@ -153,6 +227,19 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
                 className="input-field"
                 required
               />
+              <div>
+                <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#374151", marginBottom: "4px" }}>
+                  Starting Stock (portions)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="e.g. 20"
+                  value={stockQty}
+                  onChange={(e) => setStockQty(e.target.value)}
+                  className="input-field"
+                />
+              </div>
               <button type="submit" disabled={isSubmitting} className="btn btn-primary">
                 {isSubmitting ? "Adding..." : "Save Product"}
               </button>
@@ -187,25 +274,51 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
                   </div>
                 </div>
 
-                <button
-                  onClick={() => handleToggleAvailability(item.id, item.available)}
-                  style={{
-                    padding: "8px 14px",
-                    borderRadius: "8px",
-                    border: "none",
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    background: item.available ? "#DCFCE7" : "#FEE2E2",
-                    color: item.available ? "#15803D" : "#DC2626",
-                  }}
-                >
-                  {item.available ? "Available" : "Sold Out"}
-                </button>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  {/* Inline stock editor */}
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
+                    <label style={{ fontSize: "0.68rem", color: "#6B7280", fontWeight: 600 }}>Stock</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editingStock[item.id] ?? item.stockQty ?? 0}
+                      onChange={(e) => setEditingStock((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                      onBlur={(e) => handleSetStock(item.id, e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleSetStock(item.id, (e.target as HTMLInputElement).value); }}
+                      style={{ width: "56px", textAlign: "center", padding: "6px 4px", borderRadius: "6px", border: "1.5px solid #D1D5DB", fontSize: "0.9rem", fontWeight: 700 }}
+                    />
+                  </div>
+
+                  <button
+                    onClick={() => handleToggleAvailability(item.id, item.available)}
+                    style={{ padding: "8px 12px", borderRadius: "8px", border: "none", fontWeight: 700, cursor: "pointer", fontSize: "0.8rem", background: item.available ? "#DCFCE7" : "#FEE2E2", color: item.available ? "#15803D" : "#DC2626" }}
+                  >
+                    {item.available ? "Available" : "Off"}
+                  </button>
+
+                  <button
+                    onClick={() => handleDeleteProduct(item.id, item.name)}
+                    title="Delete product"
+                    style={{ padding: "8px", borderRadius: "8px", border: "none", background: "#FEE2E2", color: "#DC2626", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      <Modal
+        isOpen={modalConfig.isOpen}
+        type={modalConfig.type}
+        title={modalConfig.title}
+        message={modalConfig.message}
+        confirmText={modalConfig.confirmText}
+        onConfirm={modalConfig.onConfirm}
+        onCancel={modalConfig.onCancel}
+      />
     </div>
   );
 };
