@@ -1,0 +1,90 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+    provider = "prisma-client"
+    output   = "../generated/prisma"
+}
+
+datasource db {
+    provider = "postgresql"
+}
+
+/**
+ * ========================
+ * ENUMS
+ * ========================
+ */
+
+enum EventName {
+    order_created
+}
+
+enum EventStatus {
+    initialized
+    pending
+    done
+}
+
+model Customer {
+    id        String  @id @default(uuid()) @db.Uuid
+    firstName String  @map("first_name")
+    lastName  String? @map("last_name")
+    knownName String  @map("known_name")
+    phone     String
+    location  String
+
+    orders Order[]
+
+    @@unique([firstName, knownName, phone])
+    @@map("customers")
+}
+
+model Product {
+    id        String  @id @default(uuid()) @db.Uuid
+    name      String
+    imageUrl  String  @map("image_url")
+    price     Decimal
+    available Boolean @default(false)
+
+    orderItems OrderItem[]
+
+    @@map("products")
+}
+
+model Order {
+    id          String   @id @default(uuid()) @db.Uuid
+    customerId  String   @map("customer_id") @db.Uuid
+    orderedAt   DateTime @default(now()) @map("ordered_at") @db.Timestamptz()
+    completedAt DateTime @map("completed_at") @db.Timestamptz()
+    completed   Boolean  @default(false)
+
+    customer   Customer    @relation(fields: [customerId], references: [id])
+    orderItems OrderItem[]
+
+    @@map("orders")
+}
+
+model OrderItem {
+    id        String @id @default(uuid()) @db.Uuid
+    orderId   String @db.Uuid
+    productId String @map("product_id") @db.Uuid
+    name      String
+
+    product Product @relation(fields: [productId], references: [id])
+    order   Order   @relation(fields: [orderId], references: [id])
+
+    @@map("order_items")
+}
+
+model EventOutbox {
+    id          String      @id @default(uuid()) @db.Uuid
+    eventName   EventName   @map("event_name")
+    status      EventStatus @default(initialized)
+    createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz()
+    completedAt DateTime    @map("completed_at") @db.Timestamptz()
+
+    @@map("event_outbox")
+}
