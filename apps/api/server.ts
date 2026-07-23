@@ -14,7 +14,6 @@ app.listen(port, () => {
   console.log(`\n==================================================`);
   console.log(`🚀 tableDash Backend API Server Running`);
   console.log(`🌐 Port: ${port}`);
-  console.log(`📚 Swagger OpenAPI: /swagger`);
   console.log(`⚡ WebSocket: /ws`);
   console.log(`==================================================\n`);
 });

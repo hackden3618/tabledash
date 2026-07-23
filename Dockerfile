@@ -3,10 +3,11 @@ WORKDIR /app
 
 # ── frontend build ─────────────────────────────────────────────
 FROM base AS frontend
-COPY apps/web/package.json apps/web/bun.lock ./apps/web/
-COPY apps/web/ ./apps/web/
-RUN bun install --cwd apps/web --frozen-lockfile
-RUN bun run --cwd apps/web build
+WORKDIR /app/apps/web
+COPY apps/web/package.json apps/web/bun.lock ./
+RUN bun install --frozen-lockfile
+COPY apps/web/ ./
+RUN bun run build
 
 # ── backend ────────────────────────────────────────────────────
 FROM base AS backend
