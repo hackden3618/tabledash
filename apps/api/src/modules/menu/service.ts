@@ -9,6 +9,7 @@
 
 import { prisma } from "../../../../../infrastructure/database/prisma";
 import { wsHub } from "../websocket/hub";
+import { getDefaultHotel } from "../hotels/service";
 
 export interface CreateProductInput {
   name: string;
@@ -21,10 +22,14 @@ export interface CreateProductInput {
 
 /**
  * Retrieves all active (non-deleted) menu items ordered oldest-first.
+ * Formats Decimal fields and includes freshness timestamps.
  */
 export const getAllMenuItems = async () => {
+  const hotel = await getDefaultHotel();
+  const where: any = { deleted: false };
+  if (hotel) where.hotelId = hotel.id;
   const products = await prisma.product.findMany({
-    where: { deleted: false },
+    where,
     orderBy: { createdAt: "asc" },
   });
 
@@ -37,10 +42,12 @@ export const getAllMenuItems = async () => {
 /**
  * Creates a new menu item with an initial stock quantity.
  * Automatically marks item unavailable if initial stockQty is <= 0.
+ * Sets lastRestockedAt to track the initial stock entry.
  */
 export const createMenuItem = async (input: CreateProductInput) => {
   const stock = input.stockQty ?? 0;
   const isAvailable = input.available !== undefined ? input.available : stock > 0;
+  const hotel = await getDefaultHotel();
 
   const product = await prisma.product.create({
     data: {
@@ -50,7 +57,9 @@ export const createMenuItem = async (input: CreateProductInput) => {
       price: input.price,
       available: isAvailable,
       stockQty: stock,
+      lastRestockedAt: stock > 0 ? new Date() : null,
       deleted: false,
+      hotelId: hotel?.id,
     },
   });
 
@@ -62,7 +71,7 @@ export const createMenuItem = async (input: CreateProductInput) => {
 
 /**
  * Toggles product availability and broadcasts update via WebSockets to all connected clients.
- * WHY: Menu availability is broadcast immediately so every customer sees stock changes without refreshing.
+ * DOES NOT touch freshness timestamps — toggling availability is not a stock event.
  */
 export const updateProductAvailability = async (id: string, available: boolean) => {
   const product = await prisma.product.update({
@@ -86,19 +95,30 @@ export const updateProductAvailability = async (id: string, available: boolean) 
 /**
  * Updates the available stock quantity for a product.
  * Admin uses this to set how many portions are available for the day.
- * AUTOMATION: If stockQty <= 0, automatically sets available = false.
- *   If stockQty > 0, automatically sets available = true.
+ * AUTOMATION: If stockQty <= 0, automatically sets available = false and records outOfStockSince.
+ *   If stockQty > 0, automatically sets available = true, clears outOfStockSince, records lastRestockedAt.
  * WHY: Broadcasts immediately so all customer screens reflect the new count in real time.
  */
 export const updateProductStock = async (id: string, stockQty: number) => {
-  const isAvailable = stockQty > 0;
+  const existing = await prisma.product.findUnique({ where: { id } });
+  const wasOutOfStock = existing ? existing.stockQty <= 0 : false;
+  const isInStock = stockQty > 0;
+
+  const updateData: any = {
+    stockQty,
+    available: isInStock,
+  };
+
+  if (isInStock && wasOutOfStock) {
+    updateData.outOfStockSince = null;
+    updateData.lastRestockedAt = new Date();
+  } else if (!isInStock) {
+    updateData.outOfStockSince = existing?.outOfStockSince ?? new Date();
+  }
 
   const product = await prisma.product.update({
     where: { id },
-    data: {
-      stockQty,
-      available: isAvailable,
-    },
+    data: updateData,
   });
 
   const formattedProduct = {

@@ -12,8 +12,14 @@ import { apiPost } from "../../lib/api";
 import { MarketMapModal } from "./MarketMapModal";
 import { Modal } from "../../components/Modal";
 
-const cleanPhone = (raw: string): string => raw.replace(/[^\d+]/g, "");
-const isValidPhone = (v: string): boolean => /^\+?\d{10,13}$/.test(v);
+const formatPhone = (raw: string): string => {
+  const cleaned = raw.replace(/\D/g, "");
+  if (cleaned.startsWith("0") && cleaned.length === 10) return `254${cleaned.slice(1)}`;
+  if ((cleaned.startsWith("7") || cleaned.startsWith("1")) && cleaned.length === 9) return `254${cleaned}`;
+  if (cleaned.startsWith("254") && cleaned.length === 12) return cleaned;
+  return cleaned;
+};
+const isValidPhone = (v: string): boolean => /^254\d{9}$/.test(v);
 
 interface LocationPageProps {
   onBackToCart: () => void;
@@ -26,6 +32,7 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
 
   const [marketSection, setMarketSection] = useState(isLoggedIn && customer?.marketSection ? customer.marketSection : "");
   const [locationDescription, setLocationDescription] = useState(isLoggedIn && customer?.locationDescription ? customer.locationDescription : "");
+  const [stallNumber, setStallNumber] = useState(isLoggedIn && (customer as any)?.stallNumber ? (customer as any).stallNumber : "");
   const [customerName, setCustomerName] = useState(isLoggedIn && customer?.firstName ? customer.firstName : "");
   const [phone, setPhone] = useState(isLoggedIn && customer?.phone ? customer.phone : "");
   const [showMapModal, setShowMapModal] = useState(false);
@@ -37,7 +44,10 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
     type?: "info" | "warning" | "danger" | "success" | "confirm";
     title: string;
     message: string;
+    confirmText?: string;
+    cancelText?: string;
     onConfirm: () => void;
+    onCancel?: () => void;
   }>({
     isOpen: false,
     title: "",
@@ -55,7 +65,37 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
     }
   }, [isLoggedIn, customer]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handlePlaceOrder = async () => {
+  // Persist guest delivery details to localStorage so they survive app restarts
+  useEffect(() => {
+    if (!isLoggedIn && (customerName || phone || stallNumber || locationDescription || marketSection)) {
+      localStorage.setItem(
+        "tableDash_guest_delivery",
+        JSON.stringify({ customerName, phone, stallNumber, marketSection, locationDescription })
+      );
+    }
+  }, [customerName, phone, stallNumber, marketSection, locationDescription, isLoggedIn]);
+
+  // Restore guest delivery details from localStorage on mount
+  useEffect(() => {
+    if (!isLoggedIn) {
+      try {
+        const saved = localStorage.getItem("tableDash_guest_delivery");
+        if (saved) {
+          const d = JSON.parse(saved);
+          if (d.customerName) setCustomerName(d.customerName);
+          if (d.phone) setPhone(d.phone);
+          if (d.stallNumber) setStallNumber(d.stallNumber);
+          if (d.marketSection) setMarketSection(d.marketSection);
+          if (d.locationDescription) setLocationDescription(d.locationDescription);
+        }
+      } catch {
+        // ignore corrupt data
+      }
+    }
+    // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handlePlaceOrder = () => {
     if (!customerName.trim()) {
       setModalConfig({
         isOpen: true,
@@ -77,11 +117,29 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
       return;
     }
 
+    // Show confirmation modal before submitting
+    setModalConfig({
+      isOpen: true,
+      type: "confirm",
+      title: "Confirm Order",
+      message: `By placing this order, your selected meals will be prepared and dispatched to your location. Total: KSh ${totalAmount}. Do you wish to proceed?`,
+      confirmText: "Yes, Place Order",
+      cancelText: "Cancel",
+      onConfirm: async () => {
+        setModalConfig((prev) => ({ ...prev, isOpen: false }));
+        await submitOrder();
+      },
+      onCancel: () => setModalConfig((prev) => ({ ...prev, isOpen: false })),
+    });
+  };
+
+  const submitOrder = async () => {
     setIsSubmitting(true);
 
     const payload = {
       customerName: customerName.trim(),
       phone: phone.trim(),
+      stallNumber: stallNumber.trim() || undefined,
       marketSection: marketSection,
       locationDescription: locationDescription,
       items: cart.map((item) => ({
@@ -141,30 +199,39 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
           How would you like to set your location?
         </h2>
 
-        {/* Option 1: Select on Market Map */}
+        {/* Option 1: Select on Market Map — coming soon */}
         <div
-          onClick={() => setShowMapModal(true)}
+          onClick={() => {
+            setModalConfig({
+              isOpen: true,
+              type: "info",
+              title: "Coming Soon",
+              message: "Market mapping is coming soon! For now, please enter your stall number and location description below.",
+              onConfirm: () => setModalConfig((prev) => ({ ...prev, isOpen: false })),
+            });
+          }}
           style={{
-            border: "1.5px solid #1E4D36",
+            border: "1.5px dashed #D1D5DB",
             borderRadius: "14px",
             padding: "16px",
-            background: "#EBF4F0",
+            background: "#F9FAFB",
             cursor: "pointer",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
+            opacity: 0.7,
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             <span style={{ fontSize: "1.5rem" }}>📍</span>
             <div>
-              <div style={{ fontWeight: 700, color: "#1E4D36" }}>Select on Market Map</div>
-              <div style={{ fontSize: "0.85rem", color: "#4B5563" }}>
-                {marketSection} — {locationDescription || "Tap to select on map"}
+              <div style={{ fontWeight: 700, color: "#6B7280" }}>Market Map (Coming Soon)</div>
+              <div style={{ fontSize: "0.85rem", color: "#9CA3AF" }}>
+                Tap to learn more
               </div>
             </div>
           </div>
-          <span style={{ fontSize: "1.2rem", color: "#1E4D36" }}>›</span>
+          <span style={{ fontSize: "1.2rem", color: "#9CA3AF" }}>›</span>
         </div>
 
         <div style={{ textAlign: "center", margin: "20px 0", color: "#9CA3AF", fontWeight: 600, fontSize: "0.85rem" }}>
@@ -182,8 +249,11 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
               placeholder="e.g. Mary Wanjiku"
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
-              className="input-field"
+              className={`input-field ${!customerName.trim() && isSubmitting ? "input-error input-shake" : ""}`}
             />
+            {!customerName.trim() && isSubmitting && (
+              <div className="input-error-msg">⚠ Please enter your name</div>
+            )}
           </div>
 
           <div>
@@ -194,9 +264,25 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
               type="tel"
               placeholder="07XXXXXXXX"
               value={phone}
-              onChange={(e) => setPhone(cleanPhone(e.target.value))}
-              className="input-field"
+              onChange={(e) => setPhone(formatPhone(e.target.value))}
+              className={`input-field ${!isValidPhone(phone.trim()) && isSubmitting ? "input-error input-shake" : ""}`}
               maxLength={14}
+            />
+            {!isValidPhone(phone.trim()) && isSubmitting && (
+              <div className="input-error-msg">⚠ Please enter a valid Kenyan phone number</div>
+            )}
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, color: "#374151", marginBottom: "6px" }}>
+              Stall Number / Shop Name
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. Stall 42 — check the number painted on the wall or post near you"
+              value={stallNumber}
+              onChange={(e) => setStallNumber(e.target.value)}
+              className="input-field"
             />
           </div>
 
@@ -222,7 +308,7 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
 
             <button
               onClick={handlePlaceOrder}
-              disabled={isSubmitting || !isValidPhone(phone.trim())}
+              disabled={isSubmitting || !customerName.trim() || !isValidPhone(phone.trim()) || (!marketSection && !locationDescription.trim() && !stallNumber.trim())}
               className="btn btn-primary"
             >
               {isSubmitting ? "Placing Order..." : "Place Order"}
@@ -250,7 +336,10 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
         type={modalConfig.type}
         title={modalConfig.title}
         message={modalConfig.message}
+        confirmText={modalConfig.confirmText}
+        cancelText={modalConfig.cancelText}
         onConfirm={modalConfig.onConfirm}
+        onCancel={modalConfig.onCancel}
       />
     </div>
   );

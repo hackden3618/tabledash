@@ -6,10 +6,12 @@
  */
 
 import { prisma } from "../../../../../infrastructure/database/prisma";
-import type { DashboardMetrics, OrderStatus } from "../../../../../shared/types";
+import type { DashboardMetrics, OrderStatus, PaymentStatus } from "../../../../../shared/types";
 import { smsService } from "../notifications/sms.service";
+import { getDefaultHotel } from "../hotels/service";
 import { getHotelIsOpen, getSmsRecipients } from "../settings/service";
 import { wsHub } from "../websocket/hub";
+import { formatPhone } from "../../../../../shared/phone";
 
 export interface CreateOrderInputItem {
   productId: string;
@@ -19,6 +21,7 @@ export interface CreateOrderInputItem {
 export interface CreateOrderInput {
   customerName: string;
   phone: string;
+  stallNumber?: string;
   marketSection?: string;
   locationDescription?: string;
   items: CreateOrderInputItem[];
@@ -32,6 +35,14 @@ interface OrderItemDraft {
   subtotal: number;
 }
 
+const PENDING_STATUSES: OrderStatus[] = [
+  "NEW",
+  "ACCEPTED",
+  "PREPARING",
+  "READY_FOR_DELIVERY",
+  "OUT_FOR_DELIVERY",
+];
+
 /**
  * Places a new customer order transactionally.
  * WHY: Uses Prisma transaction to guarantee atomic execution of customer record updates, order creation, line-item pricing, and event log creation.
@@ -40,7 +51,8 @@ export const placeOrder = async (input: CreateOrderInput) => {
   // Check if hotel is open for orders
   const hotelStatus = await getHotelIsOpen();
   if (!hotelStatus.isOpen) {
-    throw new Error("Wambu's Corner Hotel is currently closed for new orders. Please check back later!");
+    const hotelName = (await getDefaultHotel())?.name ?? "TableDash Deliveries";
+    throw new Error(`${hotelName} is currently closed for new orders. Please check back later!`);
   }
   // Fetch requested products to calculate authoritative unit prices and totals
   const productIds = input.items.map((item) => item.productId);
@@ -59,7 +71,6 @@ export const placeOrder = async (input: CreateOrderInput) => {
       throw new Error(`Product with ID ${item.productId} not found`);
     }
     if (!product.available) {
-      // Broadcast bounced-order alert to admins
       wsHub.broadcastOrderBounced({
         type: "ORDER_BOUNCED",
         payload: {
@@ -73,7 +84,6 @@ export const placeOrder = async (input: CreateOrderInput) => {
       throw new Error(`"${product.name}" is currently unavailable`);
     }
     if (product.stockQty < item.quantity) {
-      // Broadcast bounced-order alert to admins with full stock context
       wsHub.broadcastOrderBounced({
         type: "ORDER_BOUNCED",
         payload: {
@@ -103,18 +113,21 @@ export const placeOrder = async (input: CreateOrderInput) => {
     });
   }
 
+  const formattedPhone = formatPhone(input.phone);
+  const hotel = await getDefaultHotel();
+
   // Execute database transaction
   const result = await prisma.$transaction(async (tx) => {
-    // Find or create customer based on phone number
     let customer = await tx.customer.findFirst({
-      where: { phone: input.phone },
+      where: { phone: formattedPhone },
     });
 
     if (!customer) {
       customer = await tx.customer.create({
         data: {
           firstName: input.customerName,
-          phone: input.phone,
+          phone: formattedPhone,
+          stallNumber: input.stallNumber,
           marketSection: input.marketSection,
           locationDescription: input.locationDescription,
         },
@@ -124,20 +137,22 @@ export const placeOrder = async (input: CreateOrderInput) => {
         where: { id: customer.id },
         data: {
           firstName: input.customerName,
+          stallNumber: input.stallNumber ?? customer.stallNumber,
           marketSection: input.marketSection ?? customer.marketSection,
           locationDescription: input.locationDescription ?? customer.locationDescription,
         },
       });
     }
 
-    // Create Order and associated line items
     const order = await tx.order.create({
       data: {
         customerId: customer.id,
         status: "NEW",
         totalAmount: totalAmount,
+        stallNumber: input.stallNumber,
         marketSection: input.marketSection,
         locationDescription: input.locationDescription,
+        hotelId: hotel?.id,
         orderItems: {
           create: orderItemData.map((item) => ({
             productId: item.productId,
@@ -154,7 +169,6 @@ export const placeOrder = async (input: CreateOrderInput) => {
       },
     });
 
-    // Atomically decrement stock for each ordered product & auto-trigger unavailable when stock reaches 0
     const updatedProducts: any[] = [];
     for (const item of orderItemData) {
       const updated = await tx.product.update({
@@ -165,7 +179,7 @@ export const placeOrder = async (input: CreateOrderInput) => {
       if (updated.stockQty <= 0) {
         const markedUnavailable = await tx.product.update({
           where: { id: item.productId },
-          data: { available: false, stockQty: Math.max(0, updated.stockQty) },
+          data: { available: false, stockQty: Math.max(0, updated.stockQty), outOfStockSince: new Date() },
         });
         updatedProducts.push(markedUnavailable);
       } else {
@@ -173,12 +187,31 @@ export const placeOrder = async (input: CreateOrderInput) => {
       }
     }
 
-    return { order, updatedProducts };
+    const itemsSummary = orderItemData.map((it) => `${it.quantity}x ${it.name}`).join(", ");
+    const outbox = await tx.eventOutbox.create({
+      data: {
+        eventName: "order_created",
+        payload: JSON.stringify({
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          customerName: input.customerName,
+          customerPhone: formattedPhone,
+          totalAmount: totalAmount,
+          itemsSummary,
+          marketSection: input.marketSection,
+          locationDescription: input.locationDescription,
+          hotelId: hotel?.id,
+          hotelName: hotel?.name,
+        }),
+        status: "initialized",
+      },
+    });
+
+    return { order, updatedProducts, outboxId: outbox.id };
   });
 
   const formattedOrder = formatOrderResponse(result.order);
 
-  // Broadcast menu availability updates to all connected customers
   for (const prod of result.updatedProducts) {
     wsHub.broadcastMenuUpdate({
       type: "MENU_AVAILABILITY_UPDATED",
@@ -189,28 +222,40 @@ export const placeOrder = async (input: CreateOrderInput) => {
     });
   }
 
-  // Broadcast real-time order alert to admin clients
   wsHub.broadcastToAdmins({
     type: "ORDER_CREATED",
     payload: formattedOrder,
   });
 
-  // Dispatch SMS notification to all configured Hotel Staff members who have receiveSms active
   const staffPhones = await getSmsRecipients();
   if (staffPhones.length > 0) {
     const itemsSummary = formattedOrder.orderItems?.map((it: any) => `${it.quantity}x ${it.name}`).join(", ") || "";
-    const staffSmsMessage = `[Wambu's Corner Hotel] NEW ORDER #${formattedOrder.orderNumber} from ${input.customerName} (${input.phone}). Total: KSh ${formattedOrder.totalAmount}. Location: ${input.marketSection || "N/A"} - ${input.locationDescription || ""}. Items: ${itemsSummary}`;
-    
-    // Send to all staff phone numbers in parallel
+    const hotelName = hotel?.name ?? "TableDash Deliveries";
+    const staffSmsMessage = `[${hotelName}] NEW ORDER #${formattedOrder.orderNumber} from ${input.customerName} (${input.phone}). Total: KSh ${formattedOrder.totalAmount}. Location: ${input.marketSection || "N/A"} - ${input.locationDescription || ""}. Items: ${itemsSummary}`;
+
     Promise.all(
       staffPhones.map((phone) =>
         smsService.sendSms(phone, staffSmsMessage).catch((err) => {
           console.error(`[Staff SMS Dispatch Error to ${phone}]:`, err);
+          return false;
         })
       )
-    ).catch((err) => {
+    ).then((results) => {
+      const allSent = results.every((r) => r !== false);
+      if (allSent && result.outboxId) {
+        prisma.eventOutbox.update({
+          where: { id: result.outboxId },
+          data: { status: "done", completedAt: new Date() },
+        }).catch(() => {});
+      }
+    }).catch((err) => {
       console.error("[Staff SMS Promise.all Outer Error]:", err);
     });
+  } else if (result.outboxId) {
+    prisma.eventOutbox.update({
+      where: { id: result.outboxId },
+      data: { status: "done", completedAt: new Date() },
+    }).catch(() => {});
   }
 
   return formattedOrder;
@@ -263,16 +308,42 @@ const STATUS_RANK: Record<string, number> = {
   READY_FOR_DELIVERY: 4,
   OUT_FOR_DELIVERY:   5,
   DELIVERED:          6,
-  CANCELLED:          99, // always permitted as an exit from any active state
+  CANCELLED:          99,
 };
+
+/**
+ * Restores product stock from a cancelled order.
+ * This uses a distinct code path that does NOT touch freshness timestamps
+ * (lastRestockedAt / outOfStockSince), since cancellation is not a real restock.
+ */
+async function restoreStockFromCancellation(tx: any, orderItems: any[]) {
+  for (const item of orderItems) {
+    const product = await tx.product.findUnique({ where: { id: item.productId } });
+    const newStockQty = product.stockQty + item.quantity;
+
+    await tx.product.update({
+      where: { id: item.productId },
+      data: {
+        stockQty: newStockQty,
+        available: newStockQty > 0 ? true : product.available,
+      },
+    });
+  }
+}
 
 /**
  * Updates an order status and broadcasts the update via WebSockets to customer and admin.
  * Sends SMS notification to customer when status changes to OUT_FOR_DELIVERY.
  * Enforces forward-only progression: an order can never be reverted to a previous status.
+ * On CANCELLED, atomically restores stock quantities via restoreStockFromCancellation.
  */
 export const updateOrderStatus = async (id: string, newStatus: OrderStatus, cancelReason?: string) => {
-  const existing = await prisma.order.findUnique({ where: { id } });
+  const hotel = await getDefaultHotel();
+  const hotelName = hotel?.name ?? "TableDash Deliveries";
+  const existing = await prisma.order.findUnique({
+    where: { id },
+    include: { orderItems: true },
+  });
   if (!existing) {
     throw new Error("Order not found");
   }
@@ -280,64 +351,276 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus, canc
   const currentRank = STATUS_RANK[existing.status] ?? 0;
   const newRank     = STATUS_RANK[newStatus]       ?? 0;
 
-  // Block reverting to a previous step or re-applying the same step
   if (newStatus !== "CANCELLED" && newRank <= currentRank) {
     throw new Error(
       `Cannot move order from "${existing.status}" back to "${newStatus}". Status can only advance forward.`
     );
   }
 
-  // Block updating a terminal order (already delivered or cancelled)
   if (existing.status === "DELIVERED" || existing.status === "CANCELLED") {
     throw new Error(
       `Order is already "${existing.status}" and cannot be changed further.`
     );
   }
 
-  const updated = await prisma.order.update({
-    where: { id },
-    data: {
+  const updated = await prisma.$transaction(async (tx) => {
+    if (newStatus === "CANCELLED") {
+      await restoreStockFromCancellation(tx, existing.orderItems);
+    }
+
+    const updateData: any = {
       status: newStatus,
       completedAt: newStatus === "DELIVERED" ? new Date() : existing.completedAt,
       cancelReason: newStatus === "CANCELLED" ? (cancelReason || "Staff unavailable to deliver at this time") : existing.cancelReason,
-    },
-    include: {
-      customer: true,
-      orderItems: true,
-    },
+    };
+
+    if (newStatus === "CANCELLED") {
+      updateData.cancelledAtStatus = existing.status;
+    }
+
+    const updatedOrder = await tx.order.update({
+      where: { id },
+      data: updateData,
+      include: {
+        customer: true,
+        orderItems: true,
+      },
+    });
+
+    const outbox = await tx.eventOutbox.create({
+      data: {
+        eventName: "order_status_updated",
+        payload: JSON.stringify({
+          orderId: updatedOrder.id,
+          orderNumber: updatedOrder.orderNumber,
+          customerName: updatedOrder.customer.firstName,
+          customerPhone: updatedOrder.customer.phone,
+          totalAmount: Number(updatedOrder.totalAmount),
+          newStatus,
+          hotelName,
+          cancelReason: newStatus === "CANCELLED" ? (cancelReason || "Staff unavailable to deliver at this time") : undefined,
+        }),
+        status: "initialized",
+      },
+    });
+
+    return { updatedOrder, outboxId: outbox.id };
   });
 
-  const formattedOrder = formatOrderResponse(updated);
+  const formattedOrder = formatOrderResponse(updated.updatedOrder);
 
-  // Broadcast update via WebSocket hub
+  if (newStatus === "CANCELLED") {
+    for (const item of existing.orderItems) {
+      const prod = await prisma.product.findUnique({ where: { id: item.productId } });
+      if (prod) {
+        wsHub.broadcastMenuUpdate({
+          type: "MENU_AVAILABILITY_UPDATED",
+          payload: { ...prod, price: Number(prod.price) },
+        });
+      }
+    }
+  }
+
   wsHub.notifyOrderStatusUpdate(id, {
     type: "ORDER_STATUS_UPDATED",
     payload: formattedOrder,
   });
 
-  // Dispatch SMS to customer when order is marked OUT_FOR_DELIVERY
-  if (newStatus === "OUT_FOR_DELIVERY" && formattedOrder.customer?.phone) {
-    const customerSmsMessage = `Hello ${formattedOrder.customer.firstName}, your order #${formattedOrder.orderNumber} from Wambu's Corner Hotel is OUT FOR DELIVERY! Our rider is on the way to your stall. Total: KSh ${formattedOrder.totalAmount}.`;
-    smsService.sendSms(formattedOrder.customer.phone, customerSmsMessage).catch((err) => {
-      console.error("[Customer Out-For-Delivery SMS Error]:", err);
+  if (newStatus === "OUT_FOR_DELIVERY") {
+    wsHub.broadcastNotification({
+      type: "NOTIFICATION",
+      payload: {
+        category: "dispatch",
+        title: "🚀 Order Dispatched",
+        message: `Order #${formattedOrder.orderNumber} is out for delivery!`,
+        orderId: id,
+      },
     });
   }
 
-  // Dispatch SMS to customer when order is CANCELLED politely
+  if (newStatus === "CANCELLED") {
+    wsHub.broadcastNotification({
+      type: "NOTIFICATION",
+      payload: {
+        category: "cancellation",
+        title: "⚠️ Order Cancelled",
+        message: `Order #${formattedOrder.orderNumber} has been cancelled. Reason: ${cancelReason || "N/A"}`,
+        orderId: id,
+      },
+    });
+  }
+
+  if (newStatus === "OUT_FOR_DELIVERY" && formattedOrder.customer?.phone) {
+    const customerSmsMessage = `Hello ${formattedOrder.customer.firstName}, your order #${formattedOrder.orderNumber} from ${hotelName} is OUT FOR DELIVERY! Be ready to receive your delivery at your stall. Our rider is on the way. Total: KSh ${formattedOrder.totalAmount}.`;
+    (async () => {
+      try {
+        await smsService.sendSms(formattedOrder.customer.phone, customerSmsMessage);
+        if (updated.outboxId) {
+          await prisma.eventOutbox.update({
+            where: { id: updated.outboxId },
+            data: { status: "done", completedAt: new Date() },
+          });
+        }
+      } catch (err) {
+        console.error("[Customer Out-For-Delivery SMS Error]:", err);
+      }
+    })();
+  }
+
   if (newStatus === "CANCELLED" && formattedOrder.customer?.phone) {
     const reasonStr = cancelReason || "we are unable to deliver your order at this time";
-    const customerSmsMessage = `Hello ${formattedOrder.customer.firstName}, we are sorry to inform you that order #${formattedOrder.orderNumber} has been cancelled. Reason: ${reasonStr}. We appreciate your understanding and hope to serve you next time!`;
-    smsService.sendSms(formattedOrder.customer.phone, customerSmsMessage).catch((err) => {
-      console.error("[Customer Cancel SMS Error]:", err);
-    });
+    const customerSmsMessage = `Hello ${formattedOrder.customer.firstName}, we are sorry to inform you that order #${formattedOrder.orderNumber} from ${hotelName} has been cancelled. Reason: ${reasonStr}. We appreciate your understanding and hope to serve you next time!`;
+    (async () => {
+      try {
+        await smsService.sendSms(formattedOrder.customer.phone, customerSmsMessage);
+        if (updated.outboxId) {
+          await prisma.eventOutbox.update({
+            where: { id: updated.outboxId },
+            data: { status: "done", completedAt: new Date() },
+          });
+        }
+      } catch (err) {
+        console.error("[Customer Cancel SMS Error]:", err);
+      }
+    })();
   }
 
   return formattedOrder;
 };
 
 /**
+ * Cancels an order by the customer themselves.
+ * Validates the order belongs to the customer before cancelling.
+ */
+export const cancelOrderByCustomer = async (id: string, customerId: string, reason?: string) => {
+  const order = await prisma.order.findUnique({
+    where: { id },
+    include: { orderItems: true },
+  });
+  if (!order) {
+    throw new Error("Order not found");
+  }
+  if (order.customerId !== customerId) {
+    throw new Error("This order does not belong to you");
+  }
+  if (order.status === "DELIVERED" || order.status === "CANCELLED") {
+    throw new Error(`Order is already "${order.status}" and cannot be cancelled`);
+  }
+  if (order.status === "OUT_FOR_DELIVERY") {
+    throw new Error("Order is already out for delivery and cannot be cancelled. Please contact the hotel directly.");
+  }
+
+  return updateOrderStatus(id, "CANCELLED", reason || "Cancelled by customer");
+};
+
+/**
+ * Updates payment status and amount paid for an order.
+ * When marked PAID, auto-sets amountPaid = totalAmount.
+ * When marked UNPAID, sets amountPaid = 0.
+ * Broadcasts ORDER_PAYMENT_UPDATED via WS and writes outbox event.
+ */
+export const updateOrderPayment = async (id: string, data: { paymentStatus?: PaymentStatus; amountPaid?: number }) => {
+  const existing = await prisma.order.findUnique({
+    where: { id },
+    include: { customer: true, orderItems: true },
+  });
+  if (!existing) {
+    throw new Error("Order not found");
+  }
+
+  const total = Number(existing.totalAmount);
+  let paymentStatus = data.paymentStatus ?? existing.paymentStatus;
+  let amountPaid = data.amountPaid ?? Number(existing.amountPaid);
+
+  if (data.paymentStatus === "PAID") {
+    amountPaid = total;
+  } else if (data.paymentStatus === "UNPAID") {
+    amountPaid = 0;
+  }
+
+  const updated = await prisma.order.update({
+    where: { id },
+    data: { paymentStatus, amountPaid },
+    include: { customer: true, orderItems: true },
+  });
+
+  const formatted = formatOrderResponse(updated);
+
+  wsHub.broadcastNotification({
+    type: "ORDER_PAYMENT_UPDATED",
+    payload: {
+      ...formatted,
+      paymentStatus,
+      amountPaid,
+    },
+  });
+
+  const hotel = await getDefaultHotel();
+  const hotelName = hotel?.name ?? "TableDash Deliveries";
+
+  (async () => {
+    try {
+      const outbox = await prisma.eventOutbox.create({
+        data: {
+          eventName: "order_payment_updated",
+          payload: JSON.stringify({
+            orderId: updated.id,
+            orderNumber: updated.orderNumber,
+            customerName: updated.customer.firstName,
+            customerPhone: updated.customer.phone,
+            paymentStatus,
+            amountPaid,
+            totalAmount: total,
+            hotelName,
+          }),
+          status: "done",
+          completedAt: new Date(),
+        },
+      });
+
+      if (updated.customer?.phone && paymentStatus !== "UNPAID") {
+        const msg = `Hello ${updated.customer.firstName}, payment for order #${updated.orderNumber} from ${hotelName} has been updated to ${paymentStatus === "PAID" ? "PAID ✅" : "PARTIAL"} (KSh ${amountPaid}/KSh ${total}). Thank you!`;
+        await smsService.sendSms(updated.customer.phone, msg);
+        await prisma.eventOutbox.update({
+          where: { id: outbox.id },
+          data: { status: "done", completedAt: new Date() },
+        });
+      }
+    } catch (err) {
+      console.error("[Payment Update SMS Error]:", err);
+    }
+  })();
+
+  return formatted;
+};
+
+/**
+ * Retrieves orders for a specific date with payment info surfaced.
+ */
+export const getDailyOrders = async (dateStr: string) => {
+  const startDate = new Date(dateStr + "T00:00:00.000Z");
+  const endDate = new Date(dateStr + "T23:59:59.999Z");
+
+  const orders = await prisma.order.findMany({
+    where: {
+      orderedAt: {
+        gte: startDate,
+        lte: endDate,
+      },
+    },
+    include: {
+      customer: true,
+      orderItems: true,
+    },
+    orderBy: { orderedAt: "desc" },
+  });
+
+  return orders.map(formatOrderResponse);
+};
+
+/**
  * Aggregates analytical metrics for the admin dashboard.
- * Calculates total orders, delivered count, pending count, total sales volume, and top ordered items.
+ * Revenue excludes cancelled orders; pending uses an explicit allow-list.
  */
 export const getDashboardMetrics = async (): Promise<DashboardMetrics> => {
   const allOrders = await prisma.order.findMany({
@@ -349,20 +632,33 @@ export const getDashboardMetrics = async (): Promise<DashboardMetrics> => {
   let totalSales = 0;
   let deliveredOrders = 0;
   let pendingOrders = 0;
+  let cancelledOrders = 0;
   const itemCounts: Record<string, number> = {};
 
   for (const order of allOrders) {
-    totalSales += Number(order.totalAmount);
+    if (order.status !== "CANCELLED") {
+      totalSales += Number(order.totalAmount);
+    }
+
     if (order.status === "DELIVERED") {
       deliveredOrders++;
-    } else if (order.status !== "CANCELLED") {
+    } else if ((PENDING_STATUSES as string[]).includes(order.status)) {
       pendingOrders++;
+    }
+
+    if (order.status === "CANCELLED") {
+      cancelledOrders++;
     }
 
     for (const item of order.orderItems) {
       itemCounts[item.name] = (itemCounts[item.name] ?? 0) + item.quantity;
     }
   }
+
+  const nonCancelledCount = allOrders.length - cancelledOrders;
+  const outstandingBalance = allOrders
+    .filter((o) => o.paymentStatus !== "PAID" && o.status !== "CANCELLED")
+    .reduce((sum, o) => sum + (Number(o.totalAmount) - Number(o.amountPaid)), 0);
 
   const topItems = Object.entries(itemCounts)
     .map(([name, count]) => ({ name, count }))
@@ -373,19 +669,19 @@ export const getDashboardMetrics = async (): Promise<DashboardMetrics> => {
     totalOrders: allOrders.length,
     deliveredOrders,
     pendingOrders,
+    cancelledOrders,
     totalSales,
+    outstandingBalance,
+    averageOrderValue: nonCancelledCount > 0 ? totalSales / nonCancelledCount : 0,
     topItems,
   };
 };
-
-/**
- * Formats Decimal fields from Prisma models to standard TypeScript numbers for JSON serialization.
- */
 
 function formatOrderResponse(order: any) {
   return {
     ...order,
     totalAmount: Number(order.totalAmount),
+    amountPaid: Number(order.amountPaid),
     orderItems: order.orderItems?.map((item: any) => ({
       ...item,
       unitPrice: Number(item.unitPrice),

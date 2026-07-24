@@ -7,8 +7,10 @@
 
 import { Elysia, t } from "elysia";
 import { env } from "../../../../../shared/config";
+import { PHONE_PATTERN, PHONE_MIN, PHONE_MAX } from "../../../../../shared/phone";
 import {
   getHotelIsOpen,
+  getHotelName,
   getStaffPhone,
   updateHotelIsOpen,
   updateStaffPhone,
@@ -28,10 +30,12 @@ export const settingsRoute = new Elysia({
   .get("/", async () => {
     const staffPhone = await getStaffPhone();
     const status = await getHotelIsOpen();
+    const hotelName = await getHotelName();
     return {
       success: true,
       data: {
         staffPhone,
+        hotelName,
         hotelIsOpen: status.isOpen,
         autoCloseAt: status.autoCloseAt,
       },
@@ -67,7 +71,7 @@ export const settingsRoute = new Elysia({
     },
     {
       body: t.Object({
-        staffPhone: t.Optional(t.String({ minLength: 10, maxLength: 14, pattern: "^\\+?\\d{10,13}$" })),
+        staffPhone: t.Optional(t.String({ minLength: PHONE_MIN, maxLength: PHONE_MAX, pattern: PHONE_PATTERN })),
         hotelIsOpen: t.Optional(t.Boolean()),
         autoCloseAt: t.Optional(t.Nullable(t.String())),
       }),
@@ -91,7 +95,7 @@ export const settingsRoute = new Elysia({
     {
       body: t.Object({
         name: t.String({ minLength: 2 }),
-        phone: t.String({ minLength: 10, maxLength: 14, pattern: "^\\+?\\d{10,13}$" }),
+        phone: t.String({ minLength: PHONE_MIN, maxLength: PHONE_MAX, pattern: PHONE_PATTERN }),
         receiveSms: t.Boolean(),
       }),
     }
@@ -110,7 +114,7 @@ export const settingsRoute = new Elysia({
     {
       body: t.Object({
         name: t.Optional(t.String({ minLength: 2 })),
-        phone: t.Optional(t.String({ minLength: 10, maxLength: 14, pattern: "^\\+?\\d{10,13}$" })),
+        phone: t.Optional(t.String({ minLength: PHONE_MIN, maxLength: PHONE_MAX, pattern: PHONE_PATTERN })),
         receiveSms: t.Optional(t.Boolean()),
       }),
     }

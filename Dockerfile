@@ -26,4 +26,4 @@ RUN bun install --frozen-lockfile --production
 RUN bunx prisma generate
 
 EXPOSE ${PORT:-3000}
-CMD ["bun", "run", "apps/api/server.ts"]
+CMD ["sh", "-c", "bunx prisma db push --accept-data-loss 2>/dev/null; bun run apps/api/server.ts"]

@@ -22,7 +22,7 @@ export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDe
       .join("\n");
 
     const message = encodeURIComponent(
-      `Hello Wambu's Corner Hotel! I would like to order:\n\n${text}\n\nTotal: KSh ${totalAmount}`
+      `Hello! I would like to order:\n\n${text}\n\nTotal: KSh ${totalAmount}`
     );
 
     window.open(`https://wa.me/254700000000?text=${message}`, "_blank");
@@ -132,9 +132,28 @@ export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDe
                   >
                     -
                   </button>
-                  <span style={{ fontWeight: 700, minWidth: "16px", textAlign: "center" }}>
-                    {item.quantity}
-                  </span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={item.quantity}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      if (!isNaN(val) && val >= 1) {
+                        updateQuantity(item.id, val);
+                      }
+                    }}
+                    style={{
+                      width: "48px",
+                      textAlign: "center",
+                      fontWeight: 700,
+                      fontSize: "0.95rem",
+                      border: "1px solid #D1D5DB",
+                      borderRadius: "6px",
+                      padding: "4px 2px",
+                      background: "white",
+                      outline: "none",
+                    }}
+                  />
                   <button
                     onClick={() => updateQuantity(item.id, item.quantity + 1)}
                     style={{

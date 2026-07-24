@@ -1,5 +1,5 @@
 /**
- * Purpose: Customer Menu View for tableDash ("Wambu's Corner Hotel").
+ * Purpose: Customer Menu View for tableDash.
  * Responsibilities: Renders daily menu items with live stock badges, separates out-of-stock items
  *   into a dedicated section, listens for real-time WebSocket menu and hotel status updates,
  *   and displays hotel closed notices.
@@ -22,6 +22,8 @@ export interface ProductItem {
   price: number;
   available: boolean;
   stockQty: number;
+  lastRestockedAt?: string | null;
+  outOfStockSince?: string | null;
 }
 
 interface MenuListPageProps {
@@ -35,6 +37,7 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
 }) => {
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [hotelIsOpen, setHotelIsOpen] = useState<boolean>(true);
+  const [hotelName, setHotelName] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const { cart, addToCart, updateQuantity, totalCount, totalAmount } = useCart();
@@ -44,14 +47,19 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
     setLoading(true);
     const [menuRes, settingsRes] = await Promise.all([
       apiGet<ProductItem[]>("/menu"),
-      apiGet<{ hotelIsOpen?: boolean }>("/settings"),
+      apiGet<{ hotelIsOpen?: boolean; hotelName?: string }>("/settings"),
     ]);
 
     if (menuRes.success && menuRes.data) {
       setProducts(menuRes.data);
     }
-    if (settingsRes.success && settingsRes.data?.hotelIsOpen !== undefined) {
-      setHotelIsOpen(settingsRes.data.hotelIsOpen);
+    if (settingsRes.success && settingsRes.data) {
+      if (settingsRes.data.hotelIsOpen !== undefined) {
+        setHotelIsOpen(settingsRes.data.hotelIsOpen);
+      }
+      if (settingsRes.data.hotelName) {
+        setHotelName(settingsRes.data.hotelName);
+      }
     }
     setLoading(false);
   };
@@ -97,7 +105,16 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
     if (item.stockQty <= 5) {
       return { text: `${item.stockQty} left`, color: "#D97706", bg: "#FEF3C7" };
     }
-    return { text: `${item.stockQty} left`, color: "#15803D", bg: "#DCFCE7" };
+    return { text: `${item.stockQty} available`, color: "#15803D", bg: "#DCFCE7" };
+  };
+
+  const getFreshnessText = (item: ProductItem) => {
+    if (!item.outOfStockSince) return null;
+    const diffMs = Date.now() - new Date(item.outOfStockSince).getTime();
+    const diffH = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffM = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    if (diffH > 0) return `Out of stock for ${diffH}h ${diffM}m`;
+    return `Out of stock for ${diffM}m`;
   };
 
   const availableProducts = products.filter((p) => p.available && p.stockQty > 0);
@@ -109,7 +126,7 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
       <header className="header-bar">
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <Utensils size={22} color="white" />
-          <div className="header-title">Wambu's Corner Hotel</div>
+          <div className="header-title">{hotelName || "Menu"}</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           <button
@@ -156,7 +173,7 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
             <Moon size={24} color="#D97706" />
             <div>
               <div style={{ fontWeight: 800, color: "#92400E", fontSize: "0.95rem" }}>
-                Wambu's Corner Hotel is Closed
+                {hotelName || "This hotel"} is Closed
               </div>
               <div style={{ fontSize: "0.8rem", color: "#B45309", marginTop: "2px" }}>
                 We are currently closed for new orders. Please check back later!
@@ -234,9 +251,10 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
                               borderRadius: "8px",
                               fontWeight: 700,
                               cursor: hotelIsOpen ? "pointer" : "not-allowed",
+                              opacity: hotelIsOpen ? 1 : 0.5,
                             }}
                           >
-                            + Add
+                            {hotelIsOpen ? "+ Add" : "Closed"}
                           </button>
                         ) : (
                           <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "#EBF4F0", padding: "4px 8px", borderRadius: "8px", border: "1px solid #1E4D36" }}>
@@ -246,7 +264,29 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
                             >
                               −
                             </button>
-                            <span style={{ fontWeight: 700, minWidth: "16px", textAlign: "center" }}>{qty}</span>
+                            <input
+                              type="number"
+                              min={1}
+                              max={maxQty}
+                              value={qty}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value, 10);
+                                if (!isNaN(val) && val >= 1 && val <= maxQty) {
+                                  updateQuantity(item.id, val);
+                                }
+                              }}
+                              style={{
+                                width: "48px",
+                                textAlign: "center",
+                                fontWeight: 700,
+                                fontSize: "0.95rem",
+                                border: "1px solid #D1D5DB",
+                                borderRadius: "6px",
+                                padding: "4px 2px",
+                                background: "white",
+                                outline: "none",
+                              }}
+                            />
                             <button
                               onClick={() => updateQuantity(item.id, Math.min(qty + 1, maxQty))}
                               disabled={qty >= maxQty || !hotelIsOpen}
@@ -274,35 +314,43 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
                 </div>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                  {outOfStockProducts.map((item) => (
-                    <div
-                      key={item.id}
-                      className="card"
-                      style={{
-                        display: "flex",
-                        gap: "14px",
-                        alignItems: "center",
-                        opacity: 0.55,
-                        background: "#FAFAFA",
-                        border: "1.5px dashed #D1D5DB",
-                      }}
-                    >
-                      <img
-                        src={item.imageUrl}
-                        alt={item.name}
-                        style={{ width: "60px", height: "60px", borderRadius: "10px", objectFit: "cover", flexShrink: 0, filter: "grayscale(60%)" }}
-                      />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <h3 style={{ fontSize: "0.95rem", fontWeight: 600, color: "#4B5563" }}>{item.name}</h3>
-                        <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "#6B7280", marginTop: "2px" }}>
-                          KSh {item.price}
+                  {outOfStockProducts.map((item) => {
+                    const freshness = getFreshnessText(item);
+                    return (
+                      <div
+                        key={item.id}
+                        className="card"
+                        style={{
+                          display: "flex",
+                          gap: "14px",
+                          alignItems: "center",
+                          opacity: 0.55,
+                          background: "#FAFAFA",
+                          border: "1.5px dashed #D1D5DB",
+                        }}
+                      >
+                        <img
+                          src={item.imageUrl}
+                          alt={item.name}
+                          style={{ width: "60px", height: "60px", borderRadius: "10px", objectFit: "cover", flexShrink: 0, filter: "grayscale(60%)" }}
+                        />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <h3 style={{ fontSize: "0.95rem", fontWeight: 600, color: "#4B5563" }}>{item.name}</h3>
+                          <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "#6B7280", marginTop: "2px" }}>
+                            KSh {item.price}
+                          </div>
+                          {freshness && (
+                            <div style={{ fontSize: "0.72rem", color: "#DC2626", marginTop: "4px", fontWeight: 600 }}>
+                              {freshness}
+                            </div>
+                          )}
                         </div>
+                        <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#DC2626", background: "#FEE2E2", padding: "4px 10px", borderRadius: "8px", textTransform: "uppercase" }}>
+                          Sold Out
+                        </span>
                       </div>
-                      <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#DC2626", background: "#FEE2E2", padding: "4px 10px", borderRadius: "8px", textTransform: "uppercase" }}>
-                        Sold Out
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}

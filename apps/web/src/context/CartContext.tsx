@@ -13,11 +13,13 @@ export interface CartItem {
   price: number;
   imageUrl: string;
   quantity: number;
+  hotelId?: string;
+  hotelName?: string;
 }
 
 interface CartContextType {
   cart: CartItem[];
-  addToCart: (product: { id: string; name: string; price: number; imageUrl: string }) => void;
+  addToCart: (product: { id: string; name: string; price: number; imageUrl: string; hotelId?: string; hotelName?: string }) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   removeFromCart: (productId: string) => void;
   clearCart: () => void;
@@ -41,7 +43,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem("tableDash_cart", JSON.stringify(cart));
   }, [cart]);
 
-  const addToCart = (product: { id: string; name: string; price: number; imageUrl: string }) => {
+  const addToCart = (product: { id: string; name: string; price: number; imageUrl: string; hotelId?: string; hotelName?: string }) => {
     setCart((prev) => {
       const existingIndex = prev.findIndex((item) => item.id === product.id);
       if (existingIndex > -1) {

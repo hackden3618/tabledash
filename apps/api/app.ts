@@ -15,6 +15,7 @@ import { authRoute } from "./src/modules/auth/route";
 import { customersRoute } from "./src/modules/customers/route";
 import { menuRoute } from "./src/modules/menu/route";
 import { ordersRoute } from "./src/modules/orders/route";
+import { platformRoute } from "./src/modules/platform/routes";
 import { settingsRoute } from "./src/modules/settings/route";
 import { uploadRoute } from "./src/modules/upload/route";
 import { wsHub } from "./src/modules/websocket/hub";
@@ -81,6 +82,7 @@ export const app = new Elysia()
   .use(customersRoute)
   .use(settingsRoute)
   .use(uploadRoute)
+  .use(platformRoute)
 
   // Serve the built frontend SPA for any non-API route
   .get("/*", ({ params }) => {

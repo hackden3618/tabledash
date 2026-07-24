@@ -13,13 +13,14 @@ import { apiGet, apiPatch } from "../../lib/api";
 import { useWebSocket } from "../../lib/websocket";
 import { useNotifications } from "../../context/NotificationsContext";
 import { AdminNotificationBell, AdminNotificationPanel } from "../../components/AdminNotificationPanel";
-import { LayoutDashboard, LogOut, Settings, Utensils } from "lucide-react";
+import { LayoutDashboard, LogOut, Settings, Utensils, Calendar } from "lucide-react";
 
 interface AdminOrdersPageProps {
   token: string;
   onSelectOrder: (order: any) => void;
   onNavigateDashboard: () => void;
   onNavigateMenuManage: () => void;
+  onNavigateOrderHistory?: () => void;
   onNavigateSettings?: () => void;
   onLogout: () => void;
 }
@@ -29,6 +30,7 @@ export const AdminOrdersPage: React.FC<AdminOrdersPageProps> = ({
   onSelectOrder,
   onNavigateDashboard,
   onNavigateMenuManage,
+  onNavigateOrderHistory,
   onNavigateSettings,
   onLogout,
 }) => {
@@ -152,6 +154,15 @@ export const AdminOrdersPage: React.FC<AdminOrdersPageProps> = ({
               style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "white", padding: "6px 10px", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}
             >
               <Settings size={15} />
+            </button>
+          )}
+          {onNavigateOrderHistory && (
+            <button
+              onClick={onNavigateOrderHistory}
+              title="Daily History"
+              style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "white", padding: "6px 10px", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}
+            >
+              <Calendar size={15} /> History
             </button>
           )}
           <AdminNotificationBell onClick={() => setPanelOpen(true)} />

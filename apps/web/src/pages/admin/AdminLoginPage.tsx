@@ -42,7 +42,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
         <div style={{ textAlign: "center", marginBottom: "24px" }}>
           <span style={{ fontSize: "3rem" }}>🔑</span>
           <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#1E4D36", marginTop: "8px" }}>
-            Wambu's Corner Hotel Admin
+            tableDash Admin
           </h1>
           <p style={{ fontSize: "0.875rem", color: "#6B7280" }}>Sign in to manage orders & menu</p>
         </div>
@@ -80,7 +80,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
             </div>
           )}
 
-          <button type="submit" disabled={loading} className="btn btn-primary">
+          <button type="submit" disabled={loading || !username.trim() || !password.trim()} className="btn btn-primary">
             {loading ? "Signing in..." : "Sign In"}
           </button>
         </form>

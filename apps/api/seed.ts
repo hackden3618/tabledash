@@ -21,6 +21,23 @@ export const seedDatabase = async () => {
         );
     }
 
+    // Seed Platform Admin user
+    const existingPlatformAdmin = await prisma.platformAdmin.findFirst({
+        where: { username: "platform_admin" },
+    });
+
+    if (!existingPlatformAdmin) {
+        const platformPasswordHash = await Bun.password.hash(adminPassword);
+        await prisma.platformAdmin.create({
+            data: {
+                username: "platform_admin",
+                passwordHash: platformPasswordHash,
+                name: "TableDash Platform Admin",
+            },
+        });
+        console.log(`[Seeder] Created default platform admin user: 'platform_admin'`);
+    }
+
     const existingAdmin = await prisma.adminUser.findUnique({
         where: { username: adminUsername },
     });
@@ -33,6 +50,7 @@ export const seedDatabase = async () => {
                 username: adminUsername,
                 passwordHash: passwordHash,
                 name: "Wambu's Corner Hotel Admin",
+                role: "HOTEL_ADMIN",
             },
         });
         console.log(`[Seeder] Created default admin user: '${adminUsername}'`);

@@ -28,7 +28,11 @@ export async function apiGet<T>(endpoint: string, token?: string): Promise<ApiRe
     }
 
     const res = await fetch(`${API_BASE}${endpoint}`, { headers });
-    const data = await res.json();
+    const text = await res.text();
+    const data = text ? JSON.parse(text) : {};
+    if (!res.ok && !data.error) {
+      return { success: false, error: data.message || `HTTP ${res.status}: ${res.statusText}` };
+    }
     return data;
   } catch (err: any) {
     return { success: false, error: err.message || "Network request failed" };
@@ -53,7 +57,11 @@ export async function apiPost<T, B = unknown>(endpoint: string, body: B, token?:
       body: JSON.stringify(body),
     });
 
-    const data = await res.json();
+    const text = await res.text();
+    const data = text ? JSON.parse(text) : {};
+    if (!res.ok && !data.error) {
+      return { success: false, error: data.message || `HTTP ${res.status}: ${res.statusText}` };
+    }
     return data;
   } catch (err: any) {
     return { success: false, error: err.message || "Network request failed" };
@@ -78,7 +86,11 @@ export async function apiPatch<T, B = unknown>(endpoint: string, body: B, token?
       body: JSON.stringify(body),
     });
 
-    const data = await res.json();
+    const text = await res.text();
+    const data = text ? JSON.parse(text) : {};
+    if (!res.ok && !data.error) {
+      return { success: false, error: data.message || `HTTP ${res.status}: ${res.statusText}` };
+    }
     return data;
   } catch (err: any) {
     return { success: false, error: err.message || "Network request failed" };
@@ -100,7 +112,11 @@ export async function apiDelete<T>(endpoint: string, token?: string): Promise<Ap
       headers,
     });
 
-    const data = await res.json();
+    const text = await res.text();
+    const data = text ? JSON.parse(text) : {};
+    if (!res.ok && !data.error) {
+      return { success: false, error: data.message || `HTTP ${res.status}: ${res.statusText}` };
+    }
     return data;
   } catch (err: any) {
     return { success: false, error: err.message || "Network request failed" };

@@ -6,6 +6,7 @@
  */
 
 import { env } from "../../../../../shared/config";
+import { formatPhone } from "../../../../../shared/phone";
 
 /**
  * Interface defining the contract for SMS dispatch drivers.
@@ -32,23 +33,8 @@ export class TextSmsDriver implements ISmsDriver {
     console.log(`  → Sender ID  : ${env.textSmsShortcode}`);
   }
 
-  /**
-   * Formats Kenyan phone numbers into international format (2547XXXXXXXX).
-   * WHY: Local numbers starting with '07' or '01' must be converted to '254...' for textSMS gateway compatibility.
-   */
-  private formatPhoneNumber(phone: string): string {
-    const cleaned = phone.replace(/\D/g, "");
-    if (cleaned.startsWith("0") && cleaned.length === 10) {
-      return `254${cleaned.slice(1)}`;
-    }
-    if (cleaned.startsWith("7") || cleaned.startsWith("1")) {
-      return `254${cleaned}`;
-    }
-    return cleaned;
-  }
-
   public async sendSms(recipientPhone: string, message: string): Promise<boolean> {
-    const formattedPhone = this.formatPhoneNumber(recipientPhone);
+    const formattedPhone = formatPhone(recipientPhone);
 
     if (!env.textSmsApiKey || !env.textSmsPartnerId) {
       console.warn(

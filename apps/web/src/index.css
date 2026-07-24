@@ -424,6 +424,56 @@ body {
     transform: scale(0.92);
 }
 
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    filter: grayscale(0.6);
+    transform: none !important;
+}
+
+.input-field.input-error {
+    border-color: #EF4444;
+    background-color: #FFF5F5;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
+}
+
+.input-error-msg {
+    font-size: 0.75rem;
+    color: #EF4444;
+    font-weight: 600;
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes shakeField {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-6px); }
+    40% { transform: translateX(6px); }
+    60% { transform: translateX(-4px); }
+    80% { transform: translateX(4px); }
+}
+
+.input-shake {
+    animation: shakeField 0.35s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.spinner {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: #ffffff;
+    animation: spin 0.8s linear infinite;
+}
+
 .market-zone-pin {
     width: 24px;
     height: 24px;

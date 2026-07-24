@@ -8,6 +8,8 @@
 
 import { prisma } from "../../../../../infrastructure/database/prisma";
 import { wsHub } from "../websocket/hub";
+import { formatPhone } from "../../../../../shared/phone";
+import { getDefaultHotel } from "../hotels/service";
 
 export const getStaffPhone = async (): Promise<string> => {
   const setting = await prisma.setting.findUnique({
@@ -17,10 +19,11 @@ export const getStaffPhone = async (): Promise<string> => {
 };
 
 export const updateStaffPhone = async (phone: string): Promise<string> => {
+  const formatted = formatPhone(phone);
   const setting = await prisma.setting.upsert({
     where: { key: "staff_phone" },
-    update: { value: phone },
-    create: { key: "staff_phone", value: phone },
+    update: { value: formatted },
+    create: { key: "staff_phone", value: formatted },
   });
   return setting.value;
 };
@@ -31,78 +34,47 @@ export interface HotelStatusResult {
 }
 
 export const getHotelIsOpen = async (): Promise<HotelStatusResult> => {
-  const openSetting = await prisma.setting.findUnique({
-    where: { key: "hotel_is_open" },
-  });
-  const autoCloseSetting = await prisma.setting.findUnique({
-    where: { key: "auto_close_at" },
-  });
+  const hotel = await getDefaultHotel();
+  if (!hotel) return { isOpen: true, autoCloseAt: null };
 
-  const manualOpen = openSetting ? openSetting.value === "true" : true;
-  const autoCloseAt = autoCloseSetting?.value ?? null;
-
-  // Check if auto-close time has passed
-  if (manualOpen && autoCloseAt) {
-    const closeTime = new Date(autoCloseAt).getTime();
+  if (hotel.isOpen && hotel.autoCloseAt) {
+    const closeTime = hotel.autoCloseAt.getTime();
     if (!isNaN(closeTime) && Date.now() >= closeTime) {
-      // Auto-close threshold passed: transition to closed state
-      await prisma.setting.upsert({
-        where: { key: "hotel_is_open" },
-        update: { value: "false" },
-        create: { key: "hotel_is_open", value: "false" },
+      await prisma.hotel.update({
+        where: { id: hotel.id },
+        data: { isOpen: false, autoCloseAt: null },
       });
-      await prisma.setting.deleteMany({
-        where: { key: "auto_close_at" },
-      });
-
       wsHub.broadcastMenuUpdate({
         type: "HOTEL_STATUS_UPDATED",
         payload: { isOpen: false, autoCloseAt: null },
       });
-
       return { isOpen: false, autoCloseAt: null };
     }
   }
-
-  return { isOpen: manualOpen, autoCloseAt };
+  return { isOpen: hotel.isOpen, autoCloseAt: hotel.autoCloseAt?.toISOString() ?? null };
 };
 
 export const updateHotelIsOpen = async (
   isOpen: boolean,
   autoCloseAt?: string | null
 ): Promise<HotelStatusResult> => {
-  const valStr = isOpen ? "true" : "false";
+  const hotel = await getDefaultHotel();
+  if (!hotel) throw new Error("No hotel configured");
 
-  await prisma.setting.upsert({
-    where: { key: "hotel_is_open" },
-    update: { value: valStr },
-    create: { key: "hotel_is_open", value: valStr },
+  const closeDate = isOpen && autoCloseAt ? new Date(autoCloseAt) : null;
+  await prisma.hotel.update({
+    where: { id: hotel.id },
+    data: { isOpen, autoCloseAt: closeDate },
   });
 
-  if (isOpen && autoCloseAt) {
-    await prisma.setting.upsert({
-      where: { key: "auto_close_at" },
-      update: { value: autoCloseAt },
-      create: { key: "auto_close_at", value: autoCloseAt },
-    });
-  } else {
-    await prisma.setting.deleteMany({
-      where: { key: "auto_close_at" },
-    });
-  }
-
-  const result: HotelStatusResult = {
-    isOpen,
-    autoCloseAt: isOpen ? autoCloseAt ?? null : null,
-  };
-
-  // Broadcast hotel status change to all connected clients
-  wsHub.broadcastMenuUpdate({
-    type: "HOTEL_STATUS_UPDATED",
-    payload: result,
-  });
-
+  const result = { isOpen, autoCloseAt: autoCloseAt ?? null };
+  wsHub.broadcastMenuUpdate({ type: "HOTEL_STATUS_UPDATED", payload: result });
   return result;
+};
+
+export const getHotelName = async (): Promise<string> => {
+  const hotel = await getDefaultHotel();
+  return hotel?.name ?? "TableDash Deliveries";
 };
 
 export interface StaffUserPayload {
@@ -118,9 +90,10 @@ export const getStaffUsers = async () => {
 };
 
 export const addStaffUser = async (data: StaffUserPayload) => {
-  // Enforce unique phone check
+  const formattedPhone = formatPhone(data.phone);
+
   const existing = await prisma.staffUser.findUnique({
-    where: { phone: data.phone },
+    where: { phone: formattedPhone },
   });
   if (existing) {
     throw new Error("A staff member with this phone number already exists.");
@@ -129,17 +102,19 @@ export const addStaffUser = async (data: StaffUserPayload) => {
   return await prisma.staffUser.create({
     data: {
       name: data.name,
-      phone: data.phone,
+      phone: formattedPhone,
       receiveSms: data.receiveSms,
     },
   });
 };
 
 export const updateStaffUser = async (id: string, data: Partial<StaffUserPayload>) => {
-  if (data.phone) {
+  const formatted = data.phone ? formatPhone(data.phone) : undefined;
+
+  if (formatted) {
     const existing = await prisma.staffUser.findFirst({
       where: {
-        phone: data.phone,
+        phone: formatted,
         NOT: { id },
       },
     });
@@ -150,7 +125,7 @@ export const updateStaffUser = async (id: string, data: Partial<StaffUserPayload
 
   return await prisma.staffUser.update({
     where: { id },
-    data,
+    data: { ...data, phone: formatted ?? data.phone },
   });
 };
 

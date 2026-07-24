@@ -7,10 +7,12 @@
  */
 
 import React, { useEffect, useState } from "react";
-import { apiGet } from "../../lib/api";
+import { apiGet, apiPost } from "../../lib/api";
 import { useWebSocket } from "../../lib/websocket";
 import { useNotifications } from "../../context/NotificationsContext";
-import { Truck } from "lucide-react";
+import { useCustomerAuth } from "../../context/CustomerAuthContext";
+import { Truck, XCircle } from "lucide-react";
+import { Modal } from "../../components/Modal";
 
 interface OrderTrackingPageProps {
   orderId: string;
@@ -23,7 +25,26 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({
 }) => {
   const [order, setOrder] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [cancelReason, setCancelReason] = useState("");
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [modalConfig, setModalConfig] = useState<{
+    isOpen: boolean;
+    type?: "info" | "warning" | "danger" | "success" | "confirm";
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    onConfirm: () => void;
+    onCancel?: () => void;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+  });
   const { pushNotification } = useNotifications();
+  const { token: customerToken, isLoggedIn } = useCustomerAuth();
 
   const fetchOrder = async () => {
     const res = await apiGet<any>(`/orders/${orderId}`);
@@ -54,7 +75,7 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({
         pushNotification(
           "success",
           "🎉 Order Delivered!",
-          "Enjoy your meal from Wambu's Corner Hotel!",
+          "Enjoy your meal!",
           { duration: 7000 }
         );
       } else if (updated.status === "PREPARING") {
@@ -67,13 +88,60 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({
         pushNotification(
           "danger",
           "⚠️ Order Cancelled",
-          "Your order was cancelled by the kitchen."
+          updated.cancelReason ? `Reason: ${updated.cancelReason}` : "Your order was cancelled."
         );
       }
+    } else if (event.type === "ORDER_PAYMENT_UPDATED" && (event.payload as any)?.id === orderId) {
+      const p = event.payload as any;
+      pushNotification(
+        "success",
+        "💰 Payment Updated",
+        p.paymentStatus === "PAID"
+          ? "Your order has been fully paid! ✅"
+          : `Payment status: ${p.paymentStatus} (KSh ${p.amountPaid})`,
+        { duration: 5000 }
+      );
+    } else if (event.type === "NOTIFICATION" && (event.payload as any)?.orderId === orderId) {
+      const n = event.payload as any;
+      pushNotification(
+        n.category === "cancellation" ? "danger" : "info",
+        n.title,
+        n.message,
+        { duration: 6000 }
+      );
     }
   });
 
-  const statuses = [
+  const handleCancelOrder = async () => {
+    if (!cancelReason.trim()) {
+      setModalConfig({
+        isOpen: true,
+        type: "warning",
+        title: "Reason Required",
+        message: "Please provide a reason for cancellation.",
+        onConfirm: () => setModalConfig((prev) => ({ ...prev, isOpen: false })),
+      });
+      return;
+    }
+    setIsCancelling(true);
+    const res = await apiPost<any>(`/orders/${orderId}/cancel`, { reason: cancelReason.trim() }, customerToken);
+    setIsCancelling(false);
+    setShowCancelModal(false);
+    if (res.success) {
+      pushNotification("info", "✅ Order Cancelled", "Your order has been cancelled successfully.");
+      setOrder(res.data);
+    } else {
+      setModalConfig({
+        isOpen: true,
+        type: "danger",
+        title: "Cancellation Failed",
+        message: res.error || "Failed to cancel order. Please try again or contact the hotel.",
+        onConfirm: () => setModalConfig((prev) => ({ ...prev, isOpen: false })),
+      });
+    }
+  };
+
+  const STATUSES = [
     { key: "NEW", label: "Order Placed" },
     { key: "ACCEPTED", label: "Accepted by Kitchen" },
     { key: "PREPARING", label: "Preparing Meal" },
@@ -85,10 +153,14 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({
   const isCancelled = order?.status === "CANCELLED";
 
   const getStatusIndex = (status: string) => {
-    return statuses.findIndex((s) => s.key === status);
+    return STATUSES.findIndex((s) => s.key === status);
   };
 
-  const currentIndex = order ? getStatusIndex(order.status) : 0;
+  // When cancelled, use cancelledAtStatus to determine the cutoff point
+  const cancelledAtIdx = isCancelled && order?.cancelledAtStatus
+    ? getStatusIndex(order.cancelledAtStatus)
+    : -1;
+  const currentIndex = order && !isCancelled ? getStatusIndex(order.status) : cancelledAtIdx;
 
   return (
     <div className="app-container">
@@ -122,23 +194,105 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({
             Order not found.
           </div>
         ) : isCancelled ? (
-          <div
-            style={{
-              background: "#FEE2E2",
-              border: "2px solid #EF4444",
-              borderRadius: "16px",
-              padding: "24px",
-              textAlign: "center",
-            }}
-          >
-            <div style={{ fontSize: "2.5rem", marginBottom: "8px" }}>⚠️</div>
-            <h2 style={{ fontSize: "1.25rem", fontWeight: 800, color: "#DC2626" }}>
-              Order Cancelled
-            </h2>
-            <p style={{ fontSize: "0.9rem", color: "#991B1B", marginTop: "6px" }}>
-              This order was cancelled. Please contact Wambu's Corner Hotel directly if you have any questions.
-            </p>
-            <button onClick={onBackToHome} className="btn btn-secondary" style={{ marginTop: "20px" }}>
+          <div>
+            {/* Cancelled Banner */}
+            <div
+              style={{
+                background: "#FEE2E2",
+                border: "2px solid #EF4444",
+                borderRadius: "16px",
+                padding: "16px 20px",
+                marginBottom: "20px",
+                textAlign: "center",
+              }}
+            >
+              <div style={{ fontSize: "2rem", marginBottom: "4px" }}>⚠️</div>
+              <h2 style={{ fontSize: "1.1rem", fontWeight: 800, color: "#DC2626" }}>
+                Order Cancelled
+              </h2>
+              {order.cancelReason && (
+                <p style={{ fontSize: "0.85rem", color: "#991B1B", marginTop: "4px" }}>
+                  Reason: {order.cancelReason}
+                </p>
+              )}
+            </div>
+
+            {/* Timeline showing cancelled at the cutoff point */}
+            <div
+              style={{
+                background: "#EBF4F0",
+                borderRadius: "16px",
+                padding: "20px",
+                border: "1.5px solid #1E4D36",
+                marginBottom: "24px",
+                textAlign: "center",
+              }}
+            >
+              <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "#1E4D36" }}>
+                ORDER #{order.orderNumber}
+              </div>
+              <div style={{ fontSize: "0.85rem", color: "#4B5563", marginTop: "4px" }}>
+                Location: {order.marketSection} — {order.locationDescription}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "20px", paddingLeft: "12px" }}>
+              {STATUSES.map((step, idx) => {
+                const isCompleted = idx <= currentIndex;
+                const isCutoff = idx === currentIndex;
+
+                return (
+                  <div
+                    key={step.key}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "16px",
+                      position: "relative",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "32px",
+                        height: "32px",
+                        borderRadius: "50%",
+                        background: isCompleted ? "#DC2626" : "#E5E7EB",
+                        color: isCompleted ? "white" : "#9CA3AF",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontWeight: 700,
+                        fontSize: "0.9rem",
+                        zIndex: 2,
+                        boxShadow: isCutoff ? "0 0 0 4px #FEE2E2" : "none",
+                      }}
+                    >
+                      {isCompleted ? "✕" : idx + 1}
+                    </div>
+
+                    <div style={{ flex: 1 }}>
+                      <div
+                        style={{
+                          fontWeight: isCutoff ? 800 : isCompleted ? 600 : 400,
+                          fontSize: "1rem",
+                          color: isCompleted ? "#DC2626" : "#9CA3AF",
+                          textDecoration: !isCompleted ? "none" : "none",
+                        }}
+                      >
+                        {step.label}
+                      </div>
+                      {isCutoff && (
+                        <div style={{ fontSize: "0.75rem", color: "#DC2626", fontWeight: 700 }}>
+                          ✕ Cancelled at this stage
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <button onClick={onBackToHome} className="btn btn-secondary" style={{ marginTop: "20px", width: "100%" }}>
               Back to Menu
             </button>
           </div>
@@ -207,7 +361,7 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({
                   marginBottom: "4px",
                 }}
               >
-                {statuses.find((s) => s.key === order.status)?.label || order.status}
+                {STATUSES.find((s) => s.key === order.status)?.label || order.status}
               </div>
               <div style={{ fontSize: "0.85rem", color: "#4B5563" }}>
                 Location: {order.marketSection} — {order.locationDescription}
@@ -216,7 +370,7 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({
 
             {/* Timeline progression vertical list */}
             <div style={{ display: "flex", flexDirection: "column", gap: "20px", paddingLeft: "12px" }}>
-              {statuses.map((step, idx) => {
+              {STATUSES.map((step, idx) => {
                 const isCompleted = idx <= currentIndex;
                 const isCurrent = idx === currentIndex;
 
@@ -270,16 +424,133 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({
               })}
             </div>
 
+            {/* Cancel Order Button — only when cancellable */}
+            {(order.status === "NEW" || order.status === "ACCEPTED" || order.status === "PREPARING") && isLoggedIn && (
+              <button
+                onClick={() => setShowCancelModal(true)}
+                className="btn"
+                style={{
+                  marginTop: "24px",
+                  width: "100%",
+                  background: "#FEE2E2",
+                  color: "#DC2626",
+                  border: "1.5px solid #FECACA",
+                  padding: "14px",
+                  borderRadius: "12px",
+                  fontWeight: 700,
+                  fontSize: "0.95rem",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "8px",
+                }}
+              >
+                <XCircle size={20} /> Cancel Order
+              </button>
+            )}
+
             <button
               onClick={onBackToHome}
               className="btn btn-secondary"
-              style={{ marginTop: "32px" }}
+              style={{ marginTop: "12px" }}
             >
               Back to Menu
             </button>
           </div>
         )}
       </div>
+
+      {/* Cancel Order Modal */}
+      {showCancelModal && (
+        <div
+          style={{
+            position: "fixed", inset: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.45)",
+            backdropFilter: "blur(3px)",
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "flex-end",
+            justifyContent: "center",
+          }}
+          onClick={() => setShowCancelModal(false)}
+        >
+          <div
+            style={{
+              background: "#FFFFFF",
+              borderRadius: "20px 20px 0 0",
+              width: "100%",
+              maxWidth: "480px",
+              padding: "24px",
+              boxShadow: "0 -10px 25px rgba(0, 0, 0, 0.15)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ fontSize: "1.2rem", fontWeight: 700, color: "#DC2626", marginBottom: "12px" }}>
+              Cancel Order?
+            </h3>
+            <p style={{ fontSize: "0.9rem", color: "#4B5563", marginBottom: "16px" }}>
+              Please tell us why you'd like to cancel this order so we can improve our service.
+            </p>
+            <textarea
+              rows={3}
+              placeholder="e.g. Changed my mind, wrong items, too long wait..."
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              className="input-field"
+              style={{ resize: "vertical", marginBottom: "16px", width: "100%" }}
+            />
+            <div style={{ display: "flex", gap: "12px" }}>
+              <button
+                onClick={() => setShowCancelModal(false)}
+                className="btn"
+                style={{
+                  flex: 1,
+                  background: "#F3F4F6",
+                  color: "#374151",
+                  border: "1px solid #D1D5DB",
+                  padding: "12px",
+                  borderRadius: "10px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Keep Order
+              </button>
+              <button
+                onClick={handleCancelOrder}
+                disabled={isCancelling || !cancelReason.trim()}
+                className="btn"
+                style={{
+                  flex: 1,
+                  background: "#DC2626",
+                  color: "#FFF",
+                  border: "none",
+                  padding: "12px",
+                  borderRadius: "10px",
+                  fontWeight: 700,
+                  cursor: isCancelling || !cancelReason.trim() ? "not-allowed" : "pointer",
+                  opacity: isCancelling || !cancelReason.trim() ? 0.6 : 1,
+                }}
+              >
+                {isCancelling ? "Cancelling..." : "Yes, Cancel Order"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reusable Modal Dialog */}
+      <Modal
+        isOpen={modalConfig.isOpen}
+        type={modalConfig.type}
+        title={modalConfig.title}
+        message={modalConfig.message}
+        confirmText={modalConfig.confirmText}
+        cancelText={modalConfig.cancelText}
+        onConfirm={modalConfig.onConfirm}
+        onCancel={modalConfig.onCancel}
+      />
     </div>
   );
 };

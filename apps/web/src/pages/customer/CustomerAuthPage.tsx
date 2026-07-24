@@ -10,8 +10,14 @@ import React, { useRef, useState } from "react";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
 import { ChevronLeft, Lock, LogIn, Phone, User, UserPlus } from "lucide-react";
 
-const cleanPhone = (raw: string): string => raw.replace(/[^\d+]/g, "");
-const isValidPhone = (v: string): boolean => /^\+?\d{10,13}$/.test(v);
+const formatPhone = (raw: string): string => {
+  const cleaned = raw.replace(/\D/g, "");
+  if (cleaned.startsWith("0") && cleaned.length === 10) return `254${cleaned.slice(1)}`;
+  if ((cleaned.startsWith("7") || cleaned.startsWith("1")) && cleaned.length === 9) return `254${cleaned}`;
+  if (cleaned.startsWith("254") && cleaned.length === 12) return cleaned;
+  return cleaned;
+};
+const isValidPhone = (v: string): boolean => /^254\d{9}$/.test(v);
 
 type AuthTab = "login" | "register";
 
@@ -141,10 +147,10 @@ export const CustomerAuthPage: React.FC<CustomerAuthPageProps> = ({ onBack, onSu
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError("");
-    if (!isValidPhone(loginPhone)) { setLoginError("Enter a valid phone (10-13 digits, e.g. 0712345678)."); return; }
+    if (!isValidPhone(loginPhone)) { setLoginError("Enter a valid Kenyan phone number (e.g. 0712345678)."); return; }
     if (loginPin.length < 4) { setLoginError("Please enter your full 4-digit PIN."); return; }
     setLoginLoading(true);
-    const res = await login(loginPhone.trim(), loginPin);
+    const res = await login(loginPhone, loginPin);
     setLoginLoading(false);
     if (res.success) { onSuccess(); }
     else { setLoginError(res.error ?? "Sign in failed"); }
@@ -154,11 +160,11 @@ export const CustomerAuthPage: React.FC<CustomerAuthPageProps> = ({ onBack, onSu
     e.preventDefault();
     setRegError("");
     if (!regFirstName) { setRegError("Please enter your first name."); return; }
-    if (!isValidPhone(regPhone)) { setRegError("Enter a valid phone (10-13 digits, e.g. 0712345678)."); return; }
+    if (!isValidPhone(regPhone)) { setRegError("Enter a valid Kenyan phone number (e.g. 0712345678)."); return; }
     if (regPin.length < 4) { setRegError("Please choose a 4-digit PIN."); return; }
     if (regPin !== regPinConfirm) { setRegError("PINs do not match. Please re-enter."); return; }
     setRegLoading(true);
-    const res = await register(regFirstName.trim(), regPhone.trim(), regPin);
+    const res = await register(regFirstName.trim(), regPhone, regPin);
     setRegLoading(false);
     if (res.success) { onSuccess(); }
     else { setRegError(res.error ?? "Registration failed"); }
@@ -213,7 +219,7 @@ export const CustomerAuthPage: React.FC<CustomerAuthPageProps> = ({ onBack, onSu
                 type="tel"
                 placeholder="07XXXXXXXX"
                 value={loginPhone}
-                onChange={(e) => setLoginPhone(cleanPhone(e.target.value))}
+                onChange={(e) => setLoginPhone(formatPhone(e.target.value))}
                 className="input-field"
                 autoComplete="tel"
                 maxLength={14}
@@ -275,7 +281,7 @@ export const CustomerAuthPage: React.FC<CustomerAuthPageProps> = ({ onBack, onSu
                 type="tel"
                 placeholder="07XXXXXXXX"
                 value={regPhone}
-                onChange={(e) => setRegPhone(cleanPhone(e.target.value))}
+                onChange={(e) => setRegPhone(formatPhone(e.target.value))}
                 className="input-field"
                 autoComplete="tel"
                 maxLength={14}

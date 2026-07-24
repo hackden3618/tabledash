@@ -8,7 +8,7 @@
 
 import React, { useEffect, useState } from "react";
 import { apiGet } from "../../lib/api";
-import { ArrowLeft, CheckCircle2, Clock, ShoppingBag, TrendingUp } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock, ShoppingBag, TrendingUp, XCircle, Wallet } from "lucide-react";
 
 interface AdminDashboardPageProps {
   token: string;
@@ -183,10 +183,67 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   KSh {metrics.totalSales}
                 </div>
                 <div style={{ fontSize: "0.85rem", color: "#6B7280", fontWeight: 600, marginTop: "4px" }}>
-                  Total Sales
+                  Total Sales (excl. cancelled)
                 </div>
                 <div style={{ fontSize: "0.72rem", color: "#1E4D36", marginTop: "6px", fontWeight: 700 }}>
                   View Orders →
+                </div>
+              </div>
+
+              {/* Card 5: Outstanding Balance */}
+              <div className="card"
+                style={{
+                  textAlign: "center",
+                  padding: "20px 16px",
+                  border: "1.5px solid #F59E0B",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: "6px", color: "#D97706" }}>
+                  <Wallet size={24} />
+                </div>
+                <div style={{ fontSize: "1.6rem", fontWeight: 800, color: "#D97706" }}>
+                  KSh {metrics.outstandingBalance}
+                </div>
+                <div style={{ fontSize: "0.85rem", color: "#6B7280", fontWeight: 600, marginTop: "4px" }}>
+                  Outstanding Balance
+                </div>
+              </div>
+
+              {/* Card 6: Cancelled */}
+              <div className="card"
+                style={{
+                  textAlign: "center",
+                  padding: "20px 16px",
+                  border: "1.5px solid #FCA5A5",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: "6px", color: "#EF4444" }}>
+                  <XCircle size={24} />
+                </div>
+                <div style={{ fontSize: "2rem", fontWeight: 800, color: "#EF4444" }}>
+                  {metrics.cancelledOrders}
+                </div>
+                <div style={{ fontSize: "0.85rem", color: "#6B7280", fontWeight: 600, marginTop: "4px" }}>
+                  Cancelled
+                </div>
+              </div>
+
+              {/* Card 7: Average Order Value */}
+              <div className="card"
+                style={{
+                  textAlign: "center",
+                  padding: "20px 16px",
+                  border: "1.5px solid #A78BFA",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: "6px", color: "#7C3AED" }}>
+                  <TrendingUp size={24} />
+                </div>
+                <div style={{ fontSize: "1.6rem", fontWeight: 800, color: "#7C3AED" }}>
+                  KSh {metrics.averageOrderValue?.toFixed(2)}
+                </div>
+                <div style={{ fontSize: "0.85rem", color: "#6B7280", fontWeight: 600, marginTop: "4px" }}>
+                  Avg Order Value
                 </div>
               </div>
             </div>

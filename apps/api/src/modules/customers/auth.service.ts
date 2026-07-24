@@ -8,6 +8,7 @@
  */
 
 import { prisma } from "../../../../../infrastructure/database/prisma";
+import { formatPhone } from "../../../../../shared/phone";
 
 /** Simple base64 customer session token (same scheme as admin for now). */
 const makeToken = (customerId: string): string =>
@@ -34,7 +35,8 @@ export const registerCustomer = async (input: {
   phone: string;
   pin: string;
 }) => {
-  const existing = await prisma.customer.findUnique({ where: { phone: input.phone } });
+  const formattedPhone = formatPhone(input.phone);
+  const existing = await prisma.customer.findUnique({ where: { phone: formattedPhone } });
 
   if (existing?.pinHash) {
     throw new Error("An account already exists for this phone number. Please sign in instead.");
@@ -51,7 +53,7 @@ export const registerCustomer = async (input: {
     });
   } else {
     customer = await prisma.customer.create({
-      data: { firstName: input.firstName, phone: input.phone, pinHash },
+      data: { firstName: input.firstName, phone: formattedPhone, pinHash },
     });
   }
 
@@ -73,7 +75,8 @@ export const registerCustomer = async (input: {
  * Authenticates a customer by phone + 4-digit PIN.
  */
 export const loginCustomer = async (input: { phone: string; pin: string }) => {
-  const customer = await prisma.customer.findUnique({ where: { phone: input.phone } });
+  const formattedPhone = formatPhone(input.phone);
+  const customer = await prisma.customer.findUnique({ where: { phone: formattedPhone } });
 
   if (!customer || !customer.pinHash) {
     throw new Error("No account found for this phone number. Please register first.");

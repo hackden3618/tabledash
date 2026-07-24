@@ -49,6 +49,24 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
     // Per-product inline stock editing state
     const [editingStock, setEditingStock] = useState<Record<string, string>>({});
 
+    const getFreshnessText = (item: any) => {
+      if (item.lastRestockedAt) {
+        const diffMs = Date.now() - new Date(item.lastRestockedAt).getTime();
+        const diffH = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffM = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+        if (diffH > 0) return `Restocked ${diffH}h ${diffM} ago`;
+        return `Restocked ${diffM}m ago`;
+      }
+      if (item.outOfStockSince) {
+        const diffMs = Date.now() - new Date(item.outOfStockSince).getTime();
+        const diffH = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffM = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+        if (diffH > 0) return `Out of stock ${diffH}h ${diffM}`;
+        return `Out of stock ${diffM}m`;
+      }
+      return null;
+    };
+
     const fetchMenu = async () => {
         setLoading(true);
         const res = await apiGet<any[]>("/menu", token);
@@ -164,7 +182,7 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
                         <ArrowLeft size={20} />
                     </button>
                     <div className="header-title" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <Utensils size={20} /> Wambu's Corner Hotel Catalog
+                        <Utensils size={20} /> Menu Catalog
                     </div>
                 </div>
                 <button
@@ -277,7 +295,7 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
                                     className="input-field"
                                 />
                             </div>
-                            <button type="submit" disabled={isSubmitting} className="btn btn-primary">
+                            <button type="submit" disabled={isSubmitting || !name || !price || !imageUrl} className="btn btn-primary">
                                 {isSubmitting ? "Adding..." : "Save Product"}
                             </button>
                         </form>
@@ -297,16 +315,23 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
                                 className="card"
                                 style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}
                             >
-                                <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-                                    <img
-                                        src={item.imageUrl}
-                                        alt={item.name}
-                                        style={{ width: "60px", height: "60px", borderRadius: "10px", objectFit: "cover" }}
-                                    />
-                                    <div>
-                                        <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "#1F2937" }}>{item.name}</h3>
-                                        <div style={{ fontSize: "0.9rem", fontWeight: 700, color: "#1E4D36" }}>
-                                            KSh {item.price}
+                                <div>
+                                    <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                                        <img
+                                            src={item.imageUrl}
+                                            alt={item.name}
+                                            style={{ width: "60px", height: "60px", borderRadius: "10px", objectFit: "cover" }}
+                                        />
+                                        <div>
+                                            <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "#1F2937" }}>{item.name}</h3>
+                                            <div style={{ fontSize: "0.9rem", fontWeight: 700, color: "#1E4D36" }}>
+                                                KSh {item.price}
+                                            </div>
+                                            {getFreshnessText(item) && (
+                                                <div style={{ fontSize: "0.7rem", color: "#6B7280", fontWeight: 600, marginTop: "2px" }}>
+                                                    {getFreshnessText(item)}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>

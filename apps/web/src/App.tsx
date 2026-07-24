@@ -28,8 +28,11 @@ import { AdminLoginPage } from "./pages/admin/AdminLoginPage";
 import { AdminMapViewPage } from "./pages/admin/AdminMapViewPage";
 import { AdminMenuManagePage } from "./pages/admin/AdminMenuManagePage";
 import { AdminOrderDetailsPage } from "./pages/admin/AdminOrderDetailsPage";
+import { AdminOrderHistoryPage } from "./pages/admin/AdminOrderHistoryPage";
 import { AdminOrdersPage } from "./pages/admin/AdminOrdersPage";
 import { AdminSettingsPage } from "./pages/admin/AdminSettingsPage";
+import { PlatformAdminPage } from "./pages/platform/PlatformAdminPage";
+import { PlatformLoginPage } from "./pages/platform/PlatformLoginPage";
 
 type ViewState =
   | "customer_menu"
@@ -45,13 +48,25 @@ type ViewState =
   | "admin_map_view"
   | "admin_dashboard"
   | "admin_menu_manage"
-  | "admin_settings";
+  | "admin_settings"
+  | "admin_order_history"
+  | "platform_login"
+  | "platform_admin";
 
 export function AppContent() {
+  const [platformToken, setPlatformToken] = useState<string>(
+    () => localStorage.getItem("tableDash_platform_token") || ""
+  );
+
   const [currentView, setCurrentView] = useState<ViewState>(() => {
-    if (window.location.pathname === "/kitchen") {
+    const path = window.location.pathname;
+    if (path === "/kitchen") {
       const token = localStorage.getItem("tableDash_token");
       return token ? "admin_orders" : "admin_login";
+    }
+    if (path === "/platform") {
+      const token = localStorage.getItem("tableDash_platform_token");
+      return token ? "platform_admin" : "platform_login";
     }
     return "customer_menu";
   });
@@ -68,11 +83,15 @@ export function AppContent() {
     () => localStorage.getItem("tableDash_token") || ""
   );
 
+  // Listen for URL changes (pop state / back/forward)
   useEffect(() => {
     const handlePopState = () => {
-      if (window.location.pathname === "/kitchen") {
+      const path = window.location.pathname;
+      if (path === "/kitchen") {
         setCurrentView(adminToken ? "admin_orders" : "admin_login");
-      } else if (currentView.startsWith("admin_")) {
+      } else if (path === "/platform") {
+        setCurrentView("platform_admin");
+      } else if (currentView.startsWith("admin_") || currentView.startsWith("platform")) {
         setCurrentView("customer_menu");
       }
     };
@@ -189,6 +208,7 @@ export function AppContent() {
           }}
           onNavigateDashboard={() => setCurrentView("admin_dashboard")}
           onNavigateMenuManage={() => setCurrentView("admin_menu_manage")}
+          onNavigateOrderHistory={() => setCurrentView("admin_order_history")}
           onNavigateSettings={() => setCurrentView("admin_settings")}
           onLogout={() => {
             localStorage.removeItem("tableDash_token");
@@ -236,6 +256,35 @@ export function AppContent() {
         <AdminSettingsPage
           token={adminToken}
           onBackToOrders={() => setCurrentView("admin_orders")}
+        />
+      )}
+
+      {currentView === "admin_order_history" && (
+        <AdminOrderHistoryPage
+          token={adminToken}
+          onBackToOrders={() => setCurrentView("admin_orders")}
+        />
+      )}
+
+      {/* ─── Platform Admin Panel ────────────────────────────────────── */}
+      {currentView === "platform_login" && (
+        <PlatformLoginPage
+          onLoginSuccess={(token) => {
+            setPlatformToken(token);
+            setCurrentView("platform_admin");
+          }}
+        />
+      )}
+
+      {currentView === "platform_admin" && (
+        <PlatformAdminPage
+          token={platformToken}
+          onBack={() => setCurrentView("customer_menu")}
+          onLogout={() => {
+            localStorage.removeItem("tableDash_platform_token");
+            setPlatformToken("");
+            setCurrentView("platform_login");
+          }}
         />
       )}
     </>

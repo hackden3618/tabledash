@@ -11,8 +11,14 @@ import { apiGet, apiPatch, apiPost, apiDelete } from "../../lib/api";
 import { Modal } from "../../components/Modal";
 import { ArrowLeft, Save, Phone, Store, Clock, Users, UserPlus, Trash2, MessageSquare } from "lucide-react";
 
-const cleanPhone = (raw: string): string => raw.replace(/[^\d+]/g, "");
-const isValidPhone = (v: string): boolean => /^\+?\d{10,13}$/.test(v);
+const formatPhone = (raw: string): string => {
+  const cleaned = raw.replace(/\D/g, "");
+  if (cleaned.startsWith("0") && cleaned.length === 10) return `254${cleaned.slice(1)}`;
+  if ((cleaned.startsWith("7") || cleaned.startsWith("1")) && cleaned.length === 9) return `254${cleaned}`;
+  if (cleaned.startsWith("254") && cleaned.length === 12) return cleaned;
+  return cleaned;
+};
+const isValidPhone = (v: string): boolean => /^254\d{9}$/.test(v);
 
 interface StaffUser {
   id: string;
@@ -98,15 +104,13 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({
     }
 
     setSaving(true);
-    const res = await apiPatch<any>(
-      "/settings",
-      {
-        staffPhone: staffPhone.trim(),
-        hotelIsOpen: hotelIsOpen,
-        autoCloseAt: autoCloseIso,
-      },
-      token
-    );
+    const body: Record<string, unknown> = {
+      hotelIsOpen: hotelIsOpen,
+      autoCloseAt: autoCloseIso,
+    };
+    const staffPhoneVal = staffPhone.trim();
+    if (staffPhoneVal) body.staffPhone = staffPhoneVal;
+    const res = await apiPatch<any>("/settings", body, token);
     setSaving(false);
 
     if (res.success) {
@@ -128,7 +132,7 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({
 
   const handleAddStaff = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanNum = cleanPhone(newStaffPhone.trim());
+    const cleanNum = formatPhone(newStaffPhone.trim());
     if (!newStaffName.trim() || !cleanNum) return;
 
     if (!isValidPhone(cleanNum)) {
@@ -315,7 +319,7 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({
                     className="input-field"
                     placeholder="e.g. 0712345678"
                     value={staffPhone}
-                    onChange={(e) => setStaffPhone(cleanPhone(e.target.value))}
+                    onChange={(e) => setStaffPhone(formatPhone(e.target.value))}
                     maxLength={14}
                   />
                   <p style={{ fontSize: "0.75rem", color: "#9CA3AF", marginTop: "4px", margin: 0 }}>
@@ -325,8 +329,7 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({
 
                 <button
                   type="submit"
-                  disabled={saving || (staffPhone.trim().length > 0 && !isValidPhone(staffPhone.trim()))}
-                  className="btn btn-primary"
+                  disabled={saving || (staffPhone.trim().length > 0 && !isValidPhone(staffPhone.trim()))}                  className="btn btn-primary"
                   style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", width: "100%" }}
                 >
                   <Save size={16} />
