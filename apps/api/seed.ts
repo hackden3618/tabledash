@@ -12,10 +12,10 @@ export const seedDatabase = async () => {
     console.log("[Seeder] Seeding default menu items and admin user...");
 
     // Seed default admin user
-    const adminUsername = env.seedAdminUsername;
-    const adminPassword = env.seedAdminPassword;
+    const platformAdminUsername = env.seedAdminUsername;
+    const platformAdminPassword = env.seedAdminPassword;
 
-    if (!adminUsername || !adminPassword) {
+    if (!platformAdminUsername || !platformAdminPassword) {
         throw new Error(
             "[Seeder] SEED_ADMIN_USERNAME and SEED_ADMIN_PASSWORD must be set in environment"
         );
@@ -27,33 +27,15 @@ export const seedDatabase = async () => {
     });
 
     if (!existingPlatformAdmin) {
-        const platformPasswordHash = await Bun.password.hash(adminPassword);
+        const platformPasswordHash = await Bun.password.hash(platformAdminPassword);
         await prisma.platformAdmin.create({
             data: {
-                username: "platform_admin",
+                username: platformAdminUsername,
                 passwordHash: platformPasswordHash,
                 name: "TableDash Platform Admin",
             },
         });
-        console.log(`[Seeder] Created default platform admin user: 'platform_admin'`);
-    }
-
-    const existingAdmin = await prisma.adminUser.findUnique({
-        where: { username: adminUsername },
-    });
-
-    if (!existingAdmin) {
-        // WHY: Using Bun.password.hash for secure password storage compliant with security guidelines
-        const passwordHash = await Bun.password.hash(adminPassword);
-        await prisma.adminUser.create({
-            data: {
-                username: adminUsername,
-                passwordHash: passwordHash,
-                name: "Wambu's Corner Hotel Admin",
-                role: "HOTEL_ADMIN",
-            },
-        });
-        console.log(`[Seeder] Created default admin user: '${adminUsername}'`);
+        console.log(`[Seeder] Created default platform admin user: ${platformAdminUsername}`);
     }
 
     // Seed default menu products matching reference visual design
@@ -69,14 +51,14 @@ export const seedDatabase = async () => {
             name: "Chapati",
             category: "Sides",
             imageUrl: "https://images.unsplash.com/photo-1565557623262-b51c2513a641?auto=format&fit=crop&w=400&q=80",
-            price: 20,
+            price: 25,
             available: true,
         },
         {
             name: "Tea",
             category: "Beverages",
             imageUrl: "https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=400&q=80",
-            price: 30,
+            price: 25,
             available: true,
         },
         {
@@ -115,7 +97,7 @@ export const seedDatabase = async () => {
         await prisma.setting.create({
             data: {
                 key: "staff_phone",
-                value: "0712345678",
+                value: "0757030743",
             },
         });
         console.log("[Seeder] Created default hotel staff phone setting: 0712345678");
