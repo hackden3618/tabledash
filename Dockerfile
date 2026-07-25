@@ -19,7 +19,7 @@ COPY shared/ ./shared/
 COPY infrastructure/ ./infrastructure/
 COPY prisma/ ./prisma/
 COPY prisma.config.ts ./
-COPY .build-id ./
+# COPY .build-id ./
 COPY --from=frontend /app/apps/web/dist ./apps/web/dist
 
 RUN bun install --frozen-lockfile --production
