@@ -1,5 +1,7 @@
 import { smsService } from "../sms.service";
 
+const APP_LINK = "https://tabledash.up.railway.app";
+
 interface OrderStatusPayload {
   orderId: string;
   orderNumber: number;
@@ -11,7 +13,7 @@ interface OrderStatusPayload {
   hotelName?: string;
 }
 
-const CUSTOMER_NOTIFIED_STATUSES = ["OUT_FOR_DELIVERY", "CANCELLED"];
+const CUSTOMER_NOTIFIED_STATUSES = ["ACCEPTED", "OUT_FOR_DELIVERY", "CANCELLED"];
 
 export async function handleOrderStatusUpdated(payload: Record<string, unknown>): Promise<boolean> {
   const data = payload as unknown as OrderStatusPayload;
@@ -20,11 +22,13 @@ export async function handleOrderStatusUpdated(payload: Record<string, unknown>)
   if (!CUSTOMER_NOTIFIED_STATUSES.includes(data.newStatus)) return true;
 
   let message: string;
-  if (data.newStatus === "OUT_FOR_DELIVERY") {
-    message = `Hello ${data.customerName}, your order #${data.orderNumber} from ${hotelName} is OUT FOR DELIVERY! Be ready to receive your delivery at your stall. Our rider is on the way. Total: KSh ${data.totalAmount}.`;
+  if (data.newStatus === "ACCEPTED") {
+    message = `Hello ${data.customerName}, your order #${data.orderNumber} from ${hotelName} has been ACCEPTED! Our rider will pick it up shortly. Track your order: ${APP_LINK}`;
+  } else if (data.newStatus === "OUT_FOR_DELIVERY") {
+    message = `Hello ${data.customerName}, your order #${data.orderNumber} from ${hotelName} is OUT FOR DELIVERY! Be ready to receive your delivery at your stall. Our rider is on the way. Total: KSh ${data.totalAmount}. Track: ${APP_LINK}`;
   } else if (data.newStatus === "CANCELLED") {
     const reason = data.cancelReason || "we are unable to deliver your order at this time";
-    message = `Hello ${data.customerName}, we are sorry to inform you that order #${data.orderNumber} has been cancelled. Reason: ${reason}. We appreciate your understanding and hope to serve you next time!`;
+    message = `Hello ${data.customerName}, we are sorry to inform you that order #${data.orderNumber} has been cancelled. Reason: ${reason}. We appreciate your understanding. Reach us: ${APP_LINK}`;
   } else {
     return true;
   }

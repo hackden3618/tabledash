@@ -490,3 +490,27 @@ body {
     box-shadow: 0 2px 6px rgba(239, 68, 68, 0.4);
     animation: pulseGlow 2s infinite;
 }
+
+/* Platform Admin Responsive Sidebar */
+.platform-main.collapsed {
+    margin-left: 0 !important;
+}
+
+@media (max-width: 768px) {
+    .platform-sidebar {
+        width: 240px !important;
+    }
+    .platform-main {
+        margin-left: 0 !important;
+        padding: 48px 12px !important;
+    }
+    .platform-sidebar-overlay {
+        display: block !important;
+    }
+}
+
+@media (min-width: 769px) {
+    .platform-sidebar-overlay {
+        display: none !important;
+    }
+}

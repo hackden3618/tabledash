@@ -6,10 +6,10 @@
  */
 
 import { jwt } from "@elysiajs/jwt";
-import { Elysia } from "elysia";
+import { Elysia, t } from "elysia";
 import { env } from "../../../../../shared/config";
 import { AdminLoginSchema } from "../../../../../shared/schemas";
-import { loginAdmin, verifyAdminToken } from "./service";
+import { loginAdmin, verifyAdminToken, requestPasswordResetOtp, resetPasswordWithOtp } from "./service";
 
 export const authRoute = new Elysia({
   prefix: `${env.apiPrefix}/auth`,
@@ -43,6 +43,40 @@ export const authRoute = new Elysia({
     },
     {
       body: AdminLoginSchema,
+    }
+  )
+  .post(
+    "/forgot-password",
+    async ({ body, set }) => {
+      try {
+        await requestPasswordResetOtp(body.phone);
+        return { success: true, data: { message: "OTP sent to your phone if the number is registered" } };
+      } catch (err: any) {
+        set.status = 400;
+        return { success: false, error: err.message || "Failed to send OTP" };
+      }
+    },
+    {
+      body: t.Object({ phone: t.String({ minLength: 10 }) }),
+    }
+  )
+  .post(
+    "/reset-password",
+    async ({ body, set }) => {
+      try {
+        await resetPasswordWithOtp(body.phone, body.otp, body.newPassword);
+        return { success: true, data: { message: "Password reset successfully" } };
+      } catch (err: any) {
+        set.status = 400;
+        return { success: false, error: err.message || "Failed to reset password" };
+      }
+    },
+    {
+      body: t.Object({
+        phone: t.String({ minLength: 10 }),
+        otp: t.String({ minLength: 6, maxLength: 6 }),
+        newPassword: t.String({ minLength: 6 }),
+      }),
     }
   )
   .get("/me", async ({ headers, jwt, set }) => {

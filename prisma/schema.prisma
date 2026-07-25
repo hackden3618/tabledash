@@ -50,6 +50,7 @@ enum EventName {
     hotel_status_updated
     hotel_admin_created
     hotel_staff_created
+    platform_admin_created
 }
 
 enum EventStatus {
@@ -69,6 +70,7 @@ model Hotel {
     id           String   @id @default(uuid()) @db.Uuid
     name         String
     slug         String   @unique
+    imageUrl     String?  @map("image_url")
     isOpen       Boolean  @default(true) @map("is_open")
     autoCloseAt  DateTime? @map("auto_close_at") @db.Timestamptz()
     createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()

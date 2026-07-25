@@ -1,6 +1,7 @@
 import React from "react";
-import { useNotifications, NotificationEntry } from "../context/NotificationsContext";
-import { Bell, CheckCheck, Trash2, X, AlertTriangle, CheckCircle2, Info, Package } from "lucide-react";
+import { useNotifications } from "../context/NotificationsContext";
+import type { NotificationEntry } from "../context/NotificationsContext";
+import { Bell, CheckCheck, Trash2, X, AlertTriangle, CheckCircle2, Package } from "lucide-react";
 
 interface CustomerNotificationPanelProps {
   isOpen: boolean;
@@ -8,7 +9,8 @@ interface CustomerNotificationPanelProps {
 }
 
 export const CustomerNotificationPanel: React.FC<CustomerNotificationPanelProps> = ({ isOpen, onClose }) => {
-  const { notifications, unreadCount, markAllRead, clearAll } = useNotifications();
+  const { notifications, unreadCount, markAllRead, currentScope, clearScope } = useNotifications();
+  const scopedNotifications = notifications.filter((n) => n.scope === currentScope);
 
   if (!isOpen) return null;
 
@@ -68,7 +70,7 @@ export const CustomerNotificationPanel: React.FC<CustomerNotificationPanelProps>
         </div>
 
         {/* Action controls */}
-        {notifications.length > 0 && (
+        {scopedNotifications.length > 0 && (
           <div style={{ padding: "10px 16px", background: "#F3F4F6", borderBottom: "1px solid #E5E7EB", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <button
               onClick={markAllRead}
@@ -77,7 +79,7 @@ export const CustomerNotificationPanel: React.FC<CustomerNotificationPanelProps>
               <CheckCheck size={14} /> Mark all read
             </button>
             <button
-              onClick={clearAll}
+              onClick={() => clearScope(currentScope)}
               style={{ background: "none", border: "none", color: "#DC2626", fontSize: "0.8rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "4px", cursor: "pointer" }}
             >
               <Trash2 size={14} /> Clear all
@@ -87,7 +89,7 @@ export const CustomerNotificationPanel: React.FC<CustomerNotificationPanelProps>
 
         {/* Notification List */}
         <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
-          {notifications.length === 0 ? (
+          {scopedNotifications.length === 0 ? (
             <div style={{ textAlign: "center", padding: "60px 20px", color: "#6B7280" }}>
               <Bell size={40} style={{ opacity: 0.3, marginBottom: "12px" }} />
               <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "#374151" }}>No notifications yet</h3>
@@ -97,7 +99,7 @@ export const CustomerNotificationPanel: React.FC<CustomerNotificationPanelProps>
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-              {notifications.map((item: NotificationEntry) => (
+              {scopedNotifications.map((item: NotificationEntry) => (
                 <div
                   key={item.id}
                   style={{

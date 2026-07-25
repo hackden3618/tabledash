@@ -5,7 +5,8 @@
  * When to modify: When adding new menu endpoints or changing routing parameters.
  */
 
-import { Elysia } from "elysia";
+import { jwt } from "@elysiajs/jwt";
+import { Elysia, t } from "elysia";
 import { env } from "../../../../../shared/config";
 import {
   CreateProductSchema,
@@ -20,6 +21,7 @@ import {
   updateProductAvailability,
   updateProductStock,
 } from "./service";
+import { verifyAdminToken } from "../auth/service";
 
 export const menuRoute = new Elysia({
   prefix: `${env.apiPrefix}/menu`,
@@ -28,13 +30,32 @@ export const menuRoute = new Elysia({
     tags: ["Menu"],
   },
 })
-  .get("/", async () => {
-    const items = await getAllMenuItems();
-    return { success: true, data: items };
-  })
+  .use(
+    jwt({
+      name: "jwt",
+      secret: env.jwtSecret,
+    })
+  )
+  .get(
+    "/",
+    async ({ query }) => {
+      const hotelId = (query as any).hotelId as string | undefined;
+      const items = await getAllMenuItems(hotelId);
+      return { success: true, data: items };
+    }
+  )
   .post(
     "/",
-    async ({ body, set }) => {
+    async ({ body, set, headers, jwt }) => {
+      const authHeader = headers["authorization"];
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        set.status = 401;
+        return { success: false, error: "Missing or invalid authorization header" };
+      }
+      const token = authHeader.split(" ")[1] ?? "";
+      try { await verifyAdminToken(token, (t) => jwt.verify(t)); }
+      catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
+
       try {
         const product = await createMenuItem(body);
         set.status = 201;
@@ -48,7 +69,16 @@ export const menuRoute = new Elysia({
   )
   .patch(
     "/:id/availability",
-    async ({ params, body, set }) => {
+    async ({ params, body, set, headers, jwt }) => {
+      const authHeader = headers["authorization"];
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        set.status = 401;
+        return { success: false, error: "Missing or invalid authorization header" };
+      }
+      const token = authHeader.split(" ")[1] ?? "";
+      try { await verifyAdminToken(token, (t) => jwt.verify(t)); }
+      catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
+
       try {
         const updated = await updateProductAvailability(params.id, body.available);
         return { success: true, data: updated };
@@ -61,7 +91,16 @@ export const menuRoute = new Elysia({
   )
   .patch(
     "/:id/stock",
-    async ({ params, body, set }) => {
+    async ({ params, body, set, headers, jwt }) => {
+      const authHeader = headers["authorization"];
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        set.status = 401;
+        return { success: false, error: "Missing or invalid authorization header" };
+      }
+      const token = authHeader.split(" ")[1] ?? "";
+      try { await verifyAdminToken(token, (t) => jwt.verify(t)); }
+      catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
+
       try {
         const updated = await updateProductStock(params.id, body.stockQty);
         return { success: true, data: updated };
@@ -74,7 +113,16 @@ export const menuRoute = new Elysia({
   )
   .delete(
     "/:id",
-    async ({ params, set }) => {
+    async ({ params, set, headers, jwt }) => {
+      const authHeader = headers["authorization"];
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        set.status = 401;
+        return { success: false, error: "Missing or invalid authorization header" };
+      }
+      const token = authHeader.split(" ")[1] ?? "";
+      try { await verifyAdminToken(token, (t) => jwt.verify(t)); }
+      catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
+
       try {
         await deleteMenuItem(params.id);
         return { success: true, message: "Product deleted successfully" };

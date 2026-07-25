@@ -18,16 +18,18 @@ export interface CreateProductInput {
   price: number;
   available?: boolean;
   stockQty?: number;
+  hotelId?: string;
 }
 
 /**
  * Retrieves all active (non-deleted) menu items ordered oldest-first.
  * Formats Decimal fields and includes freshness timestamps.
  */
-export const getAllMenuItems = async () => {
-  const hotel = await getDefaultHotel();
+export const getAllMenuItems = async (hotelId?: string) => {
   const where: any = { deleted: false };
-  if (hotel) where.hotelId = hotel.id;
+  if (hotelId) {
+    where.hotelId = hotelId;
+  }
   const products = await prisma.product.findMany({
     where,
     orderBy: { createdAt: "asc" },
@@ -47,7 +49,7 @@ export const getAllMenuItems = async () => {
 export const createMenuItem = async (input: CreateProductInput) => {
   const stock = input.stockQty ?? 0;
   const isAvailable = input.available !== undefined ? input.available : stock > 0;
-  const hotel = await getDefaultHotel();
+  const hotelId = input.hotelId || (await getDefaultHotel())?.id;
 
   const product = await prisma.product.create({
     data: {
@@ -59,7 +61,7 @@ export const createMenuItem = async (input: CreateProductInput) => {
       stockQty: stock,
       lastRestockedAt: stock > 0 ? new Date() : null,
       deleted: false,
-      hotelId: hotel?.id,
+      hotelId,
     },
   });
 

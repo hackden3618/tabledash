@@ -51,6 +51,7 @@ export const loginAdmin = async (
     name: user.name,
     role: user.role,
     hotelId: user.hotelId,
+    exp: Math.floor(Date.now() / 1000) + 7200,
   });
 
   return {
@@ -119,6 +120,7 @@ export const loginPlatformAdmin = async (
     type: "platform",
     username: user.username,
     name: user.name,
+    exp: Math.floor(Date.now() / 1000) + 7200,
   });
 
   return {
@@ -201,8 +203,9 @@ export const resetPasswordWithOtp = async (phone: string, otpCode: string, newPa
     return true;
   }
 
-  const staff = await prisma.staffUser.findFirst({ where: { phone: formattedPhone } });
-  if (staff) {
+  const admin = await prisma.adminUser.findFirst({ where: { username: { contains: formattedPhone } } });
+  if (admin) {
+    await prisma.adminUser.update({ where: { id: admin.id }, data: { passwordHash } });
     otpStore.delete(formattedPhone);
     return true;
   }

@@ -45,10 +45,12 @@ const PENDING_STATUSES: OrderStatus[] = [
 
 /**
  * Places a new customer order transactionally.
- * WHY: Uses Prisma transaction to guarantee atomic execution of customer record updates, order creation, line-item pricing, and event log creation.
+ * Groups items by product.hotelId, creates one Order per hotel atomically.
+ * WHY: Supports multi-hotel cart — items from different hotels are partitioned
+ * into separate orders within a single transaction. All orders share one customer.
  */
 export const placeOrder = async (input: CreateOrderInput) => {
-  // Check if hotel is open for orders
+  // Check if at least one hotel is open
   const hotelStatus = await getHotelIsOpen();
   if (!hotelStatus.isOpen) {
     const hotelName = (await getDefaultHotel())?.name ?? "TableDash Deliveries";
@@ -58,13 +60,12 @@ export const placeOrder = async (input: CreateOrderInput) => {
   const productIds = input.items.map((item) => item.productId);
   const products = await prisma.product.findMany({
     where: { id: { in: productIds } },
+    include: { hotel: true },
   });
 
   const productMap = new Map(products.map((p) => [p.id, p]));
 
-  let totalAmount = 0;
-  const orderItemData: OrderItemDraft[] = [];
-
+  // Validate all items are available and in stock
   for (const item of input.items) {
     const product = productMap.get(item.productId);
     if (!product) {
@@ -99,24 +100,33 @@ export const placeOrder = async (input: CreateOrderInput) => {
         `Only ${product.stockQty} portion(s) of "${product.name}" left in stock (you requested ${item.quantity})`
       );
     }
+  }
 
+  // Group items by hotelId
+  const hotelGroups = new Map<string, { hotelId: string; hotelName: string; items: typeof input.items; orderItemData: OrderItemDraft[]; totalAmount: number }>();
+  for (const item of input.items) {
+    const product = productMap.get(item.productId)!;
+    const hId = product.hotelId || "default";
+    if (!hotelGroups.has(hId)) {
+      hotelGroups.set(hId, { hotelId: hId, hotelName: product.hotel?.name || "TableDash Deliveries", items: [], orderItemData: [], totalAmount: 0 });
+    }
+    const group = hotelGroups.get(hId)!;
+    group.items.push(item);
     const unitPrice = Number(product.price);
     const subtotal = unitPrice * item.quantity;
-    totalAmount += subtotal;
-
-    orderItemData.push({
+    group.totalAmount += subtotal;
+    group.orderItemData.push({
       productId: product.id,
       name: product.name,
       quantity: item.quantity,
-      unitPrice: unitPrice,
-      subtotal: subtotal,
+      unitPrice,
+      subtotal,
     });
   }
 
   const formattedPhone = formatPhone(input.phone);
-  const hotel = await getDefaultHotel();
 
-  // Execute database transaction
+  // Execute database transaction — one Order per hotel group
   const result = await prisma.$transaction(async (tx) => {
     let customer = await tx.customer.findFirst({
       where: { phone: formattedPhone },
@@ -144,74 +154,88 @@ export const placeOrder = async (input: CreateOrderInput) => {
       });
     }
 
-    const order = await tx.order.create({
-      data: {
-        customerId: customer.id,
-        status: "NEW",
-        totalAmount: totalAmount,
-        stallNumber: input.stallNumber,
-        marketSection: input.marketSection,
-        locationDescription: input.locationDescription,
-        hotelId: hotel?.id,
-        orderItems: {
-          create: orderItemData.map((item) => ({
-            productId: item.productId,
-            name: item.name,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            subtotal: item.subtotal,
-          })),
-        },
-      },
-      include: {
-        customer: true,
-        orderItems: true,
-      },
-    });
-
+    // Decrement stock once per product (deduplicated across groups)
     const updatedProducts: any[] = [];
-    for (const item of orderItemData) {
-      const updated = await tx.product.update({
-        where: { id: item.productId },
-        data: { stockQty: { decrement: item.quantity } },
-      });
-
-      if (updated.stockQty <= 0) {
-        const markedUnavailable = await tx.product.update({
+    const seenProductIds = new Set<string>();
+    for (const [, group] of hotelGroups) {
+      for (const item of group.orderItemData) {
+        if (seenProductIds.has(item.productId)) continue;
+        seenProductIds.add(item.productId);
+        const updated = await tx.product.update({
           where: { id: item.productId },
-          data: { available: false, stockQty: Math.max(0, updated.stockQty), outOfStockSince: new Date() },
+          data: { stockQty: { decrement: item.quantity } },
         });
-        updatedProducts.push(markedUnavailable);
-      } else {
-        updatedProducts.push(updated);
+        if (updated.stockQty <= 0) {
+          const markedUnavailable = await tx.product.update({
+            where: { id: item.productId },
+            data: { available: false, stockQty: Math.max(0, updated.stockQty), outOfStockSince: new Date() },
+          });
+          updatedProducts.push(markedUnavailable);
+        } else {
+          updatedProducts.push(updated);
+        }
       }
     }
 
-    const itemsSummary = orderItemData.map((it) => `${it.quantity}x ${it.name}`).join(", ");
-    const outbox = await tx.eventOutbox.create({
-      data: {
-        eventName: "order_created",
-        payload: JSON.stringify({
-          orderId: order.id,
-          orderNumber: order.orderNumber,
-          customerName: input.customerName,
-          customerPhone: formattedPhone,
-          totalAmount: totalAmount,
-          itemsSummary,
+    // Create one Order per hotel group
+    const orders: any[] = [];
+    const outboxIds: string[] = [];
+    for (const [, group] of hotelGroups) {
+      const order = await tx.order.create({
+        data: {
+          customerId: customer.id,
+          status: "NEW",
+          totalAmount: group.totalAmount,
+          stallNumber: input.stallNumber,
           marketSection: input.marketSection,
           locationDescription: input.locationDescription,
-          hotelId: hotel?.id,
-          hotelName: hotel?.name,
-        }),
-        status: "initialized",
-      },
-    });
+          hotelId: group.hotelId === "default" ? undefined : group.hotelId,
+          orderItems: {
+            create: group.orderItemData.map((item) => ({
+              productId: item.productId,
+              name: item.name,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+              subtotal: item.subtotal,
+            })),
+          },
+        },
+        include: {
+          customer: true,
+          orderItems: true,
+        },
+      });
 
-    return { order, updatedProducts, outboxId: outbox.id };
+      const itemsSummary = group.orderItemData.map((it) => `${it.quantity}x ${it.name}`).join(", ");
+      const outbox = await tx.eventOutbox.create({
+        data: {
+          eventName: "order_created",
+          payload: JSON.stringify({
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            customerName: input.customerName,
+            customerPhone: formattedPhone,
+            totalAmount: group.totalAmount,
+            itemsSummary,
+            marketSection: input.marketSection,
+            locationDescription: input.locationDescription,
+            hotelId: group.hotelId === "default" ? undefined : group.hotelId,
+            hotelName: group.hotelName,
+          }),
+          status: "initialized",
+        },
+      });
+
+      orders.push(order);
+      outboxIds.push(outbox.id);
+    }
+
+    return { orders, updatedProducts, outboxIds };
   });
 
-  const formattedOrder = formatOrderResponse(result.order);
+  const formattedOrders = result.orders.map(formatOrderResponse);
 
+  // Broadcast menu updates
   for (const prod of result.updatedProducts) {
     wsHub.broadcastMenuUpdate({
       type: "MENU_AVAILABILITY_UPDATED",
@@ -222,43 +246,46 @@ export const placeOrder = async (input: CreateOrderInput) => {
     });
   }
 
-  wsHub.broadcastToAdmins({
-    type: "ORDER_CREATED",
-    payload: formattedOrder,
-  });
-
+  // Broadcast each order to admins
   const staffPhones = await getSmsRecipients();
-  if (staffPhones.length > 0) {
-    const itemsSummary = formattedOrder.orderItems?.map((it: any) => `${it.quantity}x ${it.name}`).join(", ") || "";
-    const hotelName = hotel?.name ?? "TableDash Deliveries";
-    const staffSmsMessage = `[${hotelName}] NEW ORDER #${formattedOrder.orderNumber} from ${input.customerName} (${input.phone}). Total: KSh ${formattedOrder.totalAmount}. Location: ${input.marketSection || "N/A"} - ${input.locationDescription || ""}. Items: ${itemsSummary}`;
+  for (let i = 0; i < result.orders.length; i++) {
+    const order = result.orders[i]!;
+    const formattedOrder = formattedOrders[i]!;
+    const group = Array.from(hotelGroups.values())[i]!;
 
-    Promise.all(
-      staffPhones.map((phone) =>
-        smsService.sendSms(phone, staffSmsMessage).catch((err) => {
-          console.error(`[Staff SMS Dispatch Error to ${phone}]:`, err);
-          return false;
-        })
-      )
-    ).then((results) => {
-      const allSent = results.every((r) => r !== false);
-      if (allSent && result.outboxId) {
-        prisma.eventOutbox.update({
-          where: { id: result.outboxId },
-          data: { status: "done", completedAt: new Date() },
-        }).catch(() => {});
-      }
-    }).catch((err) => {
-      console.error("[Staff SMS Promise.all Outer Error]:", err);
+    wsHub.broadcastToAdmins({
+      type: "ORDER_CREATED",
+      payload: formattedOrder,
     });
-  } else if (result.outboxId) {
-    prisma.eventOutbox.update({
-      where: { id: result.outboxId },
-      data: { status: "done", completedAt: new Date() },
-    }).catch(() => {});
+
+    if (staffPhones.length > 0) {
+      const itemsSummary = formattedOrder.orderItems?.map((it: any) => `${it.quantity}x ${it.name}`).join(", ") || "";
+      const msg = `[${group.hotelName}] NEW ORDER #${formattedOrder.orderNumber} from ${input.customerName} (${input.phone}). Total: KSh ${formattedOrder.totalAmount}. Location: ${input.marketSection || "N/A"} - ${input.locationDescription || ""}. Items: ${itemsSummary}`;
+
+      Promise.all(
+        staffPhones.map((phone) =>
+          smsService.sendSms(phone, msg).catch(() => false)
+        )
+      ).then((results) => {
+        const allSent = results.every((r) => r !== false);
+        if (allSent && result.outboxIds[i]) {
+          prisma.eventOutbox.update({
+            where: { id: result.outboxIds[i]! },
+            data: { status: "done", completedAt: new Date() },
+          }).catch(() => {});
+        }
+      }).catch(() => {});
+    } else if (result.outboxIds[i]) {
+      prisma.eventOutbox.update({
+        where: { id: result.outboxIds[i]! },
+        data: { status: "done", completedAt: new Date() },
+      }).catch(() => {});
+    }
   }
 
-  return formattedOrder;
+  // Return first order for backward compatibility with single-order consumers.
+  // Multi-order responses will be surfaced via the checkout concept in a future phase.
+  return formattedOrders.length === 1 ? formattedOrders[0]! : formattedOrders;
 };
 
 /**
@@ -469,20 +496,28 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus, canc
 
   if (newStatus === "CANCELLED" && formattedOrder.customer?.phone) {
     const reasonStr = cancelReason || "we are unable to deliver your order at this time";
-    const customerSmsMessage = `Hello ${formattedOrder.customer.firstName}, we are sorry to inform you that order #${formattedOrder.orderNumber} from ${hotelName} has been cancelled. Reason: ${reasonStr}. We appreciate your understanding and hope to serve you next time!`;
+    const customerSmsMessage = `Hello ${formattedOrder.customer.firstName}, we are sorry to inform you that order #${formattedOrder.orderNumber} from ${hotelName} has been cancelled. Reason: ${reasonStr}. We appreciate your understanding. Track your orders: https://tabledash.up.railway.app`;
     (async () => {
       try {
         await smsService.sendSms(formattedOrder.customer.phone, customerSmsMessage);
-        if (updated.outboxId) {
-          await prisma.eventOutbox.update({
-            where: { id: updated.outboxId },
-            data: { status: "done", completedAt: new Date() },
-          });
-        }
       } catch (err) {
         console.error("[Customer Cancel SMS Error]:", err);
       }
     })();
+  }
+
+  // Staff abort SMS — notify staff when an order is cancelled (customer-initiated or admin-initiated)
+  if (newStatus === "CANCELLED") {
+    const staffPhones = await getSmsRecipients().catch(() => []);
+    if (staffPhones.length > 0) {
+      const cancelSource = (cancelReason || "").toLowerCase().includes("customer") ? "Customer cancelled" : "Order cancelled";
+      const staffAbortMessage = `[${hotelName}] ABORT: Order #${formattedOrder.orderNumber} has been CANCELLED. Reason: ${cancelReason || "Staff unavailable"}. No delivery needed.`;
+      Promise.all(
+        staffPhones.map((phone) =>
+          smsService.sendSms(phone, staffAbortMessage).catch(() => false)
+        )
+      ).catch(() => {});
+    }
   }
 
   return formattedOrder;

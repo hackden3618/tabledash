@@ -32,7 +32,6 @@ import { AdminOrderHistoryPage } from "./pages/admin/AdminOrderHistoryPage";
 import { AdminOrdersPage } from "./pages/admin/AdminOrdersPage";
 import { AdminSettingsPage } from "./pages/admin/AdminSettingsPage";
 import { PlatformAdminPage } from "./pages/platform/PlatformAdminPage";
-import { PlatformLoginPage } from "./pages/platform/PlatformLoginPage";
 
 type ViewState =
   | "customer_menu"
@@ -50,14 +49,9 @@ type ViewState =
   | "admin_menu_manage"
   | "admin_settings"
   | "admin_order_history"
-  | "platform_login"
   | "platform_admin";
 
 export function AppContent() {
-  const [platformToken, setPlatformToken] = useState<string>(
-    () => localStorage.getItem("tableDash_platform_token") || ""
-  );
-
   const [currentView, setCurrentView] = useState<ViewState>(() => {
     const path = window.location.pathname;
     if (path === "/kitchen") {
@@ -65,13 +59,29 @@ export function AppContent() {
       return token ? "admin_orders" : "admin_login";
     }
     if (path === "/platform") {
-      const token = localStorage.getItem("tableDash_platform_token");
-      return token ? "platform_admin" : "platform_login";
+      return "platform_admin";
     }
     return "customer_menu";
   });
 
-  const { toasts, dismissToast } = useNotifications();
+  const { toasts, dismissToast, setScope, clearScope } = useNotifications();
+
+  // Sync notification scope with current view
+  useEffect(() => {
+    if (currentView.startsWith("customer_")) {
+      clearScope("admin");
+      clearScope("platform");
+      setScope("customer");
+    } else if (currentView.startsWith("admin_")) {
+      clearScope("customer");
+      clearScope("platform");
+      setScope("admin");
+    } else if (currentView === "platform_admin") {
+      clearScope("customer");
+      clearScope("admin");
+      setScope("platform");
+    }
+  }, [currentView, setScope, clearScope]);
 
   // State data for active flows
   const [placedOrder, setPlacedOrder] = useState<any>(null);
@@ -91,7 +101,7 @@ export function AppContent() {
         setCurrentView(adminToken ? "admin_orders" : "admin_login");
       } else if (path === "/platform") {
         setCurrentView("platform_admin");
-      } else if (currentView.startsWith("admin_") || currentView.startsWith("platform")) {
+      } else if (currentView.startsWith("admin_") || currentView === "platform_admin") {
         setCurrentView("customer_menu");
       }
     };
@@ -139,7 +149,8 @@ export function AppContent() {
         <LocationPage
           onBackToCart={() => setCurrentView("customer_cart")}
           onOrderPlaced={(order) => {
-            setPlacedOrder(order);
+            const primary = Array.isArray(order) ? order[0] : order;
+            setPlacedOrder(primary);
             setCurrentView("customer_confirmation");
           }}
         />
@@ -266,25 +277,10 @@ export function AppContent() {
         />
       )}
 
-      {/* ─── Platform Admin Panel ────────────────────────────────────── */}
-      {currentView === "platform_login" && (
-        <PlatformLoginPage
-          onLoginSuccess={(token) => {
-            setPlatformToken(token);
-            setCurrentView("platform_admin");
-          }}
-        />
-      )}
-
+      {/* ─── Platform Admin Panel (self-contained auth) ──────────────── */}
       {currentView === "platform_admin" && (
         <PlatformAdminPage
-          token={platformToken}
           onBack={() => setCurrentView("customer_menu")}
-          onLogout={() => {
-            localStorage.removeItem("tableDash_platform_token");
-            setPlatformToken("");
-            setCurrentView("platform_login");
-          }}
         />
       )}
     </>

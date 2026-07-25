@@ -5,8 +5,9 @@
  * When to modify: When altering cart line item summaries or WhatsApp message formats.
  */
 
-import React from "react";
+import React, { useMemo } from "react";
 import { useCart } from "../../context/CartContext";
+import { Building2 } from "lucide-react";
 
 interface CartPageProps {
   onBackToMenu: () => void;
@@ -15,6 +16,18 @@ interface CartPageProps {
 
 export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDelivery }) => {
   const { cart, updateQuantity, clearCart, totalAmount } = useCart();
+
+  const groupedCart = useMemo(() => {
+    const groups = new Map<string, { hotelName: string; items: typeof cart }>();
+    for (const item of cart) {
+      const key = item.hotelId || "default";
+      if (!groups.has(key)) {
+        groups.set(key, { hotelName: item.hotelName || "TableDash Deliveries", items: [] });
+      }
+      groups.get(key)!.items.push(item);
+    }
+    return Array.from(groups.entries());
+  }, [cart]);
 
   const handleWhatsAppOrder = () => {
     const text = cart
@@ -78,96 +91,106 @@ export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDe
             </button>
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            {cart.map((item) => (
-              <div
-                key={item.id}
-                className="card"
-                style={{
-                  display: "flex",
-                  gap: "14px",
-                  alignItems: "center",
-                }}
-              >
-                <img
-                  src={item.imageUrl}
-                  alt={item.name}
-                  style={{
-                    width: "64px",
-                    height: "64px",
-                    borderRadius: "10px",
-                    objectFit: "cover",
-                  }}
-                />
-                <div style={{ flex: 1 }}>
-                  <h3 style={{ fontSize: "1rem", fontWeight: 600, color: "#1F2937" }}>{item.name}</h3>
-                  <div style={{ fontSize: "0.875rem", color: "#6B7280" }}>KSh {item.price} each</div>
-                  <div style={{ fontSize: "0.95rem", fontWeight: 700, color: "#1E4D36", marginTop: "2px" }}>
-                    Subtotal: KSh {item.price * item.quantity}
-                  </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+            {groupedCart.map(([hotelId, group]) => (
+              <div key={hotelId}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+                  <Building2 size={16} color="#1E4D36" />
+                  <h3 style={{ fontSize: "0.95rem", fontWeight: 700, color: "#1E4D36" }}>{group.hotelName}</h3>
                 </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  {group.items.map((item) => (
+                    <div
+                      key={item.id}
+                      className="card"
+                      style={{
+                        display: "flex",
+                        gap: "14px",
+                        alignItems: "center",
+                      }}
+                    >
+                      <img
+                        src={item.imageUrl}
+                        alt={item.name}
+                        style={{
+                          width: "64px",
+                          height: "64px",
+                          borderRadius: "10px",
+                          objectFit: "cover",
+                        }}
+                      />
+                      <div style={{ flex: 1 }}>
+                        <h3 style={{ fontSize: "1rem", fontWeight: 600, color: "#1F2937" }}>{item.name}</h3>
+                        <div style={{ fontSize: "0.875rem", color: "#6B7280" }}>KSh {item.price} each</div>
+                        <div style={{ fontSize: "0.95rem", fontWeight: 700, color: "#1E4D36", marginTop: "2px" }}>
+                          Subtotal: KSh {item.price * item.quantity}
+                        </div>
+                      </div>
 
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    background: "#EBF4F0",
-                    padding: "4px 8px",
-                    borderRadius: "8px",
-                    border: "1px solid #1E4D36",
-                  }}
-                >
-                  <button
-                    onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                    style={{
-                      border: "none",
-                      background: "none",
-                      fontWeight: 700,
-                      fontSize: "1.1rem",
-                      color: "#1E4D36",
-                      cursor: "pointer",
-                      padding: "0 4px",
-                    }}
-                  >
-                    -
-                  </button>
-                  <input
-                    type="number"
-                    min={1}
-                    value={item.quantity}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value, 10);
-                      if (!isNaN(val) && val >= 1) {
-                        updateQuantity(item.id, val);
-                      }
-                    }}
-                    style={{
-                      width: "48px",
-                      textAlign: "center",
-                      fontWeight: 700,
-                      fontSize: "0.95rem",
-                      border: "1px solid #D1D5DB",
-                      borderRadius: "6px",
-                      padding: "4px 2px",
-                      background: "white",
-                      outline: "none",
-                    }}
-                  />
-                  <button
-                    onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                    style={{
-                      border: "none",
-                      background: "none",
-                      fontWeight: 700,
-                      fontSize: "1.1rem",
-                      color: "#1E4D36",
-                      cursor: "pointer",
-                      padding: "0 4px",
-                    }}
-                  >
-                    +
-                  </button>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          background: "#EBF4F0",
+                          padding: "4px 8px",
+                          borderRadius: "8px",
+                          border: "1px solid #1E4D36",
+                        }}
+                      >
+                        <button
+                          onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                          style={{
+                            border: "none",
+                            background: "none",
+                            fontWeight: 700,
+                            fontSize: "1.1rem",
+                            color: "#1E4D36",
+                            cursor: "pointer",
+                            padding: "0 4px",
+                          }}
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min={1}
+                          value={item.quantity}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            if (!isNaN(val) && val >= 1) {
+                              updateQuantity(item.id, val);
+                            }
+                          }}
+                          style={{
+                            width: "48px",
+                            textAlign: "center",
+                            fontWeight: 700,
+                            fontSize: "0.95rem",
+                            border: "1px solid #D1D5DB",
+                            borderRadius: "6px",
+                            padding: "4px 2px",
+                            background: "white",
+                            outline: "none",
+                          }}
+                        />
+                        <button
+                          onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                          style={{
+                            border: "none",
+                            background: "none",
+                            fontWeight: 700,
+                            fontSize: "1.1rem",
+                            color: "#1E4D36",
+                            cursor: "pointer",
+                            padding: "0 4px",
+                          }}
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}

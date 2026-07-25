@@ -1,17 +1,16 @@
 /**
  * Purpose: Initial database seeder for tableDash.
- * Responsibilities: Seeds default menu items (Rice & Beans, Chapati, Tea, Sukuma Wiki) and initial admin user with hashed password.
+ * Responsibilities: Seeds default hotel, platform admin, hotel admin, menu items, and staff phone setting.
  * Dependencies: Prisma database client, Bun.password API.
- * When to modify: When adding default menu items or updating initial admin credentials.
+ * When to modify: When adding default data or updating initial credentials.
  */
 
 import { env } from "../../shared/config";
 import { prisma } from "../../infrastructure/database/prisma";
 
 export const seedDatabase = async () => {
-    console.log("[Seeder] Seeding default menu items and admin user...");
+    console.log("[Seeder] Seeding default data...");
 
-    // Seed default admin user
     const platformAdminUsername = env.seedAdminUsername;
     const platformAdminPassword = env.seedAdminPassword;
 
@@ -21,11 +20,23 @@ export const seedDatabase = async () => {
         );
     }
 
-    // Seed Platform Admin user
-    const existingPlatformAdmin = await prisma.platformAdmin.findFirst({
-        where: { username: "platform_admin" },
-    });
+    // ── Default Hotel ──
+    let hotel = await prisma.hotel.findFirst({ where: { deletedAt: null } });
+    if (!hotel) {
+        hotel = await prisma.hotel.create({
+            data: {
+                name: "Wambu's Corner Hotel",
+                slug: "wambus-corner-hotel",
+                isOpen: true,
+            },
+        });
+        console.log(`[Seeder] Created default hotel: ${hotel.name}`);
+    }
 
+    // ── Platform Admin ──
+    const existingPlatformAdmin = await prisma.platformAdmin.findFirst({
+        where: { username: platformAdminUsername },
+    });
     if (!existingPlatformAdmin) {
         const platformPasswordHash = await Bun.password.hash(platformAdminPassword);
         await prisma.platformAdmin.create({
@@ -35,10 +46,28 @@ export const seedDatabase = async () => {
                 name: "TableDash Platform Admin",
             },
         });
-        console.log(`[Seeder] Created default platform admin user: ${platformAdminUsername}`);
+        console.log(`[Seeder] Created platform admin: ${platformAdminUsername}`);
     }
 
-    // Seed default menu products matching reference visual design
+    // ── Hotel Admin (HOTEL_ADMIN) ──
+    const existingAdminUser = await prisma.adminUser.findFirst({
+        where: { hotelId: hotel.id, role: "HOTEL_ADMIN" },
+    });
+    if (!existingAdminUser) {
+        const adminPasswordHash = await Bun.password.hash(platformAdminPassword);
+        await prisma.adminUser.create({
+            data: {
+                username: "hotel_admin",
+                passwordHash: adminPasswordHash,
+                name: "Hotel Manager",
+                hotelId: hotel.id,
+                role: "HOTEL_ADMIN",
+            },
+        });
+        console.log("[Seeder] Created hotel admin: hotel_admin /", platformAdminPassword);
+    }
+
+    // ── Default Products ──
     const defaultProducts = [
         {
             name: "Rice & Beans",
@@ -46,6 +75,7 @@ export const seedDatabase = async () => {
             imageUrl: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80",
             price: 100,
             available: true,
+            stockQty: 50,
         },
         {
             name: "Chapati",
@@ -53,6 +83,7 @@ export const seedDatabase = async () => {
             imageUrl: "https://images.unsplash.com/photo-1565557623262-b51c2513a641?auto=format&fit=crop&w=400&q=80",
             price: 25,
             available: true,
+            stockQty: 100,
         },
         {
             name: "Tea",
@@ -60,6 +91,7 @@ export const seedDatabase = async () => {
             imageUrl: "https://images.unsplash.com/photo-1576092768241-dec231879fc3?auto=format&fit=crop&w=400&q=80",
             price: 25,
             available: true,
+            stockQty: 200,
         },
         {
             name: "Sukuma Wiki",
@@ -67,6 +99,7 @@ export const seedDatabase = async () => {
             imageUrl: "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=400&q=80",
             price: 50,
             available: true,
+            stockQty: 40,
         },
         {
             name: "Ugali & Beef",
@@ -74,33 +107,31 @@ export const seedDatabase = async () => {
             imageUrl: "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=400&q=80",
             price: 150,
             available: true,
+            stockQty: 30,
         },
     ];
 
     for (const prod of defaultProducts) {
         const existing = await prisma.product.findFirst({
-            where: { name: prod.name },
+            where: { name: prod.name, hotelId: hotel.id },
         });
         if (!existing) {
             await prisma.product.create({
-                data: prod,
+                data: { ...prod, hotelId: hotel.id, lastRestockedAt: new Date() },
             });
             console.log(`[Seeder] Created product: ${prod.name}`);
         }
     }
 
-    // Seed default hotel staff phone setting
+    // ── Staff Phone Setting (legacy fallback) ──
     const existingStaffPhone = await prisma.setting.findUnique({
         where: { key: "staff_phone" },
     });
     if (!existingStaffPhone) {
         await prisma.setting.create({
-            data: {
-                key: "staff_phone",
-                value: "0757030743",
-            },
+            data: { key: "staff_phone", value: "0757030743" },
         });
-        console.log("[Seeder] Created default hotel staff phone setting: 0712345678");
+        console.log("[Seeder] Created staff phone setting: 0757030743");
     }
 
     console.log("[Seeder] Database seeding completed successfully!");

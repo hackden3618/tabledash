@@ -13,6 +13,7 @@ import { join } from "node:path";
 // Feature module routes & WS hub
 import { authRoute } from "./src/modules/auth/route";
 import { customersRoute } from "./src/modules/customers/route";
+import { hotelsRoute } from "./src/modules/hotels/route";
 import { menuRoute } from "./src/modules/menu/route";
 import { ordersRoute } from "./src/modules/orders/route";
 import { platformRoute } from "./src/modules/platform/routes";
@@ -77,6 +78,7 @@ export const app = new Elysia()
 
   // Feature domain routes
   .use(authRoute)
+  .use(hotelsRoute)
   .use(menuRoute)
   .use(ordersRoute)
   .use(customersRoute)

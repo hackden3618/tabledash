@@ -5,6 +5,7 @@
  * When to modify: When adding new settings endpoints or changing route parameters.
  */
 
+import { jwt } from "@elysiajs/jwt";
 import { Elysia, t } from "elysia";
 import { env } from "../../../../../shared/config";
 import { PHONE_PATTERN, PHONE_MIN, PHONE_MAX } from "../../../../../shared/phone";
@@ -19,6 +20,7 @@ import {
   updateStaffUser,
   deleteStaffUser,
 } from "./service";
+import { verifyAdminToken } from "../auth/service";
 
 export const settingsRoute = new Elysia({
   prefix: `${env.apiPrefix}/settings`,
@@ -27,6 +29,12 @@ export const settingsRoute = new Elysia({
     tags: ["Settings"],
   },
 })
+  .use(
+    jwt({
+      name: "jwt",
+      secret: env.jwtSecret,
+    })
+  )
   .get("/", async () => {
     const staffPhone = await getStaffPhone();
     const status = await getHotelIsOpen();
@@ -43,7 +51,16 @@ export const settingsRoute = new Elysia({
   })
   .patch(
     "/",
-    async ({ body, set }) => {
+    async ({ body, set, headers, jwt }) => {
+      const authHeader = headers["authorization"];
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        set.status = 401;
+        return { success: false, error: "Missing or invalid authorization header" };
+      }
+      const token = authHeader.split(" ")[1] ?? "";
+      try { await verifyAdminToken(token, (t) => jwt.verify(t)); }
+      catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
+
       try {
         let staffPhone = await getStaffPhone();
         let status = await getHotelIsOpen();
@@ -77,13 +94,34 @@ export const settingsRoute = new Elysia({
       }),
     }
   )
-  .get("/staff", async () => {
-    const staff = await getStaffUsers();
-    return { success: true, data: staff };
-  })
+  .get(
+    "/staff",
+    async ({ headers, jwt, set }) => {
+      const authHeader = headers["authorization"];
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        set.status = 401;
+        return { success: false, error: "Missing or invalid authorization header" };
+      }
+      const token = authHeader.split(" ")[1] ?? "";
+      try { await verifyAdminToken(token, (t) => jwt.verify(t)); }
+      catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
+
+      const staff = await getStaffUsers();
+      return { success: true, data: staff };
+    }
+  )
   .post(
     "/staff",
-    async ({ body, set }) => {
+    async ({ body, set, headers, jwt }) => {
+      const authHeader = headers["authorization"];
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        set.status = 401;
+        return { success: false, error: "Missing or invalid authorization header" };
+      }
+      const token = authHeader.split(" ")[1] ?? "";
+      try { await verifyAdminToken(token, (t) => jwt.verify(t)); }
+      catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
+
       try {
         const created = await addStaffUser(body);
         return { success: true, data: created };
@@ -102,7 +140,16 @@ export const settingsRoute = new Elysia({
   )
   .patch(
     "/staff/:id",
-    async ({ params, body, set }) => {
+    async ({ params, body, set, headers, jwt }) => {
+      const authHeader = headers["authorization"];
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        set.status = 401;
+        return { success: false, error: "Missing or invalid authorization header" };
+      }
+      const token = authHeader.split(" ")[1] ?? "";
+      try { await verifyAdminToken(token, (t) => jwt.verify(t)); }
+      catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
+
       try {
         const updated = await updateStaffUser(params.id, body);
         return { success: true, data: updated };
@@ -119,7 +166,16 @@ export const settingsRoute = new Elysia({
       }),
     }
   )
-  .delete("/staff/:id", async ({ params, set }) => {
+  .delete("/staff/:id", async ({ params, set, headers, jwt }) => {
+    const authHeader = headers["authorization"];
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      set.status = 401;
+      return { success: false, error: "Missing or invalid authorization header" };
+    }
+    const token = authHeader.split(" ")[1] ?? "";
+    try { await verifyAdminToken(token, (t) => jwt.verify(t)); }
+    catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
+
     try {
       await deleteStaffUser(params.id);
       return { success: true };
