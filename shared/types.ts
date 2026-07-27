@@ -76,6 +76,7 @@ export interface DashboardMetrics {
   cancelledOrders: number;
   totalSales: number;
   outstandingBalance: number;
+  refundsDue: number;
   averageOrderValue: number;
   topItems: {
     name: string;
@@ -90,6 +91,7 @@ export type WsEventType =
   | "MENU_AVAILABILITY_UPDATED"
   | "ORDER_BOUNCED"    // Fired when an order fails at placement (e.g. stock shortage); urgent flag for admins.
   | "HOTEL_STATUS_UPDATED"  // Fired when hotel open/close status changes
+  | "HOTEL_CLOSING"         // Fired when hotel is closing — carries closingIn seconds for frontend countdown
   | "ORDER_PAYMENT_UPDATED" // Fired when payment status changes
   | "NOTIFICATION";         // Fired for general in-app notifications (dispatch, cancellation, payment, OOS)
 

@@ -8,8 +8,10 @@ interface OrderCreatedPayload {
   customerPhone: string;
   totalAmount: number;
   itemsSummary: string;
+  stallNumber?: string;
   marketSection?: string;
   locationDescription?: string;
+  hotelId?: string;
   hotelName?: string;
 }
 
@@ -17,10 +19,12 @@ export async function handleOrderCreated(payload: Record<string, unknown>): Prom
   const data = payload as unknown as OrderCreatedPayload;
   const hotelName = data.hotelName || "TableDash Deliveries";
 
-  const staffPhones = await getSmsRecipients();
+  const staffPhones = await getSmsRecipients(data.hotelId);
   if (staffPhones.length === 0) return true;
 
-  const message = `[${hotelName}] NEW ORDER #${data.orderNumber} from ${data.customerName} (${data.customerPhone}). Total: KSh ${data.totalAmount}. Items: ${data.itemsSummary}`;
+  const stall = data.stallNumber || "N/A";
+  const desc = data.locationDescription || "N/A";
+  const message = `[${hotelName}] NEW ORDER #${data.orderNumber} from ${data.customerName} (${data.customerPhone}). Total: KSh ${data.totalAmount}. Stall: ${stall} — ${desc}. Items: ${data.itemsSummary}`;
 
   const results = await Promise.allSettled(
     staffPhones.map((phone) => smsService.sendSms(phone, message))

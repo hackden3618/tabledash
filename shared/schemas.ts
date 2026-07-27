@@ -23,6 +23,7 @@ const PhoneString = t.String({
 export const CreateOrderSchema = t.Object({
   customerName: t.String({ minLength: 2, error: "Customer name is required" }),
   phone: PhoneString,
+  stallNumber: t.Optional(t.String()),
   marketSection: t.Optional(t.String()),
   locationDescription: t.Optional(t.String()),
   items: t.Array(OrderItemSchema, { minItems: 1, error: "Order must contain at least one item" }),
@@ -60,7 +61,7 @@ export const UpdateProductAvailabilitySchema = t.Object({
 
 export const AdminLoginSchema = t.Object({
   username: t.String({ minLength: 3, error: "Username is required" }),
-  password: t.String({ minLength: 4, error: "Password is required" }),
+  password: t.String({ minLength: 8, error: "Password must be at least 8 characters" }),
 });
 
 export const IdParamSchema = t.Object({

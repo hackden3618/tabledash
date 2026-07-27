@@ -6,6 +6,7 @@
  */
 
 import { env } from "../../shared/config";
+import { formatPhone } from "../../shared/phone";
 import { prisma } from "../../infrastructure/database/prisma";
 
 export const seedDatabase = async () => {
@@ -128,10 +129,11 @@ export const seedDatabase = async () => {
         where: { key: "staff_phone" },
     });
     if (!existingStaffPhone) {
+        const formattedSeedPhone = formatPhone("0757030743");
         await prisma.setting.create({
-            data: { key: "staff_phone", value: "0757030743" },
+            data: { key: "staff_phone", value: formattedSeedPhone },
         });
-        console.log("[Seeder] Created staff phone setting: 0757030743");
+        console.log("[Seeder] Created staff phone setting: " + formattedSeedPhone);
     }
 
     console.log("[Seeder] Database seeding completed successfully!");

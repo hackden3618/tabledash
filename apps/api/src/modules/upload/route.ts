@@ -52,10 +52,16 @@ export const uploadRoute = new Elysia({ prefix: "/api/v1" })
       try { await verifyAdminToken(token, (t) => jwt.verify(t)); }
       catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
       const file = body.file as File;
+      const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
 
       if (!file) {
         set.status = 400;
         return { success: false, error: "No image file uploaded" };
+      }
+
+      if (file.size > MAX_SIZE) {
+        set.status = 400;
+        return { success: false, error: "File size exceeds 5 MB limit" };
       }
 
       // Validate mime type

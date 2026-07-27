@@ -6,6 +6,7 @@
  */
 
 import { prisma } from "../../../../../infrastructure/database/prisma";
+import { formatPhone } from "../../../../../shared/phone";
 import type { HotelRole } from "../../../../../generated/prisma/client";
 
 export interface AdminAuthResult {
@@ -51,7 +52,7 @@ export const loginAdmin = async (
     name: user.name,
     role: user.role,
     hotelId: user.hotelId,
-    exp: Math.floor(Date.now() / 1000) + 7200,
+    exp: Math.floor(Date.now() / 1000) + 64800, // 18 hours
   });
 
   return {
@@ -165,7 +166,7 @@ export const verifyPlatformAdminToken = async (
 const otpStore = new Map<string, { code: string; expiresAt: number }>();
 
 export const requestPasswordResetOtp = async (phone: string): Promise<boolean> => {
-  const formattedPhone = phone.replace(/\D/g, "");
+  const formattedPhone = formatPhone(phone);
   const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
 
@@ -177,7 +178,6 @@ export const requestPasswordResetOtp = async (phone: string): Promise<boolean> =
       payload: JSON.stringify({
         type: "PASSWORD_RESET_OTP",
         phone: formattedPhone,
-        otpCode,
       }),
       status: "done",
     },
@@ -187,7 +187,7 @@ export const requestPasswordResetOtp = async (phone: string): Promise<boolean> =
 };
 
 export const resetPasswordWithOtp = async (phone: string, otpCode: string, newPassword: string): Promise<boolean> => {
-  const formattedPhone = phone.replace(/\D/g, "");
+  const formattedPhone = formatPhone(phone);
   const record = otpStore.get(formattedPhone);
 
   if (!record || record.code !== otpCode || Date.now() > record.expiresAt) {

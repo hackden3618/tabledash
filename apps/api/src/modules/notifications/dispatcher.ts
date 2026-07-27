@@ -10,9 +10,11 @@ import { prisma } from "../../../../../infrastructure/database/prisma";
 import type { EventName } from "../../../../../generated/prisma/client";
 import { handleOrderCreated } from "./handlers/order-created.handler";
 import { handleOrderStatusUpdated } from "./handlers/order-status-updated.handler";
+import { handleOrderPaymentUpdated } from "./handlers/order-payment-updated.handler";
 import { handleHotelCreated } from "./handlers/hotel-created.handler";
 import { handleHotelAdminCreated } from "./handlers/hotel-admin-created.handler";
 import { handleHotelStaffCreated } from "./handlers/hotel-staff-created.handler";
+import { handleHotelStatusUpdated } from "./handlers/hotel-status-updated.handler";
 import { handlePlatformAdminCreated } from "./handlers/platform-admin-created.handler";
 
 const MAX_RETRIES = 5;
@@ -24,7 +26,9 @@ type HandlerFn = (payload: Record<string, unknown>) => Promise<boolean>;
 const HANDLER_MAP: Record<string, HandlerFn> = {
   order_created: handleOrderCreated,
   order_status_updated: handleOrderStatusUpdated,
+  order_payment_updated: handleOrderPaymentUpdated,
   hotel_created: handleHotelCreated,
+  hotel_status_updated: handleHotelStatusUpdated,
   hotel_admin_created: handleHotelAdminCreated,
   hotel_staff_created: handleHotelStaffCreated,
   platform_admin_created: handlePlatformAdminCreated,

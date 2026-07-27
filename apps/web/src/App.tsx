@@ -9,6 +9,8 @@
 import { useEffect, useState } from "react";
 import { CartProvider } from "./context/CartContext";
 import { CustomerAuthProvider } from "./context/CustomerAuthContext";
+import { AdminAuthProvider, useAdminAuth } from "./context/AdminAuthContext";
+import { PlatformAdminAuthProvider, usePlatformAdminAuth } from "./context/PlatformAdminAuthContext";
 import { NotificationsProvider, useNotifications } from "./context/NotificationsContext";
 import { NotificationToastContainer } from "./components/NotificationToast";
 
@@ -23,6 +25,7 @@ import { MyOrdersPage } from "./pages/customer/MyOrdersPage";
 import { OrderTrackingPage } from "./pages/customer/OrderTrackingPage";
 
 // Admin Views
+import { AdminBottomNavBar, type AdminTab } from "./components/AdminBottomNavBar";
 import { AdminDashboardPage } from "./pages/admin/AdminDashboardPage";
 import { AdminLoginPage } from "./pages/admin/AdminLoginPage";
 import { AdminMapViewPage } from "./pages/admin/AdminMapViewPage";
@@ -32,6 +35,8 @@ import { AdminOrderHistoryPage } from "./pages/admin/AdminOrderHistoryPage";
 import { AdminOrdersPage } from "./pages/admin/AdminOrdersPage";
 import { AdminSettingsPage } from "./pages/admin/AdminSettingsPage";
 import { PlatformAdminPage } from "./pages/platform/PlatformAdminPage";
+
+
 
 type ViewState =
   | "customer_menu"
@@ -52,19 +57,30 @@ type ViewState =
   | "platform_admin";
 
 export function AppContent() {
+  const { toasts, dismissToast, setScope, clearScope } = useNotifications();
+  const { token: adminToken, isLoggedIn: isAdminLoggedIn, hydrating: adminHydrating, login: adminLogin, logout: adminLogout } = useAdminAuth();
+  usePlatformAdminAuth();
+
   const [currentView, setCurrentView] = useState<ViewState>(() => {
     const path = window.location.pathname;
     if (path === "/kitchen") {
-      const token = localStorage.getItem("tableDash_token");
-      return token ? "admin_orders" : "admin_login";
+      const stored = localStorage.getItem("tableDash_token");
+      return stored ? "admin_orders" : "admin_login";
     }
     if (path === "/platform") {
-      return "platform_admin";
+      const stored = localStorage.getItem("tableDash_platform_token");
+      return stored ? "platform_admin" : "platform_admin";
     }
     return "customer_menu";
   });
 
-  const { toasts, dismissToast, setScope, clearScope } = useNotifications();
+  // Auto-redirect admin to login on token expiry (but wait for hydration to complete)
+  useEffect(() => {
+    if (adminHydrating) return;
+    if (currentView.startsWith("admin_") && !isAdminLoggedIn) {
+      setCurrentView("admin_login");
+    }
+  }, [isAdminLoggedIn, adminHydrating, currentView]);
 
   // Sync notification scope with current view
   useEffect(() => {
@@ -88,17 +104,12 @@ export function AppContent() {
   const [trackingOrderId, setTrackingOrderId] = useState<string>("");
   const [selectedAdminOrder, setSelectedAdminOrder] = useState<any>(null);
 
-  // Admin Auth State
-  const [adminToken, setAdminToken] = useState<string>(
-    () => localStorage.getItem("tableDash_token") || ""
-  );
-
   // Listen for URL changes (pop state / back/forward)
   useEffect(() => {
     const handlePopState = () => {
       const path = window.location.pathname;
       if (path === "/kitchen") {
-        setCurrentView(adminToken ? "admin_orders" : "admin_login");
+        setCurrentView(isAdminLoggedIn ? "admin_orders" : "admin_login");
       } else if (path === "/platform") {
         setCurrentView("platform_admin");
       } else if (currentView.startsWith("admin_") || currentView === "platform_admin") {
@@ -107,9 +118,28 @@ export function AppContent() {
     };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, [adminToken, currentView]);
+  }, [isAdminLoggedIn, currentView]);
 
   const isCustomerView = currentView.startsWith("customer_");
+  const isAdminView = currentView.startsWith("admin_");
+
+  const getAdminTab = (): AdminTab => {
+    switch (currentView) {
+      case "admin_dashboard": return "dashboard";
+      case "admin_menu_manage": return "menu";
+      case "admin_settings": return "settings";
+      case "admin_order_history": return "history";
+      default: return "orders";
+    }
+  };
+
+  const handleAdminTab = (tab: AdminTab) => {
+    if (tab === "orders") setCurrentView("admin_orders");
+    else if (tab === "dashboard") setCurrentView("admin_dashboard");
+    else if (tab === "menu") setCurrentView("admin_menu_manage");
+    else if (tab === "settings") setCurrentView("admin_settings");
+    else if (tab === "history") setCurrentView("admin_order_history");
+  };
 
   const getActiveTab = (): CustomerTab => {
     if (currentView === "customer_cart") return "cart";
@@ -204,7 +234,7 @@ export function AppContent() {
       {currentView === "admin_login" && (
         <AdminLoginPage
           onLoginSuccess={(token) => {
-            setAdminToken(token);
+            adminLogin(token);
             setCurrentView("admin_orders");
           }}
         />
@@ -217,13 +247,8 @@ export function AppContent() {
             setSelectedAdminOrder(order);
             setCurrentView("admin_order_details");
           }}
-          onNavigateDashboard={() => setCurrentView("admin_dashboard")}
-          onNavigateMenuManage={() => setCurrentView("admin_menu_manage")}
-          onNavigateOrderHistory={() => setCurrentView("admin_order_history")}
-          onNavigateSettings={() => setCurrentView("admin_settings")}
           onLogout={() => {
-            localStorage.removeItem("tableDash_token");
-            setAdminToken("");
+            adminLogout();
             setCurrentView("customer_menu");
           }}
         />
@@ -253,6 +278,10 @@ export function AppContent() {
         <AdminDashboardPage
           token={adminToken}
           onBackToOrders={() => setCurrentView("admin_orders")}
+          onNavigateToOrders={() => setCurrentView("admin_orders")}
+          onNavigateToMenu={() => setCurrentView("admin_menu_manage")}
+          onNavigateToSettings={() => setCurrentView("admin_settings")}
+          onNavigateToHistory={() => setCurrentView("admin_order_history")}
         />
       )}
 
@@ -283,6 +312,14 @@ export function AppContent() {
           onBack={() => setCurrentView("customer_menu")}
         />
       )}
+
+      {/* Admin Bottom Navigation — persistent across all admin views (except login and order details) */}
+      {isAdminView && currentView !== "admin_login" && currentView !== "admin_order_details" && currentView !== "admin_map_view" && (
+        <AdminBottomNavBar
+          activeTab={getAdminTab()}
+          onSelectTab={handleAdminTab}
+        />
+      )}
     </>
   );
 }
@@ -292,7 +329,11 @@ export function App() {
     <NotificationsProvider>
       <CartProvider>
         <CustomerAuthProvider>
-          <AppContent />
+          <AdminAuthProvider>
+            <PlatformAdminAuthProvider>
+              <AppContent />
+            </PlatformAdminAuthProvider>
+          </AdminAuthProvider>
         </CustomerAuthProvider>
       </CartProvider>
     </NotificationsProvider>

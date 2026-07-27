@@ -28,6 +28,21 @@ export const updateStaffPhone = async (phone: string): Promise<string> => {
   return setting.value;
 };
 
+export const getHotelImageUrl = async (): Promise<string | null> => {
+  const hotel = await getDefaultHotel();
+  return hotel?.imageUrl ?? null;
+};
+
+export const updateHotelImageUrl = async (imageUrl: string): Promise<string> => {
+  const hotel = await getDefaultHotel();
+  if (!hotel) throw new Error("No hotel configured");
+  const updated = await prisma.hotel.update({
+    where: { id: hotel.id },
+    data: { imageUrl },
+  });
+  return updated.imageUrl ?? "";
+};
+
 export interface HotelStatusResult {
   isOpen: boolean;
   autoCloseAt: string | null;
@@ -40,19 +55,25 @@ export const getHotelIsOpen = async (): Promise<HotelStatusResult> => {
   if (hotel.isOpen && hotel.autoCloseAt) {
     const closeTime = hotel.autoCloseAt.getTime();
     if (!isNaN(closeTime) && Date.now() >= closeTime) {
+      wsHub.broadcastMenuUpdate({
+        type: "HOTEL_CLOSING",
+        payload: { closingIn: 0, isOpen: false, hotelId: hotel.id },
+      });
       await prisma.hotel.update({
         where: { id: hotel.id },
         data: { isOpen: false, autoCloseAt: null },
       });
       wsHub.broadcastMenuUpdate({
         type: "HOTEL_STATUS_UPDATED",
-        payload: { isOpen: false, autoCloseAt: null },
+        payload: { isOpen: false, autoCloseAt: null, hotelId: hotel.id },
       });
       return { isOpen: false, autoCloseAt: null };
     }
   }
   return { isOpen: hotel.isOpen, autoCloseAt: hotel.autoCloseAt?.toISOString() ?? null };
 };
+
+let pendingCloseTimeout: ReturnType<typeof setTimeout> | null = null;
 
 export const updateHotelIsOpen = async (
   isOpen: boolean,
@@ -61,15 +82,48 @@ export const updateHotelIsOpen = async (
   const hotel = await getDefaultHotel();
   if (!hotel) throw new Error("No hotel configured");
 
-  const closeDate = isOpen && autoCloseAt ? new Date(autoCloseAt) : null;
+  // Cancel any pending close timer if we're reopening or toggling again
+  if (pendingCloseTimeout) {
+    clearTimeout(pendingCloseTimeout);
+    pendingCloseTimeout = null;
+  }
+
+  if (isOpen) {
+    await prisma.hotel.update({
+      where: { id: hotel.id },
+      data: { isOpen: true, autoCloseAt: autoCloseAt ? new Date(autoCloseAt) : null },
+    });
+    const result = { isOpen: true, autoCloseAt: autoCloseAt ?? null, hotelId: hotel.id };
+    wsHub.broadcastMenuUpdate({ type: "HOTEL_STATUS_UPDATED", payload: result });
+    return result;
+  }
+
+  // Closing — update DB immediately so a page-refresh shows closed, then broadcast countdown
+  const hotelId = hotel.id;
   await prisma.hotel.update({
-    where: { id: hotel.id },
-    data: { isOpen, autoCloseAt: closeDate },
+    where: { id: hotelId },
+    data: { isOpen: false, autoCloseAt: null },
   });
 
-  const result = { isOpen, autoCloseAt: autoCloseAt ?? null };
-  wsHub.broadcastMenuUpdate({ type: "HOTEL_STATUS_UPDATED", payload: result });
-  return result;
+  wsHub.broadcastMenuUpdate({
+    type: "HOTEL_CLOSING",
+    payload: { closingIn: 5, isOpen: false, hotelId },
+  });
+
+  // After the countdown, broadcast final status update (DB is already closed)
+  pendingCloseTimeout = setTimeout(async () => {
+    pendingCloseTimeout = null;
+    try {
+      wsHub.broadcastMenuUpdate({
+        type: "HOTEL_STATUS_UPDATED",
+        payload: { isOpen: false, autoCloseAt: null, hotelId },
+      });
+    } catch (err) {
+      console.error("[Hotel Close Timer Error]:", err);
+    }
+  }, 5000);
+
+  return { isOpen: false, autoCloseAt: null };
 };
 
 export const getHotelName = async (): Promise<string> => {
@@ -83,8 +137,9 @@ export interface StaffUserPayload {
   receiveSms: boolean;
 }
 
-export const getStaffUsers = async () => {
+export const getStaffUsers = async (hotelId?: string) => {
   return await prisma.staffUser.findMany({
+    where: hotelId ? { hotelId } : undefined,
     orderBy: { createdAt: "desc" },
   });
 };
@@ -140,9 +195,12 @@ export const deleteStaffUser = async (id: string) => {
  * If no staff users exist, falls back to the legacy settings-based staff_phone configuration
  * to maintain backward compatibility.
  */
-export const getSmsRecipients = async (): Promise<string[]> => {
+export const getSmsRecipients = async (hotelId?: string): Promise<string[]> => {
+  const where: any = { receiveSms: true };
+  if (hotelId) where.hotelId = hotelId;
+
   const staff = await prisma.staffUser.findMany({
-    where: { receiveSms: true },
+    where,
     select: { phone: true },
   });
 

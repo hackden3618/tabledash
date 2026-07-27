@@ -15,6 +15,7 @@ export interface CartItem {
   quantity: number;
   hotelId?: string;
   hotelName?: string;
+  available: boolean; // false if item went out of stock while in cart
 }
 
 interface CartContextType {
@@ -23,17 +24,23 @@ interface CartContextType {
   updateQuantity: (productId: string, quantity: number) => void;
   removeFromCart: (productId: string) => void;
   clearCart: () => void;
+  markItemAvailability: (productId: string, available: boolean) => void;
   totalCount: number;
   totalAmount: number;
+  unavailableCount: number;
+  closedHotelIds: string[];
+  setClosedHotelIds: React.Dispatch<React.SetStateAction<string[]>>;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [closedHotelIds, setClosedHotelIds] = useState<string[]>([]);
   const [cart, setCart] = useState<CartItem[]>(() => {
     try {
       const saved = localStorage.getItem("tableDash_cart");
-      return saved ? JSON.parse(saved) : [];
+      const parsed: CartItem[] = saved ? JSON.parse(saved) : [];
+      return parsed.map((item) => ({ ...item, available: item.available ?? true }));
     } catch {
       return [];
     }
@@ -55,7 +62,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
         return updated;
       }
-      return [...prev, { ...product, quantity: 1 }];
+      return [...prev, { ...product, quantity: 1, available: true }];
     });
   };
 
@@ -77,8 +84,15 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCart([]);
   };
 
+  const markItemAvailability = (productId: string, available: boolean) => {
+    setCart((prev) =>
+      prev.map((item) => (item.id === productId ? { ...item, available } : item))
+    );
+  };
+
   const totalCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const unavailableCount = cart.filter((item) => !item.available).length;
 
   return (
     <CartContext.Provider
@@ -88,8 +102,12 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updateQuantity,
         removeFromCart,
         clearCart,
+        markItemAvailability,
         totalCount,
         totalAmount,
+        unavailableCount,
+        closedHotelIds,
+        setClosedHotelIds,
       }}
     >
       {children}

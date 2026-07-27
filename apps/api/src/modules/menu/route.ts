@@ -38,10 +38,15 @@ export const menuRoute = new Elysia({
   )
   .get(
     "/",
-    async ({ query }) => {
-      const hotelId = (query as any).hotelId as string | undefined;
-      const items = await getAllMenuItems(hotelId);
-      return { success: true, data: items };
+    async ({ query, set }) => {
+      try {
+        const hotelId = (query as any).hotelId as string | undefined;
+        const items = await getAllMenuItems(hotelId);
+        return { success: true, data: items };
+      } catch (err: any) {
+        set.status = 500;
+        return { success: false, error: "Failed to load menu items" };
+      }
     }
   )
   .post(

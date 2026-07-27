@@ -13,25 +13,17 @@ import { apiGet, apiPatch } from "../../lib/api";
 import { useWebSocket } from "../../lib/websocket";
 import { useNotifications } from "../../context/NotificationsContext";
 import { AdminNotificationBell, AdminNotificationPanel } from "../../components/AdminNotificationPanel";
-import { LayoutDashboard, LogOut, Settings, Utensils, Calendar } from "lucide-react";
+import { LogOut } from "lucide-react";
 
 interface AdminOrdersPageProps {
   token: string;
   onSelectOrder: (order: any) => void;
-  onNavigateDashboard: () => void;
-  onNavigateMenuManage: () => void;
-  onNavigateOrderHistory?: () => void;
-  onNavigateSettings?: () => void;
   onLogout: () => void;
 }
 
 export const AdminOrdersPage: React.FC<AdminOrdersPageProps> = ({
   token,
   onSelectOrder,
-  onNavigateDashboard,
-  onNavigateMenuManage,
-  onNavigateOrderHistory,
-  onNavigateSettings,
   onLogout,
 }) => {
   const [orders, setOrders] = useState<any[]>([]);
@@ -133,38 +125,6 @@ export const AdminOrdersPage: React.FC<AdminOrdersPageProps> = ({
       <header className="header-bar">
         <div className="header-title" style={{ fontSize: "1.1rem" }}>Orders</div>
         <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-          <button
-            onClick={onNavigateDashboard}
-            title="Dashboard"
-            style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "white", padding: "6px 10px", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}
-          >
-            <LayoutDashboard size={15} /> Dashboard
-          </button>
-          <button
-            onClick={onNavigateMenuManage}
-            title="Manage Menu"
-            style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "white", padding: "6px 10px", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}
-          >
-            <Utensils size={15} /> Menu
-          </button>
-          {onNavigateSettings && (
-            <button
-              onClick={onNavigateSettings}
-              title="Settings"
-              style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "white", padding: "6px 10px", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}
-            >
-              <Settings size={15} />
-            </button>
-          )}
-          {onNavigateOrderHistory && (
-            <button
-              onClick={onNavigateOrderHistory}
-              title="Daily History"
-              style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "white", padding: "6px 10px", borderRadius: "6px", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}
-            >
-              <Calendar size={15} /> History
-            </button>
-          )}
           <AdminNotificationBell onClick={() => setPanelOpen(true)} />
           <button
             onClick={onLogout}

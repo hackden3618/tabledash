@@ -24,6 +24,16 @@ import { env } from "../../shared/config";
 
 export const app = new Elysia()
 
+  // Security headers (applied after every request)
+  .onAfterHandle(({ set }) => {
+    set.headers["x-content-type-options"] ??= "nosniff";
+    set.headers["x-frame-options"] ??= "DENY";
+    set.headers["x-xss-protection"] ??= "1; mode=block";
+    set.headers["referrer-policy"] ??= "strict-origin-when-cross-origin";
+    set.headers["permissions-policy"] ??= "camera=(), microphone=(), geolocation=()";
+    set.headers["strict-transport-security"] ??= "max-age=31536000; includeSubDomains";
+  })
+
   // Global CORS enabling frontend web app to communicate with API
   .use(cors({ origin: env.corsOrigin }))
 

@@ -28,7 +28,7 @@ import {
   updateOrderPayment,
 } from "./service";
 import { verifyAdminToken } from "../auth/service";
-import { decodeCustomerToken } from "../customers/auth.service";
+import { verifyCustomerToken } from "../customers/auth.service";
 
 export const ordersRoute = new Elysia({
   prefix: `${env.apiPrefix}/orders`,
@@ -61,10 +61,15 @@ export const ordersRoute = new Elysia({
   )
   .get(
     "/",
-    async ({ query }) => {
-      const statusFilter = query.status as OrderStatus | undefined;
-      const orders = await getOrders(statusFilter);
-      return { success: true, data: orders };
+    async ({ query, set }) => {
+      try {
+        const statusFilter = query.status as OrderStatus | undefined;
+        const orders = await getOrders(statusFilter);
+        return { success: true, data: orders };
+      } catch (err: any) {
+        set.status = 500;
+        return { success: false, error: "Failed to load orders" };
+      }
     },
     {
       query: t.Object({
@@ -187,10 +192,10 @@ export const ordersRoute = new Elysia({
   // ─── Customer: Cancel own order ────────────────────────────────────────────
   .post(
     "/:id/cancel",
-    async ({ params, body, headers, set }) => {
+    async ({ params, body, headers, jwt, set }) => {
       const auth = headers["authorization"] ?? "";
       const token = auth.replace("Bearer ", "").trim();
-      const customerId = decodeCustomerToken(token);
+      const customerId = await verifyCustomerToken(token, (t) => jwt.verify(t));
       if (!customerId) {
         set.status = 401;
         return { success: false, error: "Invalid or missing customer token" };

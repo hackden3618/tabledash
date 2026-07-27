@@ -1,9 +1,11 @@
 import { jwt } from "@elysiajs/jwt";
 import { Elysia, t } from "elysia";
 import { env } from "../../../../../shared/config";
+import { formatPhone, PHONE_PATTERN } from "../../../../../shared/phone";
 import { getAllHotels, getHotelById } from "../hotels/service";
 import { loginPlatformAdmin, verifyPlatformAdminToken } from "../auth/service";
 import { prisma } from "../../../../../infrastructure/database/prisma";
+import { AUTH_LIMITER } from "../../lib/rate-limiter";
 
 export const platformRoute = new Elysia({
   prefix: `${env.apiPrefix}/platform`,
@@ -20,7 +22,14 @@ export const platformRoute = new Elysia({
   )
   .post(
     "/login",
-    async ({ body, jwt, set }) => {
+    async ({ body, jwt, set, request }) => {
+      const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+      const { allowed, resetIn } = AUTH_LIMITER(`platform-login:${ip}`);
+      if (!allowed) {
+        set.status = 429;
+        set.headers["retry-after"] = String(Math.ceil(resetIn / 1000));
+        return { success: false, error: `Too many attempts. Try again in ${Math.ceil(resetIn / 1000)}s.` };
+      }
       try {
         const result = await loginPlatformAdmin(body.username, body.password, (payload) => jwt.sign(payload));
         return { success: true, data: result };
@@ -31,8 +40,8 @@ export const platformRoute = new Elysia({
     },
     {
       body: t.Object({
-        username: t.String({ minLength: 1 }),
-        password: t.String({ minLength: 1 }),
+        username: t.String({ minLength: 3 }),
+        password: t.String({ minLength: 8 }),
       }),
     }
   )
@@ -131,6 +140,7 @@ export const platformRoute = new Elysia({
       try {
         const tempPassword = crypto.randomUUID().split("-")[0]!;
         const passwordHash = await Bun.password.hash(tempPassword);
+        const formattedAdminPhone = body.adminPhone ? formatPhone(body.adminPhone) : null;
 
         const result = await prisma.$transaction(async (tx) => {
           const hotel = await tx.hotel.create({
@@ -160,8 +170,7 @@ export const platformRoute = new Elysia({
                 hotelName: hotel.name,
                 adminName: body.adminName,
                 adminUsername: body.adminUsername,
-                adminPhone: body.adminPhone,
-                tempPassword,
+                adminPhone: formattedAdminPhone,
                 createdBy: admin.name,
               }),
               hotelId: hotel.id,
@@ -188,10 +197,10 @@ export const platformRoute = new Elysia({
     {
       body: t.Object({
         name: t.String({ minLength: 1 }),
-        slug: t.String({ minLength: 1 }),
+        slug: t.String({ minLength: 1, pattern: "^[a-z0-9-]+$" }),
         adminUsername: t.String({ minLength: 3 }),
         adminName: t.String({ minLength: 1 }),
-        adminPhone: t.String({ minLength: 10 }),
+        adminPhone: t.String({ minLength: 12, maxLength: 12, pattern: PHONE_PATTERN }),
         isOpen: t.Optional(t.Boolean()),
         autoCloseAt: t.Optional(t.String()),
       }),
@@ -263,6 +272,7 @@ export const platformRoute = new Elysia({
 
       const tempPassword = crypto.randomUUID().split("-")[0]!;
       const passwordHash = await Bun.password.hash(tempPassword);
+      const formattedPhone = body.phone ? formatPhone(body.phone) : null;
 
       const admin = await prisma.platformAdmin.create({
         data: { username: body.username, passwordHash, name: body.name },
@@ -275,8 +285,7 @@ export const platformRoute = new Elysia({
             platformAdminId: admin.id,
             name: admin.name,
             username: admin.username,
-            phone: body.phone,
-            tempPassword,
+            phone: formattedPhone,
             createdBy: creator.name,
           }),
           status: "initialized",
@@ -292,7 +301,7 @@ export const platformRoute = new Elysia({
       body: t.Object({
         username: t.String({ minLength: 3 }),
         name: t.String({ minLength: 1 }),
-        phone: t.Optional(t.String()),
+        phone: t.Optional(t.String({ minLength: 12, maxLength: 12, pattern: PHONE_PATTERN })),
       }),
     }
   )

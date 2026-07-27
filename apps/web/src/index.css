@@ -56,28 +56,159 @@ body {
     color: var(--color-text-main);
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
-    padding-bottom: 120px;
-    /* Space for bottom navigation & sticky cart bar */
+    overflow: hidden;
+    height: 100vh;
+    padding: 0;
 }
 
 /* Base Mobile-First Responsive Container */
 .app-container {
     max-width: 480px;
     margin: 0 auto;
-    min-height: 100vh;
+    height: 100vh;
+    overflow-y: auto;
+    overflow-x: hidden;
     background: var(--color-surface);
     box-shadow: 0 0 40px rgba(0, 0, 0, 0.06);
     position: relative;
-    overflow-x: hidden;
+    padding-bottom: 120px;
+    /* Space for bottom navigation & sticky cart bar */
 }
 
 .admin-container {
     max-width: 1000px;
     margin: 0 auto;
-    min-height: 100vh;
+    height: 100vh;
+    overflow-y: auto;
+    overflow-x: hidden;
     background: var(--color-surface);
     box-shadow: 0 0 40px rgba(0, 0, 0, 0.06);
     position: relative;
+    padding-bottom: 72px;
+}
+
+/* ├── Admin Bottom Navigation ──────────────────────────────────── */
+.admin-bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    max-width: 1000px;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid var(--color-border);
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    padding: 6px 0;
+    z-index: 120;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.05);
+}
+
+.admin-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--color-text-muted);
+    font-family: var(--font-family);
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+    transition: all 0.2s ease;
+    gap: 2px;
+    min-width: 56px;
+}
+
+.admin-nav-item.active {
+    color: var(--color-primary);
+    font-weight: 700;
+}
+
+.admin-nav-item:active {
+    transform: scale(0.92);
+}
+
+.admin-nav-highlight {
+    position: relative;
+    margin-top: -10px;
+}
+
+.admin-nav-highlight-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    color: white;
+    box-shadow: 0 4px 14px rgba(30, 77, 54, 0.35);
+    transition: all 0.2s ease;
+}
+
+.admin-nav-item.active .admin-nav-highlight-icon {
+    background: var(--color-primary-hover);
+    box-shadow: 0 4px 18px rgba(30, 77, 54, 0.45);
+}
+
+.admin-nav-highlight-icon:active {
+    transform: scale(0.92);
+}
+
+.admin-nav-item .admin-nav-label {
+    display: block;
+}
+
+.admin-nav-highlight .admin-nav-label {
+    margin-top: 4px;
+}
+
+.admin-nav-label {
+    font-size: 0.65rem;
+    margin-top: 1px;
+    white-space: nowrap;
+}
+
+/* ├── Admin Mobile-First Responsive ─────────────────────────────── */
+@media (max-width: 768px) {
+    .admin-container {
+        max-width: 100%;
+        padding-bottom: 68px;
+    }
+
+    .admin-bottom-nav {
+        max-width: 100%;
+        padding: 4px 0;
+    }
+
+    .admin-nav-item {
+        padding: 4px 6px;
+        min-width: 44px;
+    }
+
+    .admin-nav-label {
+        font-size: 0.6rem;
+    }
+
+    .header-bar {
+        padding: 12px 14px;
+    }
+
+    .header-title {
+        font-size: 1.05rem;
+    }
+}
+
+@media (min-width: 769px) {
+    .admin-bottom-nav {
+        border-top-left-radius: var(--radius-md);
+        border-top-right-radius: var(--radius-md);
+        max-width: calc(1000px - 2px);
+    }
 }
 
 /* Media Query for Desktop Enhancements while retaining Mobile First Core */
@@ -88,16 +219,16 @@ body {
 
     .admin-container {
         margin: 24px auto;
-        min-height: calc(100vh - 48px);
+        height: calc(100vh - 48px);
         border-radius: var(--radius-lg);
-        overflow: hidden;
         border: 1px solid var(--color-border);
         box-shadow: 0 20px 40px rgba(30, 77, 54, 0.12);
+        padding-bottom: 80px;
     }
 
     .app-container {
         margin: 24px auto;
-        min-height: calc(100vh - 48px);
+        height: calc(100vh - 48px);
         border-radius: var(--radius-lg);
         border: 1px solid var(--color-border);
     }
