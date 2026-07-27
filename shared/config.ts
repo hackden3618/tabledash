@@ -16,11 +16,11 @@ export class Environment {
   public readonly backendPort: number = Number(process.env.PORT ?? 3000);
 
   /** JWT Secret used for signing JWT authentication tokens via @elysiajs/jwt */
-  public readonly jwtSecret: string = (() => {
+  public get jwtSecret(): string {
     const val = process.env.JWT_SECRET;
     if (!val) throw new Error("JWT_SECRET environment variable is required — set it in Railway or .env");
     return val;
-  })();
+  }
 
   /** SMS Provider selection: 'textsms' | 'console' */
   public readonly smsProvider: string = process.env.SMS_PROVIDER ?? "textsms";
