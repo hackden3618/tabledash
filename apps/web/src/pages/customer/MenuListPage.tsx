@@ -1,18 +1,21 @@
-/**
- * Purpose: Customer Menu View for tableDash ("Wambu's Corner Hotel").
- * Responsibilities: Renders daily menu items with live stock badges, separates out-of-stock items
- *   into a dedicated section, listens for real-time WebSocket menu and hotel status updates,
- *   and displays hotel closed notices.
- * Dependencies: React, useCart context, useCustomerAuth context, useWebSocket hook, apiGet helper.
- * When to modify: When updating menu card design, category filters, or cart bar layout.
- */
-
 import React, { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { useCart } from "../../context/CartContext";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
+import { useNotifications } from "../../context/NotificationsContext";
 import { apiGet } from "../../lib/api";
 import { useWebSocket } from "../../lib/websocket";
-import { ShoppingBag, Utensils, X, UserCircle2, AlertTriangle, Moon } from "lucide-react";
+import {
+  Utensils, UserCircle2, Moon, ChevronLeft, Building2,
+  Search, Sparkles, Clock, TrendingUp
+} from "lucide-react";
+import { CustomerNotificationPanel } from "../../components/CustomerNotificationPanel";
+import { Header } from "../../components/ui/Header";
+import { ProductCard } from "../../components/ui/ProductCard";
+import { Badge } from "../../components/ui/Badge";
+import { Modal } from "../../components/ui/Modal";
+
+import { PageTransition } from "../../components/ui/PageTransition";
 
 export interface ProductItem {
   id: string;
@@ -22,6 +25,18 @@ export interface ProductItem {
   price: number;
   available: boolean;
   stockQty: number;
+  hotelId?: string;
+  lastRestockedAt?: string | null;
+  outOfStockSince?: string | null;
+}
+
+interface HotelItem {
+  id: string;
+  name: string;
+  slug: string;
+  isOpen: boolean;
+  imageUrl?: string | null;
+  productCount: number;
 }
 
 interface MenuListPageProps {
@@ -33,335 +48,515 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
   onNavigateToCart,
   onNavigateToAccount,
 }) => {
+  const [hotels, setHotels] = useState<HotelItem[]>([]);
+  const [selectedHotel, setSelectedHotel] = useState<HotelItem | null>(null);
   const [products, setProducts] = useState<ProductItem[]>([]);
-  const [hotelIsOpen, setHotelIsOpen] = useState<boolean>(true);
   const [loading, setLoading] = useState(true);
+  const [menuLoading, setMenuLoading] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const { cart, addToCart, updateQuantity, totalCount, totalAmount } = useCart();
+  const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const { cart, addToCart, updateQuantity, totalCount, totalAmount, setClosedHotelIds } = useCart();
   const { isLoggedIn, customer } = useCustomerAuth();
+  const { unreadCount } = useNotifications();
+  const [persuasionShown, setPersuasionShown] = useState(false);
+  const [closingCountdown, setClosingCountdown] = useState<number | null>(null);
 
-  const fetchMenuAndSettings = async () => {
+  const fetchHotels = async () => {
     setLoading(true);
-    const [menuRes, settingsRes] = await Promise.all([
-      apiGet<ProductItem[]>("/menu"),
-      apiGet<{ hotelIsOpen?: boolean }>("/settings"),
-    ]);
-
-    if (menuRes.success && menuRes.data) {
-      setProducts(menuRes.data);
-    }
-    if (settingsRes.success && settingsRes.data?.hotelIsOpen !== undefined) {
-      setHotelIsOpen(settingsRes.data.hotelIsOpen);
+    const res = await apiGet<HotelItem[]>("/hotels");
+    if (res.success && res.data) {
+      setHotels(res.data);
+      setClosedHotelIds(res.data.filter((h) => !h.isOpen).map((h) => h.id));
+      if (res.data.length === 1) {
+        selectHotel(res.data[0]!);
+        return;
+      }
     }
     setLoading(false);
   };
 
+  const selectHotel = async (hotel: HotelItem) => {
+    setSelectedHotel(hotel);
+    setMenuLoading(true);
+    setSearchQuery("");
+    const res = await apiGet<ProductItem[]>(`/menu?hotelId=${hotel.id}`);
+    if (res.success && res.data) {
+      setProducts(res.data);
+    }
+    setMenuLoading(false);
+    setLoading(false);
+  };
+
+  const backToHotels = () => {
+    setSelectedHotel(null);
+    setProducts([]);
+    if (closingTimerRef.current) {
+      clearInterval(closingTimerRef.current);
+      closingTimerRef.current = null;
+    }
+    setClosingCountdown(null);
+  };
+
   useEffect(() => {
-    fetchMenuAndSettings();
+    fetchHotels();
   }, []);
 
-  // Listen for real-time WebSocket menu stock updates & hotel open/closed changes
+  const closingTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+
   useWebSocket("customer", undefined, (event) => {
     if (event.type === "MENU_AVAILABILITY_UPDATED") {
       const updated = event.payload as ProductItem;
       setProducts((prev) =>
         prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
       );
+    } else if (event.type === "HOTEL_CLOSING") {
+      const data = event.payload as { closingIn: number; isOpen: boolean; hotelId?: string };
+      if (data.hotelId) {
+        setClosedHotelIds((prev) => prev.includes(data.hotelId!) ? prev : [...prev, data.hotelId!]);
+        setHotels((prev) => prev.map((h) => h.id === data.hotelId ? { ...h, isOpen: false } : h));
+      }
+      if (data.closingIn > 0) {
+        if (closingTimerRef.current) clearInterval(closingTimerRef.current);
+        let count = data.closingIn;
+        setClosingCountdown(count);
+        closingTimerRef.current = setInterval(() => {
+          count--;
+          if (count <= 0) {
+            if (closingTimerRef.current) clearInterval(closingTimerRef.current);
+            closingTimerRef.current = null;
+            setClosingCountdown(null);
+            setSelectedHotel((prev) => prev ? { ...prev, isOpen: false } : null);
+          } else {
+            setClosingCountdown(count);
+          }
+        }, 1000);
+      } else {
+        setSelectedHotel((prev) => prev ? { ...prev, isOpen: false } : null);
+      }
     } else if (event.type === "HOTEL_STATUS_UPDATED") {
-      const status = event.payload as { isOpen: boolean };
-      setHotelIsOpen(status.isOpen);
+      const status = event.payload as { isOpen: boolean; hotelId?: string };
+      if (status.hotelId) {
+        setHotels((prev) => prev.map((h) => h.id === status.hotelId ? { ...h, isOpen: status.isOpen } : h));
+        setClosedHotelIds((prev) =>
+          status.isOpen
+            ? prev.filter((id) => id !== status.hotelId)
+            : prev.includes(status.hotelId!) ? prev : [...prev, status.hotelId!]
+        );
+      }
+      if (selectedHotel) {
+        setSelectedHotel((prev) => prev ? { ...prev, isOpen: status.isOpen } : null);
+      }
+      if (status.isOpen && closingTimerRef.current) {
+        clearInterval(closingTimerRef.current);
+        closingTimerRef.current = null;
+        setClosingCountdown(null);
+      }
     }
   });
-
-  const [persuasionShown, setPersuasionShown] = useState(false);
 
   const getQuantityInCart = (productId: string) => {
     const item = cart.find((c) => c.id === productId);
     return item ? item.quantity : 0;
   };
 
+  const isEffectivelyClosed = !selectedHotel?.isOpen || closingCountdown !== null;
+
   const handleAddToCart = (item: ProductItem) => {
-    if (!hotelIsOpen) return;
-    addToCart({ id: item.id, name: item.name, price: item.price, imageUrl: item.imageUrl });
+    if (isEffectivelyClosed) return;
+    addToCart({ id: item.id, name: item.name, price: item.price, imageUrl: item.imageUrl, hotelId: selectedHotel!.id, hotelName: selectedHotel!.name });
     if (!isLoggedIn && !persuasionShown) {
       setPersuasionShown(true);
       setShowLoginModal(true);
     }
   };
 
-  const getStockBadge = (item: ProductItem) => {
-    if (!item.available || item.stockQty === 0) return null;
-    if (item.stockQty <= 2) {
-      return { text: `Only ${item.stockQty} left!`, color: "#DC2626", bg: "#FEE2E2" };
-    }
-    if (item.stockQty <= 5) {
-      return { text: `${item.stockQty} left`, color: "#D97706", bg: "#FEF3C7" };
-    }
-    return { text: `${item.stockQty} left`, color: "#15803D", bg: "#DCFCE7" };
-  };
-
-  const availableProducts = products.filter((p) => p.available && p.stockQty > 0);
-  const outOfStockProducts = products.filter((p) => !p.available || p.stockQty <= 0);
-
-  return (
-    <div className="app-container">
-      {/* Header Bar */}
-      <header className="header-bar">
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <Utensils size={22} color="white" />
-          <div className="header-title">Wambu's Corner Hotel</div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <button
-            onClick={onNavigateToAccount}
-            title={isLoggedIn ? `Hi, ${customer?.firstName}` : "Sign in"}
-            style={{ background: "none", border: "none", color: "white", cursor: "pointer", display: "flex", alignItems: "center", position: "relative" }}
-          >
-            <UserCircle2 size={22} />
-            {isLoggedIn && (
-              <span style={{ position: "absolute", top: "-3px", right: "-4px", width: "9px", height: "9px", borderRadius: "50%", background: "#22C55E", border: "1.5px solid #1E4D36" }} />
-            )}
-          </button>
-
-          <button
-            onClick={onNavigateToCart}
-            style={{ background: "none", border: "none", color: "white", display: "flex", alignItems: "center", position: "relative", cursor: "pointer" }}
-          >
-            <ShoppingBag size={22} />
-            {totalCount > 0 && (
-              <span style={{ position: "absolute", top: "-4px", right: "-8px", background: "#22C55E", color: "white", borderRadius: "50%", fontSize: "11px", fontWeight: 700, width: "18px", height: "18px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                {totalCount}
-              </span>
-            )}
-          </button>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <div style={{ padding: "20px" }}>
-        {/* Hotel Closed Banner */}
-        {!hotelIsOpen && (
-          <div
-            style={{
-              background: "#FFF3C4",
-              border: "1.5px solid #F59E0B",
-              borderRadius: "14px",
-              padding: "14px 16px",
-              marginBottom: "20px",
-              display: "flex",
-              alignItems: "center",
-              gap: "12px",
-            }}
-          >
-            <Moon size={24} color="#D97706" />
-            <div>
-              <div style={{ fontWeight: 800, color: "#92400E", fontSize: "0.95rem" }}>
-                Wambu's Corner Hotel is Closed
-              </div>
-              <div style={{ fontSize: "0.8rem", color: "#B45309", marginTop: "2px" }}>
-                We are currently closed for new orders. Please check back later!
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div style={{ marginBottom: "20px" }}>
-          <h1 style={{ fontSize: "1.4rem", fontWeight: 700, color: "#1E4D36" }}>Today's Menu</h1>
-          <p style={{ fontSize: "0.875rem", color: "#6B7280" }}>
-            Freshly prepared meals ready for fast delivery to your stall.
-          </p>
-        </div>
-
-        {loading ? (
-          <div style={{ textAlign: "center", padding: "40px 0", color: "#6B7280" }}>
-            Loading freshly prepared menu...
-          </div>
-        ) : products.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "40px 0", color: "#6B7280" }}>
-            No menu items available right now. Please check back shortly!
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-            {/* Available Items List */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-              {availableProducts.length === 0 ? (
-                <div style={{ textAlign: "center", padding: "20px 0", color: "#6B7280" }}>
-                  All items are currently out of stock for today.
-                </div>
-              ) : (
-                availableProducts.map((item) => {
-                  const qty = getQuantityInCart(item.id);
-                  const badge = getStockBadge(item);
-                  const maxQty = item.stockQty;
-
-                  return (
-                    <div
-                      key={item.id}
-                      className="card"
-                      style={{ display: "flex", gap: "14px", alignItems: "center" }}
-                    >
-                      <img
-                        src={item.imageUrl}
-                        alt={item.name}
-                        style={{ width: "80px", height: "80px", borderRadius: "12px", objectFit: "cover", flexShrink: 0 }}
-                      />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <h3 style={{ fontSize: "1.05rem", fontWeight: 600, color: "#1F2937" }}>{item.name}</h3>
-                        <div style={{ fontSize: "0.95rem", fontWeight: 700, color: "#1E4D36", marginTop: "4px" }}>
-                          KSh {item.price}
-                        </div>
-
-                        {badge && (
-                          <div style={{ marginTop: "4px" }}>
-                            <span style={{ fontSize: "0.72rem", fontWeight: 700, color: badge.color, background: badge.bg, padding: "2px 8px", borderRadius: "20px" }}>
-                              {badge.text}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Quantity controls */}
-                      <div style={{ flexShrink: 0 }}>
-                        {qty === 0 ? (
-                          <button
-                            onClick={() => handleAddToCart(item)}
-                            disabled={!hotelIsOpen}
-                            style={{
-                              border: "1px solid #1E4D36",
-                              background: hotelIsOpen ? "#EBF4F0" : "#F3F4F6",
-                              color: hotelIsOpen ? "#1E4D36" : "#9CA3AF",
-                              padding: "8px 14px",
-                              borderRadius: "8px",
-                              fontWeight: 700,
-                              cursor: hotelIsOpen ? "pointer" : "not-allowed",
-                            }}
-                          >
-                            + Add
-                          </button>
-                        ) : (
-                          <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "#EBF4F0", padding: "4px 8px", borderRadius: "8px", border: "1px solid #1E4D36" }}>
-                            <button
-                              onClick={() => updateQuantity(item.id, qty - 1)}
-                              style={{ border: "none", background: "none", fontWeight: 700, fontSize: "1.1rem", color: "#1E4D36", cursor: "pointer", padding: "0 4px" }}
-                            >
-                              −
-                            </button>
-                            <span style={{ fontWeight: 700, minWidth: "16px", textAlign: "center" }}>{qty}</span>
-                            <button
-                              onClick={() => updateQuantity(item.id, Math.min(qty + 1, maxQty))}
-                              disabled={qty >= maxQty || !hotelIsOpen}
-                              style={{ border: "none", background: "none", fontWeight: 700, fontSize: "1.1rem", color: qty >= maxQty ? "#D1D5DB" : "#1E4D36", cursor: qty >= maxQty ? "not-allowed" : "pointer", padding: "0 4px" }}
-                            >
-                              +
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
+  // ── Hotel Selection Screen ──
+  if (!selectedHotel) {
+    return (
+      <div className="app-container">
+        <Header
+          title="Ladha"
+          subtitle="Taste the moment"
+          onCartClick={onNavigateToCart}
+          cartBadge={totalCount}
+          onNotificationClick={() => setNotificationPanelOpen(true)}
+          notificationCount={unreadCount}
+          rightAction={
+            <button
+              onClick={onNavigateToAccount}
+              className="relative p-2 rounded-xl hover:bg-white/10 transition-colors bg-none border-none cursor-pointer text-white"
+              aria-label={isLoggedIn ? `Hi, ${customer?.firstName}` : "Sign in"}
+            >
+              <UserCircle2 size={20} />
+              {isLoggedIn && (
+                <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-[#22C55E] rounded-full border-[1.5px] border-[#114B36]" />
               )}
+            </button>
+          }
+        />
+
+        <PageTransition>
+          <div className="px-4 py-5">
+            {/* Hero Section */}
+            <div className="relative rounded-3xl overflow-hidden mb-6 bg-gradient-to-br from-[#114B36] to-[#0D3D2B]">
+              <div className="relative z-10 px-6 py-8">
+                <p className="text-white/70 text-xs font-semibold tracking-wider uppercase mb-2">
+                  Uko online na uko njaa?
+                </p>
+                <h2 className="text-white text-2xl font-bold leading-tight mb-2">
+                  Worry less.<br />Fresh meals are here.
+                </h2>
+                <p className="text-white/70 text-sm mb-5 max-w-xs leading-relaxed">
+                  Ladha connects you with your favourite restaurants near you.
+                </p>
+
+                {/* Search */}
+                <div className="relative">
+                  <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#114B36]" />
+                  <input
+                    type="text"
+                    placeholder="Search restaurants or dishes..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-white rounded-xl py-3 pl-11 pr-4 text-sm text-[#1F2937] placeholder:text-[#9CA3AF] outline-none shadow-sm"
+                  />
+                </div>
+              </div>
             </div>
 
-            {/* Separate Out-of-Stock / Unavailable Section */}
-            {outOfStockProducts.length > 0 && (
-              <div>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px", borderTop: "1px solid #F3F4F6", paddingTop: "16px" }}>
-                  <AlertTriangle size={18} color="#9CA3AF" />
-                  <h2 style={{ fontSize: "0.95rem", fontWeight: 700, color: "#6B7280" }}>
-                    Currently Out of Stock / Sold Out
-                  </h2>
-                </div>
+            {/* Quick Filters */}
+            <div className="flex gap-3 overflow-x-auto scrollbar-hide mb-6 pb-1">
+              {[
+                { icon: <Sparkles size={18} />, label: "Popular" },
+                { icon: <Clock size={18} />, label: "Fast Delivery" },
+                { icon: <TrendingUp size={18} />, label: "Trending" },
+              ].map((filter) => (
+                <button
+                  key={filter.label}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-white rounded-xl shadow-[0_2px_8px_rgba(17,75,54,0.06)] text-sm font-semibold text-[#6B7280] hover:text-[#114B36] hover:shadow-md transition-all whitespace-nowrap bg-none border-none cursor-pointer"
+                >
+                  {filter.icon}
+                  {filter.label}
+                </button>
+              ))}
+            </div>
 
-                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                  {outOfStockProducts.map((item) => (
-                    <div
-                      key={item.id}
-                      className="card"
-                      style={{
-                        display: "flex",
-                        gap: "14px",
-                        alignItems: "center",
-                        opacity: 0.55,
-                        background: "#FAFAFA",
-                        border: "1.5px dashed #D1D5DB",
-                      }}
-                    >
-                      <img
-                        src={item.imageUrl}
-                        alt={item.name}
-                        style={{ width: "60px", height: "60px", borderRadius: "10px", objectFit: "cover", flexShrink: 0, filter: "grayscale(60%)" }}
-                      />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <h3 style={{ fontSize: "0.95rem", fontWeight: 600, color: "#4B5563" }}>{item.name}</h3>
-                        <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "#6B7280", marginTop: "2px" }}>
-                          KSh {item.price}
-                        </div>
+            {/* Restaurants Section */}
+            <div className="mb-2">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-[#1F2937]">Restaurants Near You</h2>
+                <span className="text-xs font-semibold text-[#114B36]">{hotels.length} available</span>
+              </div>
+
+              {loading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="flex gap-4 items-center p-4 bg-white rounded-2xl shadow-[0_2px_8px_rgba(17,75,54,0.06)]">
+                      <div className="w-14 h-14 rounded-xl bg-[#E5E7EB] animate-pulse shrink-0" />
+                      <div className="flex-1 space-y-2">
+                        <div className="h-5 bg-[#E5E7EB] rounded-lg animate-pulse w-1/2" />
+                        <div className="h-3 bg-[#E5E7EB] rounded-lg animate-pulse w-1/3" />
                       </div>
-                      <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#DC2626", background: "#FEE2E2", padding: "4px 10px", borderRadius: "8px", textTransform: "uppercase" }}>
-                        Sold Out
-                      </span>
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
+              ) : hotels.length === 0 ? (
+                <div className="flex flex-col items-center py-16 text-center">
+                  <Building2 size={48} className="text-[#D1D5DB] mb-4" />
+                  <h3 className="text-lg font-bold text-[#6B7280] mb-1">No restaurants available</h3>
+                  <p className="text-sm text-[#9CA3AF]">Check back soon — new vendors joining daily!</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {hotels.map((hotel, idx) => (
+                    <motion.div
+                      key={hotel.id}
+                      initial={{ opacity: 0, y: 16 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.05 }}
+                      whileHover={{ scale: 1.01, y: -2 }}
+                      whileTap={{ scale: 0.99 }}
+                      onClick={() => selectHotel(hotel)}
+                      className={`
+                        relative flex items-center gap-4 p-4 bg-white rounded-2xl cursor-pointer
+                        transition-shadow duration-200
+                        ${hotel.isOpen
+                          ? "shadow-[0_2px_8px_rgba(17,75,54,0.06)] hover:shadow-[0_8px_24px_rgba(17,75,54,0.1)]"
+                          : "opacity-65 shadow-sm"
+                        }
+                      `}
+                    >
+                      <div className={`
+                        w-14 h-14 rounded-xl overflow-hidden shrink-0 flex items-center justify-center
+                        ${hotel.isOpen ? "bg-[#EBF5F0]" : "bg-[#F3F4F6]"}
+                      `}>
+                        {hotel.imageUrl ? (
+                          <img src={hotel.imageUrl} alt={hotel.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <Building2 size={24} color={hotel.isOpen ? "#114B36" : "#9CA3AF"} />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold text-[#1F2937] truncate">{hotel.name}</h3>
+                          {!hotel.isOpen && (
+                            <Badge variant="danger" size="sm">Closed</Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-[#6B7280] mt-0.5">
+                          {hotel.isOpen
+                            ? `${hotel.productCount} items available`
+                            : "Currently closed — check back later"
+                          }
+                        </p>
+                      </div>
+                      <div className="w-8 h-8 rounded-full bg-[#F3F4F6] flex items-center justify-center text-[#9CA3AF] text-lg shrink-0">
+                        <ChevronLeft size={16} className="rotate-180" />
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        )}
+        </PageTransition>
+
+        <CustomerNotificationPanel isOpen={notificationPanelOpen} onClose={() => setNotificationPanelOpen(false)} />
+
+        <Modal
+          isOpen={showLoginModal}
+          onClose={() => setShowLoginModal(false)}
+          type="info"
+          title="Save your stall location"
+          message="Sign in so your delivery address is pre-filled every time. Track all your past orders too — it only takes 30 seconds!"
+          primaryAction={{
+            label: "Sign In / Create Account",
+            onClick: () => { setShowLoginModal(false); onNavigateToAccount(); },
+          }}
+          secondaryAction={{
+            label: "Continue without account",
+            onClick: () => setShowLoginModal(false),
+          }}
+        />
       </div>
+    );
+  }
+
+  // ── Menu Screen (per-hotel) ──
+  const availableProducts = products.filter((p) => p.available && p.stockQty > 0);
+  const outOfStockProducts = products.filter((p) => !p.available || p.stockQty <= 0);
+
+  const filteredAvailable = searchQuery
+    ? availableProducts.filter((p) =>
+        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.category.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : availableProducts;
+
+  return (
+    <div className="app-container">
+      <Header
+        title={selectedHotel.name}
+        subtitle={selectedHotel.isOpen ? "Fresh meals ready for delivery" : "Currently closed"}
+        onBack={backToHotels}
+        onCartClick={onNavigateToCart}
+        cartBadge={totalCount}
+        onNotificationClick={() => setNotificationPanelOpen(true)}
+        notificationCount={unreadCount}
+        rightAction={
+          <button
+            onClick={onNavigateToAccount}
+            className="relative p-2 rounded-xl hover:bg-white/10 transition-colors bg-none border-none cursor-pointer text-white"
+            aria-label={isLoggedIn ? `Hi, ${customer?.firstName}` : "Sign in"}
+          >
+            <UserCircle2 size={20} />
+            {isLoggedIn && (
+              <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-[#22C55E] rounded-full border-[1.5px] border-[#114B36]" />
+            )}
+          </button>
+        }
+      />
+
+      <PageTransition>
+        <div className="px-4 py-5">
+          {/* Hotel Closing Countdown Banner */}
+          {closingCountdown !== null && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-[#FEF2F2] border-2 border-[#DC2626] rounded-2xl p-4 mb-5 text-center"
+            >
+              <p className="text-2xl font-extrabold text-[#DC2626] mb-1">⏳ Closing in {closingCountdown}s</p>
+              <p className="text-sm text-[#991B1B]">{selectedHotel.name} is closing. No new orders after the timer ends.</p>
+            </motion.div>
+          )}
+
+          {/* Hotel Closed Banner */}
+          {!selectedHotel.isOpen && closingCountdown === null && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-[#FFFBEB] border border-[#F59E0B] rounded-2xl p-4 mb-5 flex items-center gap-3"
+            >
+              <Moon size={24} className="text-[#D97706] shrink-0" />
+              <div>
+                <p className="font-bold text-[#92400E]">{selectedHotel.name} is Closed</p>
+                <p className="text-sm text-[#B45309]">We're closed for new orders. Please check back later!</p>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Search */}
+          {!isEffectivelyClosed && (
+            <div className="relative mb-5">
+              <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#9CA3AF]" />
+              <input
+                type="text"
+                placeholder={`Search ${selectedHotel.name}'s menu...`}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-[#F3F4F6] rounded-xl py-3 pl-11 pr-4 text-sm text-[#1F2937] placeholder:text-[#9CA3AF] outline-none focus:bg-white focus:ring-2 focus:ring-[#114B36]/20 transition-all"
+              />
+            </div>
+          )}
+
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-[#1F2937]">Today's Menu</h2>
+            <span className="text-xs font-semibold text-[#6B7280]">
+              {filteredAvailable.length} available
+            </span>
+          </div>
+
+          {menuLoading ? (
+            <div className="space-y-3">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="flex gap-4 items-center p-4 bg-white rounded-2xl shadow-[0_2px_8px_rgba(17,75,54,0.06)]">
+                  <div className="w-20 h-20 rounded-xl bg-[#E5E7EB] animate-pulse shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 bg-[#E5E7EB] rounded-lg animate-pulse w-3/4" />
+                    <div className="h-5 bg-[#E5E7EB] rounded-lg animate-pulse w-1/4" />
+                    <div className="h-3 bg-[#E5E7EB] rounded-lg animate-pulse w-1/2" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : products.length === 0 ? (
+            <div className="flex flex-col items-center py-16 text-center">
+              <Utensils size={40} className="text-[#D1D5DB] mb-4" />
+              <h3 className="text-lg font-bold text-[#6B7280] mb-1">No menu items yet</h3>
+              <p className="text-sm text-[#9CA3AF]">Check back shortly for fresh meals!</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {/* Available Items */}
+              {filteredAvailable.length > 0 && (
+                <div className="space-y-3">
+                  {filteredAvailable.map((item) => (
+                    <ProductCard
+                      key={item.id}
+                      item={item}
+                      quantity={getQuantityInCart(item.id)}
+                      onAdd={() => handleAddToCart(item)}
+                      onIncrement={() => {
+                        const qty = getQuantityInCart(item.id);
+                        if (qty < item.stockQty) updateQuantity(item.id, qty + 1);
+                      }}
+                      onDecrement={() => updateQuantity(item.id, getQuantityInCart(item.id) - 1)}
+                      disabled={isEffectivelyClosed}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {searchQuery && filteredAvailable.length === 0 && availableProducts.length > 0 && (
+                <div className="flex flex-col items-center py-12 text-center">
+                  <Search size={32} className="text-[#D1D5DB] mb-3" />
+                  <p className="text-sm font-semibold text-[#6B7280]">
+                    No items match "{searchQuery}"
+                  </p>
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    className="text-sm font-semibold text-[#114B36] mt-2 bg-none border-none cursor-pointer"
+                  >
+                    Clear search
+                  </button>
+                </div>
+              )}
+
+              {/* Out of Stock Section */}
+              {!searchQuery && outOfStockProducts.length > 0 && (
+                <div className="mt-6">
+                  <div className="flex items-center gap-2 mb-3 pt-4 border-t border-[#F3F4F6]">
+                    <span className="text-sm font-bold text-[#6B7280]">Sold Out</span>
+                    <span className="text-xs text-[#9CA3AF]">({outOfStockProducts.length} items)</span>
+                  </div>
+                  <div className="space-y-2">
+                    {outOfStockProducts.map((item) => (
+                      <ProductCard
+                        key={item.id}
+                        item={item}
+                        quantity={0}
+                        onAdd={() => {}}
+                        onIncrement={() => {}}
+                        onDecrement={() => {}}
+                        disabled={true}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </PageTransition>
 
       {/* Sticky Bottom Cart Bar */}
       {totalCount > 0 && (
-        <div className="sticky-bottom-bar">
+        <motion.div
+          initial={{ y: 100 }}
+          animate={{ y: 0 }}
+          className="fixed bottom-16 left-1/2 -translate-x-1/2 w-full max-w-md px-4 z-40"
+        >
           <button
             onClick={onNavigateToCart}
-            disabled={!hotelIsOpen}
-            className="btn btn-primary"
-            style={{ opacity: hotelIsOpen ? 1 : 0.6 }}
+            disabled={isEffectivelyClosed}
+            className={`
+              w-full py-4 rounded-2xl font-bold text-base transition-all duration-200
+              flex items-center justify-between px-5
+              ${isEffectivelyClosed
+                ? "bg-[#9CA3AF] text-white cursor-not-allowed opacity-60"
+                : "bg-[#114B36] text-white shadow-[0_4px_16px_rgba(17,75,54,0.3)] hover:shadow-[0_6px_24px_rgba(17,75,54,0.4)] hover:bg-[#0D3D2B]"
+              }
+            `}
           >
-            {hotelIsOpen ? `View Cart ( KSh ${totalAmount} )` : "Hotel Closed"}
+            <span className="flex items-center gap-2">
+              🛒 {totalCount} item{totalCount > 1 ? "s" : ""}
+            </span>
+            <span className="font-extrabold">
+              {isEffectivelyClosed ? "Closed" : `KSh ${totalAmount}`}
+            </span>
           </button>
-        </div>
+        </motion.div>
       )}
 
-      {/* Login Persuasion Modal */}
-      {showLoginModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-          <div style={{ background: "white", borderRadius: "20px 20px 0 0", padding: "28px 24px", width: "100%", maxWidth: "480px", animation: "slideUp 0.3s ease" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
-              <div style={{ width: "44px", height: "44px", borderRadius: "12px", background: "#EBF4F0", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <UserCircle2 size={24} color="#1E4D36" />
-              </div>
-              <button onClick={() => setShowLoginModal(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#9CA3AF" }}>
-                <X size={22} />
-              </button>
-            </div>
+      <CustomerNotificationPanel isOpen={notificationPanelOpen} onClose={() => setNotificationPanelOpen(false)} />
 
-            <h3 style={{ fontWeight: 700, fontSize: "1.1rem", color: "#1F2937", marginBottom: "8px" }}>
-              Save your stall location 📍
-            </h3>
-            <p style={{ fontSize: "0.875rem", color: "#6B7280", lineHeight: 1.6, marginBottom: "20px" }}>
-              Sign in so your delivery address is pre-filled every time. Track all your past orders too — it only takes 30 seconds!
-            </p>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-              <button
-                onClick={() => { setShowLoginModal(false); onNavigateToAccount(); }}
-                className="btn btn-primary"
-                style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
-              >
-                <UserCircle2 size={18} /> Sign In / Create Account
-              </button>
-              <button
-                onClick={() => setShowLoginModal(false)}
-                style={{ background: "none", border: "none", color: "#9CA3AF", fontSize: "0.875rem", cursor: "pointer", padding: "8px" }}
-              >
-                Continue without account
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Modal
+        isOpen={showLoginModal}
+        onClose={() => setShowLoginModal(false)}
+        type="info"
+        title="Save your stall location"
+        message="Sign in so your delivery address is pre-filled every time. Track all your past orders too — it only takes 30 seconds!"
+        primaryAction={{
+          label: "Sign In / Create Account",
+          onClick: () => { setShowLoginModal(false); onNavigateToAccount(); },
+        }}
+        secondaryAction={{
+          label: "Continue without account",
+          onClick: () => setShowLoginModal(false),
+        }}
+      />
     </div>
   );
 };

@@ -1,5 +1,5 @@
 /**
- * Purpose: Main React Application Container and Navigation Router for tableDash.
+ * Purpose: Main React Application Container and Navigation Router for Ladha.
  * Responsibilities: Wraps application in CartProvider + CustomerAuthProvider + NotificationsProvider contexts,
  *   manages active page view transitions, and handles admin session tokens.
  * Dependencies: CartProvider, CustomerAuthProvider, NotificationsProvider, NotificationToastContainer, customer pages, admin pages.
@@ -9,11 +9,13 @@
 import { useEffect, useState } from "react";
 import { CartProvider } from "./context/CartContext";
 import { CustomerAuthProvider } from "./context/CustomerAuthContext";
+import { AdminAuthProvider, useAdminAuth } from "./context/AdminAuthContext";
+import { PlatformAdminAuthProvider, usePlatformAdminAuth } from "./context/PlatformAdminAuthContext";
 import { NotificationsProvider, useNotifications } from "./context/NotificationsContext";
 import { NotificationToastContainer } from "./components/NotificationToast";
 
 // Customer Views
-import { BottomNavBar, type CustomerTab } from "./components/BottomNavBar";
+import { BottomNav, type CustomerTab } from "./components/ui/BottomNav";
 import { CartPage } from "./pages/customer/CartPage";
 import { ConfirmationPage } from "./pages/customer/ConfirmationPage";
 import { CustomerAuthPage } from "./pages/customer/CustomerAuthPage";
@@ -21,15 +23,22 @@ import { LocationPage } from "./pages/customer/LocationPage";
 import { MenuListPage } from "./pages/customer/MenuListPage";
 import { MyOrdersPage } from "./pages/customer/MyOrdersPage";
 import { OrderTrackingPage } from "./pages/customer/OrderTrackingPage";
+import { TrackingListPage } from "./pages/customer/TrackingListPage";
+import { CustomerProfilePage } from "./pages/customer/CustomerProfilePage";
 
 // Admin Views
+import { AdminBottomNavBar, type AdminTab } from "./components/AdminBottomNavBar";
 import { AdminDashboardPage } from "./pages/admin/AdminDashboardPage";
 import { AdminLoginPage } from "./pages/admin/AdminLoginPage";
 import { AdminMapViewPage } from "./pages/admin/AdminMapViewPage";
 import { AdminMenuManagePage } from "./pages/admin/AdminMenuManagePage";
 import { AdminOrderDetailsPage } from "./pages/admin/AdminOrderDetailsPage";
+import { AdminOrderHistoryPage } from "./pages/admin/AdminOrderHistoryPage";
 import { AdminOrdersPage } from "./pages/admin/AdminOrdersPage";
 import { AdminSettingsPage } from "./pages/admin/AdminSettingsPage";
+import { PlatformAdminPage } from "./pages/platform/PlatformAdminPage";
+
+
 
 type ViewState =
   | "customer_menu"
@@ -39,60 +48,116 @@ type ViewState =
   | "customer_tracking"
   | "customer_auth"
   | "customer_my_orders"
+  | "customer_profile"
+  | "customer_tracker_list"
   | "admin_login"
   | "admin_orders"
   | "admin_order_details"
   | "admin_map_view"
   | "admin_dashboard"
   | "admin_menu_manage"
-  | "admin_settings";
+  | "admin_settings"
+  | "admin_order_history"
+  | "platform_admin";
 
 export function AppContent() {
+  const { toasts, dismissToast, setScope, clearScope } = useNotifications();
+  const { token: adminToken, isLoggedIn: isAdminLoggedIn, hydrating: adminHydrating, login: adminLogin, logout: adminLogout } = useAdminAuth();
+  usePlatformAdminAuth();
+
   const [currentView, setCurrentView] = useState<ViewState>(() => {
-    if (window.location.pathname === "/kitchen") {
-      const token = localStorage.getItem("tableDash_token");
-      return token ? "admin_orders" : "admin_login";
+    const path = window.location.pathname;
+    if (path === "/kitchen") {
+      const stored = localStorage.getItem("ladha_token");
+      return stored ? "admin_orders" : "admin_login";
+    }
+    if (path === "/platform") {
+      const stored = localStorage.getItem("ladha_platform_token");
+      return stored ? "platform_admin" : "platform_admin";
     }
     return "customer_menu";
   });
 
-  const { toasts, dismissToast } = useNotifications();
+  // Auto-redirect admin to/from login based on auth state
+  useEffect(() => {
+    if (adminHydrating) return;
+    if (currentView.startsWith("admin_") && !isAdminLoggedIn) {
+      setCurrentView("admin_login");
+    } else if (currentView === "admin_login" && isAdminLoggedIn) {
+      setCurrentView("admin_orders");
+    }
+  }, [isAdminLoggedIn, adminHydrating, currentView]);
+
+  // Sync notification scope with current view
+  useEffect(() => {
+    if (currentView.startsWith("customer_")) {
+      clearScope("admin");
+      clearScope("platform");
+      setScope("customer");
+    } else if (currentView.startsWith("admin_")) {
+      clearScope("customer");
+      clearScope("platform");
+      setScope("admin");
+    } else if (currentView === "platform_admin") {
+      clearScope("customer");
+      clearScope("admin");
+      setScope("platform");
+    }
+  }, [currentView, setScope, clearScope]);
 
   // State data for active flows
   const [placedOrder, setPlacedOrder] = useState<any>(null);
   const [trackingOrderId, setTrackingOrderId] = useState<string>("");
   const [selectedAdminOrder, setSelectedAdminOrder] = useState<any>(null);
 
-  // Admin Auth State
-  const [adminToken, setAdminToken] = useState<string>(
-    () => localStorage.getItem("tableDash_token") || ""
-  );
-
+  // Listen for URL changes (pop state / back/forward)
   useEffect(() => {
     const handlePopState = () => {
-      if (window.location.pathname === "/kitchen") {
-        setCurrentView(adminToken ? "admin_orders" : "admin_login");
-      } else if (currentView.startsWith("admin_")) {
+      const path = window.location.pathname;
+      if (path === "/kitchen") {
+        setCurrentView(isAdminLoggedIn ? "admin_orders" : "admin_login");
+      } else if (path === "/platform") {
+        setCurrentView("platform_admin");
+      } else if (currentView.startsWith("admin_") || currentView === "platform_admin") {
         setCurrentView("customer_menu");
       }
     };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, [adminToken, currentView]);
+  }, [isAdminLoggedIn, currentView]);
 
   const isCustomerView = currentView.startsWith("customer_");
+  const isAdminView = currentView.startsWith("admin_");
+
+  const getAdminTab = (): AdminTab => {
+    switch (currentView) {
+      case "admin_dashboard": return "dashboard";
+      case "admin_menu_manage": return "menu";
+      case "admin_settings": return "settings";
+      case "admin_order_history": return "history";
+      default: return "orders";
+    }
+  };
+
+  const handleAdminTab = (tab: AdminTab) => {
+    if (tab === "orders") setCurrentView("admin_orders");
+    else if (tab === "dashboard") setCurrentView("admin_dashboard");
+    else if (tab === "menu") setCurrentView("admin_menu_manage");
+    else if (tab === "settings") setCurrentView("admin_settings");
+    else if (tab === "history") setCurrentView("admin_order_history");
+  };
 
   const getActiveTab = (): CustomerTab => {
     if (currentView === "customer_cart") return "cart";
-    if (currentView === "customer_tracking" || currentView === "customer_confirmation") return "tracking";
-    if (currentView === "customer_auth" || currentView === "customer_my_orders") return "account";
+    if (currentView === "customer_tracker_list" || currentView === "customer_tracking" || currentView === "customer_confirmation") return "tracking";
+    if (currentView === "customer_auth" || currentView === "customer_my_orders" || currentView === "customer_profile") return "account";
     return "menu";
   };
 
   const handleSelectTab = (tab: CustomerTab) => {
     if (tab === "menu") setCurrentView("customer_menu");
     if (tab === "cart") setCurrentView("customer_cart");
-    if (tab === "tracking") setCurrentView("customer_tracking");
+    if (tab === "tracking") setCurrentView("customer_tracker_list");
     if (tab === "account") setCurrentView("customer_my_orders");
   };
 
@@ -120,7 +185,8 @@ export function AppContent() {
         <LocationPage
           onBackToCart={() => setCurrentView("customer_cart")}
           onOrderPlaced={(order) => {
-            setPlacedOrder(order);
+            const primary = Array.isArray(order) ? order[0] : order;
+            setPlacedOrder(primary);
             setCurrentView("customer_confirmation");
           }}
         />
@@ -134,6 +200,17 @@ export function AppContent() {
             setCurrentView("customer_tracking");
           }}
           onBackToHome={() => setCurrentView("customer_menu")}
+        />
+      )}
+
+      {currentView === "customer_tracker_list" && (
+        <TrackingListPage
+          placedOrderId={placedOrder?.id || trackingOrderId || undefined}
+          onTrackOrder={(orderId) => {
+            setTrackingOrderId(orderId);
+            setCurrentView("customer_tracking");
+          }}
+          onGoToAuth={() => setCurrentView("customer_auth")}
         />
       )}
 
@@ -158,12 +235,19 @@ export function AppContent() {
             setTrackingOrderId(orderId);
             setCurrentView("customer_tracking");
           }}
+          onGoToProfile={() => setCurrentView("customer_profile")}
+        />
+      )}
+
+      {currentView === "customer_profile" && (
+        <CustomerProfilePage
+          onBack={() => setCurrentView("customer_my_orders")}
         />
       )}
 
       {/* Customer Sticky Bottom Navigation */}
       {isCustomerView && (
-        <BottomNavBar
+        <BottomNav
           activeTab={getActiveTab()}
           onSelectTab={handleSelectTab}
           hasActiveOrder={Boolean(placedOrder || trackingOrderId)}
@@ -173,8 +257,8 @@ export function AppContent() {
       {/* ─── Admin Management Application Flow ─────────────────────────────────── */}
       {currentView === "admin_login" && (
         <AdminLoginPage
-          onLoginSuccess={(token) => {
-            setAdminToken(token);
+          onLoginSuccess={(token, loginUser) => {
+            adminLogin(token, loginUser);
             setCurrentView("admin_orders");
           }}
         />
@@ -187,12 +271,8 @@ export function AppContent() {
             setSelectedAdminOrder(order);
             setCurrentView("admin_order_details");
           }}
-          onNavigateDashboard={() => setCurrentView("admin_dashboard")}
-          onNavigateMenuManage={() => setCurrentView("admin_menu_manage")}
-          onNavigateSettings={() => setCurrentView("admin_settings")}
           onLogout={() => {
-            localStorage.removeItem("tableDash_token");
-            setAdminToken("");
+            adminLogout();
             setCurrentView("customer_menu");
           }}
         />
@@ -222,6 +302,10 @@ export function AppContent() {
         <AdminDashboardPage
           token={adminToken}
           onBackToOrders={() => setCurrentView("admin_orders")}
+          onNavigateToOrders={() => setCurrentView("admin_orders")}
+          onNavigateToMenu={() => setCurrentView("admin_menu_manage")}
+          onNavigateToSettings={() => setCurrentView("admin_settings")}
+          onNavigateToHistory={() => setCurrentView("admin_order_history")}
         />
       )}
 
@@ -238,6 +322,28 @@ export function AppContent() {
           onBackToOrders={() => setCurrentView("admin_orders")}
         />
       )}
+
+      {currentView === "admin_order_history" && (
+        <AdminOrderHistoryPage
+          token={adminToken}
+          onBackToOrders={() => setCurrentView("admin_orders")}
+        />
+      )}
+
+      {/* ─── Platform Admin Panel (self-contained auth) ──────────────── */}
+      {currentView === "platform_admin" && (
+        <PlatformAdminPage
+          onBack={() => setCurrentView("customer_menu")}
+        />
+      )}
+
+      {/* Admin Bottom Navigation — persistent across all admin views (except login and order details) */}
+      {isAdminView && currentView !== "admin_login" && currentView !== "admin_order_details" && currentView !== "admin_map_view" && (
+        <AdminBottomNavBar
+          activeTab={getAdminTab()}
+          onSelectTab={handleAdminTab}
+        />
+      )}
     </>
   );
 }
@@ -247,7 +353,11 @@ export function App() {
     <NotificationsProvider>
       <CartProvider>
         <CustomerAuthProvider>
-          <AppContent />
+          <AdminAuthProvider>
+            <PlatformAdminAuthProvider>
+              <AppContent />
+            </PlatformAdminAuthProvider>
+          </AdminAuthProvider>
         </CustomerAuthProvider>
       </CartProvider>
     </NotificationsProvider>

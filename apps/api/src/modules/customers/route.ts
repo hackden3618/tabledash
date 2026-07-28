@@ -12,11 +12,14 @@ import { env } from "../../../../../shared/config";
 import {
   CustomerLoginSchema,
   CustomerRegisterSchema,
+  CustomerForgotPinSchema,
+  CustomerResetPinSchema,
   IdParamSchema,
 } from "../../../../../shared/schemas";
 import { getAllCustomers, getCustomerHistory } from "./service";
-import { decodeCustomerToken, getCustomerProfile, loginCustomer, registerCustomer } from "./auth.service";
+import { getCustomerProfile, loginCustomer, registerCustomer, verifyCustomerToken, generatePinResetCode, resetCustomerPin } from "./auth.service";
 import { verifyAdminToken } from "../auth/service";
+import { AUTH_LIMITER } from "../../lib/rate-limiter";
 
 export const customersRoute = new Elysia({
   prefix: `${env.apiPrefix}/customers`,
@@ -79,9 +82,16 @@ export const customersRoute = new Elysia({
   // ─── Customer: Register (phone + PIN) ────────────────────────────────────────
   .post(
     "/register",
-    async ({ body, set }) => {
+    async ({ body, jwt, set, request }) => {
+      const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+      const { allowed, resetIn } = AUTH_LIMITER(`customer-register:${ip}`);
+      if (!allowed) {
+        set.status = 429;
+        set.headers["retry-after"] = String(Math.ceil(resetIn / 1000));
+        return { success: false, error: `Too many attempts. Try again in ${Math.ceil(resetIn / 1000)}s.` };
+      }
       try {
-        const result = await registerCustomer(body);
+        const result = await registerCustomer(body, (payload) => jwt.sign(payload));
         set.status = 201;
         return { success: true, data: result };
       } catch (err: any) {
@@ -95,9 +105,16 @@ export const customersRoute = new Elysia({
   // ─── Customer: Login (phone + PIN) ────────────────────────────────────────────
   .post(
     "/login",
-    async ({ body, set }) => {
+    async ({ body, jwt, set, request }) => {
+      const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+      const { allowed, resetIn } = AUTH_LIMITER(`customer-login:${ip}`);
+      if (!allowed) {
+        set.status = 429;
+        set.headers["retry-after"] = String(Math.ceil(resetIn / 1000));
+        return { success: false, error: `Too many attempts. Try again in ${Math.ceil(resetIn / 1000)}s.` };
+      }
       try {
-        const result = await loginCustomer(body);
+        const result = await loginCustomer(body, (payload) => jwt.sign(payload));
         return { success: true, data: result };
       } catch (err: any) {
         set.status = 401;
@@ -110,10 +127,10 @@ export const customersRoute = new Elysia({
   // ─── Customer: Get own profile (requires Bearer token) ───────────────────────
   .get(
     "/me",
-    async ({ headers, set }) => {
+    async ({ headers, jwt, set }) => {
       const auth = headers["authorization"] ?? "";
       const token = auth.replace("Bearer ", "").trim();
-      const customerId = decodeCustomerToken(token);
+      const customerId = await verifyCustomerToken(token, (t) => jwt.verify(t));
 
       if (!customerId) {
         set.status = 401;
@@ -132,4 +149,34 @@ export const customersRoute = new Elysia({
       // Declare headers so Elysia doesn't strip authorization
       headers: t.Object({ authorization: t.Optional(t.String()) }),
     }
+  )
+
+  // ─── Customer: Forgot PIN (request reset code) ────────────────────────────────
+  .post(
+    "/forgot-pin",
+    async ({ body, set }) => {
+      try {
+        const result = await generatePinResetCode(body.phone);
+        return { success: true, data: result };
+      } catch (err: any) {
+        set.status = 404;
+        return { success: false, error: err.message };
+      }
+    },
+    { body: CustomerForgotPinSchema }
+  )
+
+  // ─── Customer: Reset PIN (validate OTP + set new PIN) ─────────────────────────
+  .post(
+    "/reset-pin",
+    async ({ body, set }) => {
+      try {
+        const result = await resetCustomerPin(body);
+        return { success: true, data: result };
+      } catch (err: any) {
+        set.status = 400;
+        return { success: false, error: err.message };
+      }
+    },
+    { body: CustomerResetPinSchema }
   );

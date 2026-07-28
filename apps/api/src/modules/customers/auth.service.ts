@@ -8,33 +8,26 @@
  */
 
 import { prisma } from "../../../../../infrastructure/database/prisma";
+import { formatPhone } from "../../../../../shared/phone";
 
-/** Simple base64 customer session token (same scheme as admin for now). */
-const makeToken = (customerId: string): string =>
-  Buffer.from(`customer:${customerId}:${Date.now()}`).toString("base64");
-
-/** Decodes the base64 customer token and returns the customerId, or null if invalid. */
-export const decodeCustomerToken = (token: string): string | null => {
-  try {
-    const decoded = Buffer.from(token, "base64").toString("utf-8");
-    const [, customerId] = decoded.split(":");
-    return customerId || null;
-  } catch {
-    return null;
-  }
-};
+const CUSTOMER_TOKEN_EXPIRY_SEC = 7 * 24 * 60 * 60; // 7 days
 
 /**
  * Registers a new customer account with a 4-digit PIN.
  * If the phone already exists and has no PIN yet (guest account created during a past order),
  * we attach the PIN to that existing record instead of creating a duplicate.
  */
-export const registerCustomer = async (input: {
-  firstName: string;
-  phone: string;
-  pin: string;
-}) => {
-  const existing = await prisma.customer.findUnique({ where: { phone: input.phone } });
+export const registerCustomer = async (
+  input: {
+    firstName: string;
+    lastName?: string;
+    phone: string;
+    pin: string;
+  },
+  jwtSign: (payload: Record<string, any>) => Promise<string>
+) => {
+  const formattedPhone = formatPhone(input.phone);
+  const existing = await prisma.customer.findUnique({ where: { phone: formattedPhone } });
 
   if (existing?.pinHash) {
     throw new Error("An account already exists for this phone number. Please sign in instead.");
@@ -47,21 +40,29 @@ export const registerCustomer = async (input: {
     // Upgrade the existing guest record to a full account
     customer = await prisma.customer.update({
       where: { id: existing.id },
-      data: { firstName: input.firstName, pinHash },
+      data: { firstName: input.firstName, lastName: input.lastName, pinHash },
     });
   } else {
     customer = await prisma.customer.create({
-      data: { firstName: input.firstName, phone: input.phone, pinHash },
+      data: { firstName: input.firstName, lastName: input.lastName, phone: formattedPhone, pinHash },
     });
   }
 
-  const token = makeToken(customer.id);
+  const token = await jwtSign({
+    sub: customer.id,
+    type: "customer",
+    exp: Math.floor(Date.now() / 1000) + CUSTOMER_TOKEN_EXPIRY_SEC,
+  });
+
   return {
     token,
     customer: {
       id: customer.id,
       firstName: customer.firstName,
+      lastName: customer.lastName,
       phone: customer.phone,
+      knownName: customer.knownName,
+      stallNumber: customer.stallNumber,
       marketSection: customer.marketSection,
       locationDescription: customer.locationDescription,
       hasPin: true,
@@ -72,8 +73,12 @@ export const registerCustomer = async (input: {
 /**
  * Authenticates a customer by phone + 4-digit PIN.
  */
-export const loginCustomer = async (input: { phone: string; pin: string }) => {
-  const customer = await prisma.customer.findUnique({ where: { phone: input.phone } });
+export const loginCustomer = async (
+  input: { phone: string; pin: string },
+  jwtSign: (payload: Record<string, any>) => Promise<string>
+) => {
+  const formattedPhone = formatPhone(input.phone);
+  const customer = await prisma.customer.findUnique({ where: { phone: formattedPhone } });
 
   if (!customer || !customer.pinHash) {
     throw new Error("No account found for this phone number. Please register first.");
@@ -84,13 +89,21 @@ export const loginCustomer = async (input: { phone: string; pin: string }) => {
     throw new Error("Incorrect PIN. Please try again.");
   }
 
-  const token = makeToken(customer.id);
+  const token = await jwtSign({
+    sub: customer.id,
+    type: "customer",
+    exp: Math.floor(Date.now() / 1000) + CUSTOMER_TOKEN_EXPIRY_SEC,
+  });
+
   return {
     token,
     customer: {
       id: customer.id,
       firstName: customer.firstName,
+      lastName: customer.lastName,
       phone: customer.phone,
+      knownName: customer.knownName,
+      stallNumber: customer.stallNumber,
       marketSection: customer.marketSection,
       locationDescription: customer.locationDescription,
       hasPin: true,
@@ -122,6 +135,8 @@ export const getCustomerProfile = async (customerId: string) => {
     firstName: customer.firstName,
     lastName: customer.lastName,
     phone: customer.phone,
+    knownName: customer.knownName,
+    stallNumber: customer.stallNumber,
     marketSection: customer.marketSection,
     locationDescription: customer.locationDescription,
     hasPin: Boolean(customer.pinHash),
@@ -135,4 +150,63 @@ export const getCustomerProfile = async (customerId: string) => {
       })),
     })),
   };
+};
+
+/**
+ * Generates a 4-digit OTP and stores it on the customer record with a 10-minute expiry.
+ */
+export const generatePinResetCode = async (phone: string) => {
+  const formattedPhone = formatPhone(phone);
+  const customer = await prisma.customer.findUnique({ where: { phone: formattedPhone } });
+  if (!customer) {
+    throw new Error("No account found for this phone number.");
+  }
+  const otp = String(Math.floor(1000 + Math.random() * 9000));
+  const expires = new Date(Date.now() + 10 * 60 * 1000);
+  await prisma.customer.update({
+    where: { id: customer.id },
+    data: { pinResetCode: otp, pinResetCodeExpires: expires },
+  });
+  return { message: "Reset code sent to your phone.", otp }; // otp returned for dev; prod would SMS it
+};
+
+/**
+ * Validates the OTP and resets the PIN.
+ */
+export const resetCustomerPin = async (input: { phone: string; otp: string; newPin: string }) => {
+  const formattedPhone = formatPhone(input.phone);
+  const customer = await prisma.customer.findUnique({ where: { phone: formattedPhone } });
+  if (!customer) {
+    throw new Error("No account found for this phone number.");
+  }
+  if (!customer.pinResetCode || !customer.pinResetCodeExpires) {
+    throw new Error("No reset code has been requested. Please request a new one.");
+  }
+  if (customer.pinResetCode !== input.otp) {
+    throw new Error("Invalid reset code. Please try again.");
+  }
+  if (new Date() > customer.pinResetCodeExpires) {
+    throw new Error("Reset code has expired. Please request a new one.");
+  }
+  const pinHash = await Bun.password.hash(input.newPin);
+  await prisma.customer.update({
+    where: { id: customer.id },
+    data: { pinHash, pinResetCode: null, pinResetCodeExpires: null },
+  });
+  return { message: "PIN has been reset successfully." };
+};
+
+export const verifyCustomerToken = async (
+  token: string,
+  jwtVerify: (token: string) => Promise<Record<string, any> | false>
+): Promise<string | null> => {
+  try {
+    const payload = await jwtVerify(token);
+    if (!payload || typeof payload.sub !== "string" || payload.type !== "customer") {
+      return null;
+    }
+    return payload.sub;
+  } catch {
+    return null;
+  }
 };

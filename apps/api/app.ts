@@ -13,14 +13,26 @@ import { join } from "node:path";
 // Feature module routes & WS hub
 import { authRoute } from "./src/modules/auth/route";
 import { customersRoute } from "./src/modules/customers/route";
+import { hotelsRoute } from "./src/modules/hotels/route";
 import { menuRoute } from "./src/modules/menu/route";
 import { ordersRoute } from "./src/modules/orders/route";
+import { platformRoute } from "./src/modules/platform/routes";
 import { settingsRoute } from "./src/modules/settings/route";
 import { uploadRoute } from "./src/modules/upload/route";
 import { wsHub } from "./src/modules/websocket/hub";
 import { env } from "../../shared/config";
 
 export const app = new Elysia()
+
+  // Security headers (applied after every request)
+  .onAfterHandle(({ set }) => {
+    set.headers["x-content-type-options"] ??= "nosniff";
+    set.headers["x-frame-options"] ??= "DENY";
+    set.headers["x-xss-protection"] ??= "1; mode=block";
+    set.headers["referrer-policy"] ??= "strict-origin-when-cross-origin";
+    set.headers["permissions-policy"] ??= "camera=(), microphone=(), geolocation=()";
+    set.headers["strict-transport-security"] ??= "max-age=31536000; includeSubDomains";
+  })
 
   // Global CORS enabling frontend web app to communicate with API
   .use(cors({ origin: env.corsOrigin }))
@@ -76,11 +88,13 @@ export const app = new Elysia()
 
   // Feature domain routes
   .use(authRoute)
+  .use(hotelsRoute)
   .use(menuRoute)
   .use(ordersRoute)
   .use(customersRoute)
   .use(settingsRoute)
   .use(uploadRoute)
+  .use(platformRoute)
 
   // Serve the built frontend SPA for any non-API route
   .get("/*", ({ params }) => {

@@ -5,18 +5,24 @@
  * When to modify: When adding new settings endpoints or changing route parameters.
  */
 
+import { jwt } from "@elysiajs/jwt";
 import { Elysia, t } from "elysia";
 import { env } from "../../../../../shared/config";
+import { PHONE_PATTERN, PHONE_MIN, PHONE_MAX } from "../../../../../shared/phone";
 import {
   getHotelIsOpen,
+  getHotelName,
+  getHotelImageUrl,
   getStaffPhone,
   updateHotelIsOpen,
   updateStaffPhone,
+  updateHotelImageUrl,
   getStaffUsers,
   addStaffUser,
   updateStaffUser,
   deleteStaffUser,
 } from "./service";
+import { verifyAdminToken } from "../auth/service";
 
 export const settingsRoute = new Elysia({
   prefix: `${env.apiPrefix}/settings`,
@@ -25,13 +31,30 @@ export const settingsRoute = new Elysia({
     tags: ["Settings"],
   },
 })
-  .get("/", async () => {
+  .use(
+    jwt({
+      name: "jwt",
+      secret: env.jwtSecret,
+    })
+  )
+  .get("/", async ({ headers, jwt }) => {
+    let adminHotelId: string | undefined;
+    const authHeader = headers["authorization"];
+    if (authHeader?.startsWith("Bearer ")) {
+      const token = authHeader.split(" ")[1] ?? "";
+      try { const admin = await verifyAdminToken(token, (t) => jwt.verify(t)); adminHotelId = admin.hotelId ?? undefined; } catch {}
+    }
+
     const staffPhone = await getStaffPhone();
-    const status = await getHotelIsOpen();
+    const status = await getHotelIsOpen(adminHotelId);
+    const hotelName = await getHotelName(adminHotelId);
+    const hotelImageUrl = await getHotelImageUrl(adminHotelId);
     return {
       success: true,
       data: {
         staffPhone,
+        hotelName,
+        hotelImageUrl,
         hotelIsOpen: status.isOpen,
         autoCloseAt: status.autoCloseAt,
       },
@@ -39,17 +62,32 @@ export const settingsRoute = new Elysia({
   })
   .patch(
     "/",
-    async ({ body, set }) => {
+    async ({ body, set, headers, jwt }) => {
+      const authHeader = headers["authorization"];
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        set.status = 401;
+        return { success: false, error: "Missing or invalid authorization header" };
+      }
+      const token = authHeader.split(" ")[1] ?? "";
+      let admin;
+      try { admin = await verifyAdminToken(token, (t) => jwt.verify(t)); }
+      catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
+
       try {
         let staffPhone = await getStaffPhone();
-        let status = await getHotelIsOpen();
+        let status = await getHotelIsOpen(admin.hotelId ?? undefined);
+        let hotelImageUrl: string | null = null;
 
         if (body.staffPhone !== undefined) {
           staffPhone = await updateStaffPhone(body.staffPhone);
         }
 
         if (body.hotelIsOpen !== undefined) {
-          status = await updateHotelIsOpen(body.hotelIsOpen, body.autoCloseAt);
+          status = await updateHotelIsOpen(body.hotelIsOpen, body.autoCloseAt, admin.hotelId ?? undefined);
+        }
+
+        if (body.hotelImageUrl !== undefined) {
+          hotelImageUrl = await updateHotelImageUrl(body.hotelImageUrl, admin.hotelId ?? undefined);
         }
 
         return {
@@ -58,6 +96,7 @@ export const settingsRoute = new Elysia({
             staffPhone,
             hotelIsOpen: status.isOpen,
             autoCloseAt: status.autoCloseAt,
+            hotelImageUrl,
           },
         };
       } catch (err: any) {
@@ -67,21 +106,45 @@ export const settingsRoute = new Elysia({
     },
     {
       body: t.Object({
-        staffPhone: t.Optional(t.String({ minLength: 10, maxLength: 14, pattern: "^\\+?\\d{10,13}$" })),
+        staffPhone: t.Optional(t.String({ minLength: PHONE_MIN, maxLength: PHONE_MAX, pattern: PHONE_PATTERN })),
         hotelIsOpen: t.Optional(t.Boolean()),
         autoCloseAt: t.Optional(t.Nullable(t.String())),
+        hotelImageUrl: t.Optional(t.String()),
       }),
     }
   )
-  .get("/staff", async () => {
-    const staff = await getStaffUsers();
-    return { success: true, data: staff };
-  })
+  .get(
+    "/staff",
+    async ({ headers, jwt, set }) => {
+      const authHeader = headers["authorization"];
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        set.status = 401;
+        return { success: false, error: "Missing or invalid authorization header" };
+      }
+      const token = authHeader.split(" ")[1] ?? "";
+      let admin;
+      try { admin = await verifyAdminToken(token, (t) => jwt.verify(t)); }
+      catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
+
+      const staff = await getStaffUsers(admin.hotelId ?? undefined);
+      return { success: true, data: staff };
+    }
+  )
   .post(
     "/staff",
-    async ({ body, set }) => {
+    async ({ body, set, headers, jwt }) => {
+      const authHeader = headers["authorization"];
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        set.status = 401;
+        return { success: false, error: "Missing or invalid authorization header" };
+      }
+      const token = authHeader.split(" ")[1] ?? "";
+      let admin;
+      try { admin = await verifyAdminToken(token, (t) => jwt.verify(t)); }
+      catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
+
       try {
-        const created = await addStaffUser(body);
+        const created = await addStaffUser(body, admin.hotelId ?? undefined);
         return { success: true, data: created };
       } catch (err: any) {
         set.status = 400;
@@ -91,16 +154,26 @@ export const settingsRoute = new Elysia({
     {
       body: t.Object({
         name: t.String({ minLength: 2 }),
-        phone: t.String({ minLength: 10, maxLength: 14, pattern: "^\\+?\\d{10,13}$" }),
+        phone: t.String({ minLength: PHONE_MIN, maxLength: PHONE_MAX, pattern: PHONE_PATTERN }),
         receiveSms: t.Boolean(),
       }),
     }
   )
   .patch(
     "/staff/:id",
-    async ({ params, body, set }) => {
+    async ({ params, body, set, headers, jwt }) => {
+      const authHeader = headers["authorization"];
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        set.status = 401;
+        return { success: false, error: "Missing or invalid authorization header" };
+      }
+      const token = authHeader.split(" ")[1] ?? "";
+      let admin;
+      try { admin = await verifyAdminToken(token, (t) => jwt.verify(t)); }
+      catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
+
       try {
-        const updated = await updateStaffUser(params.id, body);
+        const updated = await updateStaffUser(params.id, body, admin.hotelId ?? undefined);
         return { success: true, data: updated };
       } catch (err: any) {
         set.status = 400;
@@ -110,14 +183,24 @@ export const settingsRoute = new Elysia({
     {
       body: t.Object({
         name: t.Optional(t.String({ minLength: 2 })),
-        phone: t.Optional(t.String({ minLength: 10, maxLength: 14, pattern: "^\\+?\\d{10,13}$" })),
+        phone: t.Optional(t.String({ minLength: PHONE_MIN, maxLength: PHONE_MAX, pattern: PHONE_PATTERN })),
         receiveSms: t.Optional(t.Boolean()),
       }),
     }
   )
-  .delete("/staff/:id", async ({ params, set }) => {
+  .delete("/staff/:id", async ({ params, set, headers, jwt }) => {
+    const authHeader = headers["authorization"];
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      set.status = 401;
+      return { success: false, error: "Missing or invalid authorization header" };
+    }
+    const token = authHeader.split(" ")[1] ?? "";
+    let admin;
+    try { admin = await verifyAdminToken(token, (t) => jwt.verify(t)); }
+    catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
+
     try {
-      await deleteStaffUser(params.id);
+      await deleteStaffUser(params.id, admin.hotelId ?? undefined);
       return { success: true };
     } catch (err: any) {
       set.status = 400;

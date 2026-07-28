@@ -117,6 +117,26 @@ export class WebSocketHub {
   public broadcastOrderBounced<T>(message: WsMessage<T>): void {
     this.broadcastToAdmins(message);
   }
+
+  /**
+   * Broadcasts a notification event to every connected client (admin + customer).
+   * Used for in-app toasts: dispatch alerts, payment received, OOS warnings, cancellations.
+   */
+  public broadcastNotification<T>(message: WsMessage<T>): void {
+    const payloadStr = JSON.stringify(message);
+    const staleIds: string[] = [];
+
+    for (const client of this.clients.values()) {
+      try {
+        client.send(payloadStr);
+      } catch (err) {
+        console.error(`[WS Hub] Stale socket detected for client ${client.id}:`, err);
+        staleIds.push(client.id);
+      }
+    }
+
+    staleIds.forEach((id) => this.clients.delete(id));
+  }
 }
 
 export const wsHub = new WebSocketHub();

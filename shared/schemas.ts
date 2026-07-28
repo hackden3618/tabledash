@@ -6,17 +6,26 @@
  */
 
 import { t } from "elysia";
+import { PHONE_PATTERN, PHONE_MIN, PHONE_MAX } from "./phone";
 
 export const OrderItemSchema = t.Object({
   productId: t.String({ format: "uuid", error: "Invalid product ID format" }),
   quantity: t.Integer({ minimum: 1, error: "Quantity must be at least 1" }),
 });
 
-const PhonePattern = "^\\+?\\d{10,13}$";
+const PhoneString = t.String({
+  minLength: PHONE_MIN,
+  maxLength: PHONE_MAX,
+  pattern: PHONE_PATTERN,
+  error: `Phone must be ${PHONE_MIN} digits in format 2547XXXXXXXX`,
+});
 
 export const CreateOrderSchema = t.Object({
-  customerName: t.String({ minLength: 2, error: "Customer name is required" }),
-  phone: t.String({ minLength: 10, maxLength: 14, pattern: PhonePattern, error: "Phone must be 10-13 digits, optionally prefixed with +" }),
+  firstName: t.String({ minLength: 2, error: "First name is required" }),
+  lastName: t.Optional(t.String()),
+  phone: PhoneString,
+  knownName: t.Optional(t.String()),
+  stallNumber: t.Optional(t.String()),
   marketSection: t.Optional(t.String()),
   locationDescription: t.Optional(t.String()),
   items: t.Array(OrderItemSchema, { minItems: 1, error: "Order must contain at least one item" }),
@@ -54,7 +63,7 @@ export const UpdateProductAvailabilitySchema = t.Object({
 
 export const AdminLoginSchema = t.Object({
   username: t.String({ minLength: 3, error: "Username is required" }),
-  password: t.String({ minLength: 4, error: "Password is required" }),
+  password: t.String({ minLength: 8, error: "Password must be at least 8 characters" }),
 });
 
 export const IdParamSchema = t.Object({
@@ -63,11 +72,35 @@ export const IdParamSchema = t.Object({
 
 export const CustomerRegisterSchema = t.Object({
   firstName: t.String({ minLength: 2, error: "First name is required" }),
-  phone: t.String({ minLength: 10, maxLength: 14, pattern: PhonePattern, error: "Phone must be 10-13 digits, optionally prefixed with +" }),
+  lastName: t.Optional(t.String()),
+  phone: PhoneString,
   pin: t.String({ minLength: 4, maxLength: 4, pattern: "^[0-9]{4}$", error: "PIN must be exactly 4 digits" }),
 });
 
 export const CustomerLoginSchema = t.Object({
-  phone: t.String({ minLength: 10, maxLength: 14, pattern: PhonePattern, error: "Phone must be 10-13 digits, optionally prefixed with +" }),
+  phone: PhoneString,
   pin: t.String({ minLength: 4, maxLength: 4, pattern: "^[0-9]{4}$", error: "PIN must be exactly 4 digits" }),
+});
+
+export const CancelOrderSchema = t.Object({
+  reason: t.Optional(t.String({ maxLength: 500, error: "Cancellation reason is too long" })),
+});
+
+export const CustomerForgotPinSchema = t.Object({
+  phone: PhoneString,
+});
+
+export const CustomerResetPinSchema = t.Object({
+  phone: PhoneString,
+  otp: t.String({ minLength: 4, maxLength: 4, pattern: "^[0-9]{4}$", error: "OTP must be exactly 4 digits" }),
+  newPin: t.String({ minLength: 4, maxLength: 4, pattern: "^[0-9]{4}$", error: "PIN must be exactly 4 digits" }),
+});
+
+export const UpdateOrderPaymentSchema = t.Object({
+  paymentStatus: t.Optional(t.Union([
+    t.Literal("UNPAID"),
+    t.Literal("PARTIAL"),
+    t.Literal("PAID"),
+  ])),
+  amountPaid: t.Optional(t.Number({ minimum: 0 })),
 });

@@ -6,9 +6,12 @@
  * When to modify: When changing upload file size limits, allowed extensions, or storage providers.
  */
 
+import { jwt } from "@elysiajs/jwt";
 import { Elysia, t } from "elysia";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { env } from "../../../../../shared/config";
+import { verifyAdminToken } from "../auth/service";
 
 // Ensure uploads directory exists inside apps/api/uploads
 const UPLOAD_DIR = join(process.cwd(), "apps", "api", "uploads");
@@ -17,6 +20,12 @@ if (!existsSync(UPLOAD_DIR)) {
 }
 
 export const uploadRoute = new Elysia({ prefix: "/api/v1" })
+  .use(
+    jwt({
+      name: "jwt",
+      secret: env.jwtSecret,
+    })
+  )
   // Serve static files from /uploads/:filename
   .get("/uploads/:filename", async ({ params: { filename }, set }) => {
     const filePath = join(UPLOAD_DIR, filename);
@@ -30,15 +39,29 @@ export const uploadRoute = new Elysia({ prefix: "/api/v1" })
     return file;
   })
 
-  // POST /api/v1/upload — upload an image file
+  // POST /api/v1/upload — upload an image file (admin only)
   .post(
     "/upload",
-    async ({ body, set }) => {
+    async ({ body, set, headers, jwt }) => {
+      const authHeader = headers["authorization"];
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        set.status = 401;
+        return { success: false, error: "Missing or invalid authorization header" };
+      }
+      const token = authHeader.split(" ")[1] ?? "";
+      try { await verifyAdminToken(token, (t) => jwt.verify(t)); }
+      catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
       const file = body.file as File;
+      const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
 
       if (!file) {
         set.status = 400;
         return { success: false, error: "No image file uploaded" };
+      }
+
+      if (file.size > MAX_SIZE) {
+        set.status = 400;
+        return { success: false, error: "File size exceeds 5 MB limit" };
       }
 
       // Validate mime type

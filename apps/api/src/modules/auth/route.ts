@@ -6,10 +6,12 @@
  */
 
 import { jwt } from "@elysiajs/jwt";
-import { Elysia } from "elysia";
+import { Elysia, t } from "elysia";
 import { env } from "../../../../../shared/config";
+import { PHONE_PATTERN, PHONE_MIN, PHONE_MAX } from "../../../../../shared/phone";
 import { AdminLoginSchema } from "../../../../../shared/schemas";
-import { loginAdmin, verifyAdminToken } from "./service";
+import { loginAdmin, verifyAdminToken, requestPasswordResetOtp, resetPasswordWithOtp } from "./service";
+import { AUTH_LIMITER } from "../../lib/rate-limiter";
 
 export const authRoute = new Elysia({
   prefix: `${env.apiPrefix}/auth`,
@@ -26,7 +28,14 @@ export const authRoute = new Elysia({
   )
   .post(
     "/login",
-    async ({ body, jwt, set }) => {
+    async ({ body, jwt, set, request }) => {
+      const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+      const { allowed, remaining, resetIn } = AUTH_LIMITER(`login:${ip}`);
+      if (!allowed) {
+        set.status = 429;
+        set.headers["retry-after"] = String(Math.ceil(resetIn / 1000));
+        return { success: false, error: `Too many attempts. Try again in ${Math.ceil(resetIn / 1000)}s.` };
+      }
       try {
         const result = await loginAdmin(body.username, body.password, (payload) => jwt.sign(payload));
         return {
@@ -43,6 +52,54 @@ export const authRoute = new Elysia({
     },
     {
       body: AdminLoginSchema,
+    }
+  )
+  .post(
+    "/forgot-password",
+    async ({ body, set, request }) => {
+      const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+      const { allowed, remaining, resetIn } = AUTH_LIMITER(`otp:${ip}`);
+      if (!allowed) {
+        set.status = 429;
+        set.headers["retry-after"] = String(Math.ceil(resetIn / 1000));
+        return { success: false, error: `Too many attempts. Try again in ${Math.ceil(resetIn / 1000)}s.` };
+      }
+      try {
+        await requestPasswordResetOtp(body.phone);
+        return { success: true, data: { message: "OTP sent to your phone if the number is registered" } };
+      } catch (err: any) {
+        set.status = 400;
+        return { success: false, error: err.message || "Failed to send OTP" };
+      }
+    },
+    {
+      body: t.Object({ phone: t.String({ minLength: 10, maxLength: 13 }) }),
+    }
+  )
+  .post(
+    "/reset-password",
+    async ({ body, set, request }) => {
+      const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+      const { allowed, resetIn } = AUTH_LIMITER(`reset-password:${ip}`);
+      if (!allowed) {
+        set.status = 429;
+        set.headers["retry-after"] = String(Math.ceil(resetIn / 1000));
+        return { success: false, error: `Too many attempts. Try again in ${Math.ceil(resetIn / 1000)}s.` };
+      }
+      try {
+        await resetPasswordWithOtp(body.phone, body.otp, body.newPassword);
+        return { success: true, data: { message: "Password reset successfully" } };
+      } catch (err: any) {
+        set.status = 400;
+        return { success: false, error: err.message || "Failed to reset password" };
+      }
+    },
+    {
+      body: t.Object({
+        phone: t.String({ minLength: 10, maxLength: 13 }),
+        otp: t.String({ minLength: 6, maxLength: 6 }),
+        newPassword: t.String({ minLength: 6 }),
+      }),
     }
   )
   .get("/me", async ({ headers, jwt, set }) => {
