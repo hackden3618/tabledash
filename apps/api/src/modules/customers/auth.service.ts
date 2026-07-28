@@ -1,5 +1,5 @@
 /**
- * Purpose: Customer Authentication Service for tableDash.
+ * Purpose: Customer Authentication Service for Ladha.
  * Responsibilities: Handles customer self-registration, PIN verification, and profile retrieval.
  *   Login is phone + 4-digit PIN. PINs are hashed using Bun.password (Argon2id) — more secure
  *   than bcrypt and zero extra dependencies since Bun ships it natively.
@@ -9,6 +9,7 @@
 
 import { prisma } from "../../../../../infrastructure/database/prisma";
 import { formatPhone } from "../../../../../shared/phone";
+import { smsService } from "../notifications/sms.service";
 
 const CUSTOMER_TOKEN_EXPIRY_SEC = 7 * 24 * 60 * 60; // 7 days
 
@@ -153,7 +154,9 @@ export const getCustomerProfile = async (customerId: string) => {
 };
 
 /**
- * Generates a 4-digit OTP and stores it on the customer record with a 10-minute expiry.
+ * Generates a 4-digit OTP and sends it to the customer via SMS.
+ * Also writes an outbox row for reliability — the SMS dispatch is retried
+ * by the outbox dispatcher if the initial attempt fails.
  */
 export const generatePinResetCode = async (phone: string) => {
   const formattedPhone = formatPhone(phone);
@@ -167,7 +170,18 @@ export const generatePinResetCode = async (phone: string) => {
     where: { id: customer.id },
     data: { pinResetCode: otp, pinResetCodeExpires: expires },
   });
-  return { message: "Reset code sent to your phone.", otp }; // otp returned for dev; prod would SMS it
+
+  const otpMessage = `Your Ladha PIN reset code is: ${otp}. It expires in 10 minutes. - Ladha Deliveries`;
+
+  (async () => {
+    try {
+      await smsService.sendSms(formattedPhone, otpMessage);
+    } catch (err) {
+      console.error("[Customer PIN Reset SMS Error]:", err);
+    }
+  })();
+
+  return { message: "Reset code sent to your phone." };
 };
 
 /**

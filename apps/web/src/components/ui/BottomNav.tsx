@@ -28,7 +28,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   const { isLoggedIn } = useCustomerAuth();
 
   return (
-    <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white/95 backdrop-blur-lg border-t border-[#E5E7EB] z-50 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] safe-area-bottom">
+    <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white/95 backdrop-blur-lg border-t border-[#E5E7EB] z-40 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] safe-area-bottom">
       <div className="flex items-center justify-around py-1.5">
         {tabs.map(({ key, label, icon: Icon }) => {
           const isActive = activeTab === key;

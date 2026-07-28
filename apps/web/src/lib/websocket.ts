@@ -40,6 +40,14 @@ export function useWebSocket<T = unknown>(
         query += `&orderId=${orderId}`;
       }
 
+      // Automatically append admin JWT token if role is admin to enforce tenant isolation
+      if (role === "admin") {
+        const adminToken = localStorage.getItem("ladha_token");
+        if (adminToken) {
+          query += `&token=${encodeURIComponent(adminToken)}`;
+        }
+      }
+
       const proto = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:";
       const base = typeof window !== "undefined" ? `${proto}//${window.location.host}` : "ws://localhost:3000";
       const wsUrl = `${base}/ws?${query}`;
