@@ -118,6 +118,8 @@ model Customer {
     locationDescription String?  @map("location_description")
     marketSection       String?  @map("market_section")
     knownName           String?  @map("known_name")
+    pinResetCode        String?  @map("pin_reset_code")
+    pinResetCodeExpires DateTime? @map("pin_reset_code_expires") @db.Timestamptz()
     createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
     orders Order[]

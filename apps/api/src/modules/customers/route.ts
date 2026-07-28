@@ -12,10 +12,12 @@ import { env } from "../../../../../shared/config";
 import {
   CustomerLoginSchema,
   CustomerRegisterSchema,
+  CustomerForgotPinSchema,
+  CustomerResetPinSchema,
   IdParamSchema,
 } from "../../../../../shared/schemas";
 import { getAllCustomers, getCustomerHistory } from "./service";
-import { getCustomerProfile, loginCustomer, registerCustomer, verifyCustomerToken } from "./auth.service";
+import { getCustomerProfile, loginCustomer, registerCustomer, verifyCustomerToken, generatePinResetCode, resetCustomerPin } from "./auth.service";
 import { verifyAdminToken } from "../auth/service";
 import { AUTH_LIMITER } from "../../lib/rate-limiter";
 
@@ -147,4 +149,34 @@ export const customersRoute = new Elysia({
       // Declare headers so Elysia doesn't strip authorization
       headers: t.Object({ authorization: t.Optional(t.String()) }),
     }
+  )
+
+  // ─── Customer: Forgot PIN (request reset code) ────────────────────────────────
+  .post(
+    "/forgot-pin",
+    async ({ body, set }) => {
+      try {
+        const result = await generatePinResetCode(body.phone);
+        return { success: true, data: result };
+      } catch (err: any) {
+        set.status = 404;
+        return { success: false, error: err.message };
+      }
+    },
+    { body: CustomerForgotPinSchema }
+  )
+
+  // ─── Customer: Reset PIN (validate OTP + set new PIN) ─────────────────────────
+  .post(
+    "/reset-pin",
+    async ({ body, set }) => {
+      try {
+        const result = await resetCustomerPin(body);
+        return { success: true, data: result };
+      } catch (err: any) {
+        set.status = 400;
+        return { success: false, error: err.message };
+      }
+    },
+    { body: CustomerResetPinSchema }
   );

@@ -1,5 +1,5 @@
 /**
- * Purpose: Shopping Cart React Context provider for tableDash customer application.
+ * Purpose: Shopping Cart React Context provider for Ladha customer application.
  * Responsibilities: Manages customer cart state (adding, removing, quantity adjustments, clearing cart, total price calculation).
  * Dependencies: React createContext, useContext, useState, useEffect.
  * When to modify: When adding discounts, item notes, or altering cart calculation logic.
@@ -38,7 +38,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [closedHotelIds, setClosedHotelIds] = useState<string[]>([]);
   const [cart, setCart] = useState<CartItem[]>(() => {
     try {
-      const saved = localStorage.getItem("tableDash_cart");
+      const saved = localStorage.getItem("ladha_cart");
       const parsed: CartItem[] = saved ? JSON.parse(saved) : [];
       return parsed.map((item) => ({ ...item, available: item.available ?? true }));
     } catch {
@@ -47,7 +47,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
 
   useEffect(() => {
-    localStorage.setItem("tableDash_cart", JSON.stringify(cart));
+    localStorage.setItem("ladha_cart", JSON.stringify(cart));
   }, [cart]);
 
   const addToCart = (product: { id: string; name: string; price: number; imageUrl: string; hotelId?: string; hotelName?: string }) => {

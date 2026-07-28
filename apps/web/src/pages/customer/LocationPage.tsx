@@ -1,419 +1,339 @@
-/**
- * Purpose: Delivery Location & Order Submission View for tableDash.
- * Responsibilities: Handles market section selection (via interactive map modal), location text description, customer phone input, and order placement API call.
- * Dependencies: React, useCart context, apiPost helper, MarketMapModal.
- * When to modify: When adding new location fields or changing order submission payload format.
- */
-
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useCart } from "../../context/CartContext";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
 import { apiPost } from "../../lib/api";
 import { useWebSocket } from "../../lib/websocket";
-import { MarketMapModal } from "./MarketMapModal";
-import { Modal } from "../../components/Modal";
+import { Header } from "../../components/ui/Header";
+import { Button } from "../../components/ui/Button";
+import { Input, Textarea } from "../../components/ui/Input";
+import { PageTransition } from "../../components/ui/PageTransition";
+import { Lock, CheckCircle2 } from "lucide-react";
 
 const formatPhone = (raw: string): string => {
-    const cleaned = raw.replace(/\D/g, "");
-    if (cleaned.startsWith("0") && cleaned.length === 10) return `254${cleaned.slice(1)}`;
-    if ((cleaned.startsWith("7") || cleaned.startsWith("1")) && cleaned.length === 9) return `254${cleaned}`;
-    if (cleaned.startsWith("254") && cleaned.length === 12) return cleaned;
-    return cleaned;
+  const cleaned = raw.replace(/\D/g, "");
+  if (cleaned.startsWith("0") && cleaned.length === 10) return `254${cleaned.slice(1)}`;
+  if ((cleaned.startsWith("7") || cleaned.startsWith("1")) && cleaned.length === 9) return `254${cleaned}`;
+  if (cleaned.startsWith("254") && cleaned.length === 12) return cleaned;
+  return cleaned;
 };
 const isValidPhone = (v: string): boolean => /^254\d{9}$/.test(v);
 
 interface LocationPageProps {
-    onBackToCart: () => void;
-    onOrderPlaced: (orderData: any) => void;
+  onBackToCart: () => void;
+  onOrderPlaced: (orderData: any) => void;
 }
 
-export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrderPlaced }) => {
-    const { cart, totalAmount, clearCart, closedHotelIds, setClosedHotelIds } = useCart();
-    const { customer, isLoggedIn } = useCustomerAuth();
+const PinInput: React.FC<{ value: string; onChange: (v: string) => void; error?: string }> = ({ value, onChange, error }) => {
+  const refs = [useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null)];
+  const digits = value.padEnd(4, "").split("").slice(0, 4);
 
-    const [marketSection, setMarketSection] = useState(isLoggedIn && customer?.marketSection ? customer.marketSection : "");
-    const [locationDescription, setLocationDescription] = useState(isLoggedIn && customer?.locationDescription ? customer.locationDescription : "");
-    const [stallNumber, setStallNumber] = useState(isLoggedIn && customer?.stallNumber ? customer.stallNumber : "");
-    const [firstName, setFirstName] = useState(isLoggedIn && customer?.firstName ? customer.firstName : "");
-    const [lastName, setLastName] = useState(isLoggedIn && customer?.lastName ? customer.lastName : "");
-    const [knownName, setKnownName] = useState("");
-    const [phone, setPhone] = useState(isLoggedIn && customer?.phone ? customer.phone : "");
-    const [showMapModal, setShowMapModal] = useState(false);
-    const [isSubmitting, setIsSubmitting] = useState(false);
+  const handleChange = (idx: number, raw: string) => {
+    const digit = raw.replace(/\D/g, "").slice(-1);
+    const arr = digits.map((d) => d.trim());
+    arr[idx] = digit;
+    const next = arr.join("").slice(0, 4);
+    onChange(next);
+    if (digit && idx < 3) refs[idx + 1]!.current?.focus();
+  };
 
-    // Modal State
-    const [modalConfig, setModalConfig] = useState<{
-        isOpen: boolean;
-        type?: "info" | "warning" | "danger" | "success" | "confirm";
-        title: string;
-        message: string;
-        confirmText?: string;
-        cancelText?: string;
-        onConfirm: () => void;
-        onCancel?: () => void;
-    }>({
-        isOpen: false,
-        title: "",
-        message: "",
-        onConfirm: () => { },
-    });
+  const handleKeyDown = (idx: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Backspace") {
+      if (digits[idx]?.trim()) {
+        const arr = digits.map((d) => d.trim());
+        arr[idx] = "";
+        onChange(arr.join(""));
+      } else if (idx > 0) {
+        const arr = digits.map((d) => d.trim());
+        arr[idx - 1] = "";
+        onChange(arr.join(""));
+        refs[idx - 1]!.current?.focus();
+      }
+      e.preventDefault();
+    } else if (e.key === "ArrowLeft" && idx > 0) refs[idx - 1]!.current?.focus();
+    else if (e.key === "ArrowRight" && idx < 3) refs[idx + 1]!.current?.focus();
+  };
 
-    // Re-sync if the customer profile loads after this component mounts
-    useEffect(() => {
-        if (isLoggedIn && customer) {
-            if (!firstName && customer.firstName) setFirstName(customer.firstName);
-            if (!lastName && customer.lastName) setLastName(customer.lastName);
-            if (!knownName && customer.knownName) setKnownName(customer.knownName);
-            if (!phone && customer.phone) setPhone(customer.phone);
-            if (!marketSection && customer.marketSection) setMarketSection(customer.marketSection);
-            if (!locationDescription && customer.locationDescription) setLocationDescription(customer.locationDescription);
-            if (!stallNumber && customer.stallNumber) setStallNumber(customer.stallNumber);
-        }
-    }, [isLoggedIn, customer]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    // Listen for hotel status changes to disable ordering if hotel closes
-    useWebSocket("customer", undefined, (event) => {
-        if (event.type === "HOTEL_CLOSING") {
-            const data = event.payload as { hotelId?: string };
-            if (data.hotelId) {
-                setClosedHotelIds((prev) => prev.includes(data.hotelId!) ? prev : [...prev, data.hotelId!]);
-            }
-        } else if (event.type === "HOTEL_STATUS_UPDATED") {
-            const status = event.payload as { isOpen: boolean; hotelId?: string };
-            if (status.hotelId) {
-                setClosedHotelIds((prev) =>
-                    status.isOpen
-                        ? prev.filter((id) => id !== status.hotelId)
-                        : prev.includes(status.hotelId!) ? prev : [...prev, status.hotelId!]
-                );
-            }
-        }
-    });
-
-    // Persist guest delivery details to localStorage so they survive app restarts
-    useEffect(() => {
-        if (!isLoggedIn && (firstName || phone || stallNumber || locationDescription || marketSection)) {
-            localStorage.setItem(
-                "tableDash_guest_delivery",
-                JSON.stringify({ firstName, lastName, knownName, phone, stallNumber, marketSection, locationDescription })
-            );
-        }
-    }, [firstName, lastName, knownName, phone, stallNumber, marketSection, locationDescription, isLoggedIn]);
-
-    // Restore guest delivery details from localStorage on mount
-    useEffect(() => {
-        if (!isLoggedIn) {
-            try {
-                const saved = localStorage.getItem("tableDash_guest_delivery");
-                if (saved) {
-                    const d = JSON.parse(saved);
-                    if (d.firstName) setFirstName(d.firstName);
-                    if (d.lastName) setLastName(d.lastName);
-                    if (d.knownName) setKnownName(d.knownName);
-                    if (d.phone) setPhone(d.phone);
-                    if (d.stallNumber) setStallNumber(d.stallNumber);
-                    if (d.marketSection) setMarketSection(d.marketSection);
-                    if (d.locationDescription) setLocationDescription(d.locationDescription);
-                }
-            } catch {
-                // ignore corrupt data
-            }
-        }
-        // eslint-disable-line react-hooks/exhaustive-deps
-    }, []);
-
-    const handlePlaceOrder = () => {
-        if (!firstName.trim()) {
-            setModalConfig({
-                isOpen: true,
-                type: "warning",
-                title: "Missing Information",
-                message: "Please enter your first name before placing the order.",
-                onConfirm: () => setModalConfig((prev) => ({ ...prev, isOpen: false })),
-            });
-            return;
-        }
-        if (!isValidPhone(phone.trim())) {
-            setModalConfig({
-                isOpen: true,
-                type: "warning",
-                title: "Invalid Phone Number",
-                message: "Please enter a valid phone number (e.g. 0712345678).",
-                onConfirm: () => setModalConfig((prev) => ({ ...prev, isOpen: false })),
-            });
-            return;
-        }
-
-        // Show confirmation modal before submitting
-        setModalConfig({
-            isOpen: true,
-            type: "confirm",
-            title: "Confirm Order",
-            message: `By placing this order, your selected meals will be prepared and dispatched to your location. Total: KSh ${totalAmount}. Do you wish to proceed?`,
-            confirmText: "Yes, Place Order",
-            cancelText: "Cancel",
-            onConfirm: async () => {
-                setModalConfig((prev) => ({ ...prev, isOpen: false }));
-                await submitOrder();
-            },
-            onCancel: () => setModalConfig((prev) => ({ ...prev, isOpen: false })),
-        });
-    };
-
-    const submitOrder = async () => {
-        setIsSubmitting(true);
-
-        const payload = {
-            firstName: firstName.trim(),
-            lastName: lastName.trim() || undefined,
-            phone: phone.trim(),
-            knownName: knownName.trim() || undefined,
-            stallNumber: stallNumber.trim() || undefined,
-            marketSection: marketSection,
-            locationDescription: locationDescription,
-            items: cart.map((item) => ({
-                productId: item.id,
-                quantity: item.quantity,
-            })),
-        };
-
-        const res = await apiPost<any>("/orders", payload);
-        setIsSubmitting(false);
-
-        if (res.success && res.data) {
-            clearCart();
-            onOrderPlaced(res.data);
-        } else {
-            setModalConfig({
-                isOpen: true,
-                type: "danger",
-                title: "Order Failed",
-                message: res.error || "Failed to place order. Please try again.",
-                onConfirm: () => setModalConfig((prev) => ({ ...prev, isOpen: false })),
-            });
-        }
-    };
-
-    return (
-        <div className="app-container">
-            {/* Header Bar */}
-            <header className="header-bar">
-                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <button
-                        onClick={onBackToCart}
-                        style={{
-                            background: "none",
-                            border: "none",
-                            color: "white",
-                            fontSize: "1.2rem",
-                            cursor: "pointer",
-                        }}
-                    >
-                        ←
-                    </button>
-                    <div className="header-title">Delivery Location</div>
-                </div>
-            </header>
-
-            {/* Main Content */}
-            <div style={{ padding: "20px" }}>
-                {/* Logged-in pre-fill banner */}
-                {isLoggedIn && customer && (
-                    <div style={{ background: "#DCFCE7", border: "1px solid #BBF7D0", borderRadius: "10px", padding: "10px 14px", marginBottom: "16px", fontSize: "0.85rem", color: "#15803D", fontWeight: 600, display: "flex", alignItems: "center", gap: "8px" }}>
-                        ✓ Delivery details pre-filled from your saved account — {customer.firstName}{customer.lastName ? ` ${customer.lastName}` : ""}
-                    </div>
-                )}
-
-                <h2 style={{ fontSize: "1.1rem", fontWeight: 700, color: "#1F2937", marginBottom: "16px" }}>
-                    How would you like to set your location?
-                </h2>
-
-                {/* Option 1: Select on Market Map — coming soon */}
-                <div
-                    onClick={() => {
-                        setModalConfig({
-                            isOpen: true,
-                            type: "info",
-                            title: "Coming Soon",
-                            message: "Market mapping is coming soon! For now, please enter your stall number and location description below.",
-                            onConfirm: () => setModalConfig((prev) => ({ ...prev, isOpen: false })),
-                        });
-                    }}
-                    style={{
-                        border: "1.5px dashed #D1D5DB",
-                        borderRadius: "14px",
-                        padding: "16px",
-                        background: "#F9FAFB",
-                        cursor: "pointer",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        opacity: 0.7,
-                    }}
-                >
-                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                        <span style={{ fontSize: "1.5rem" }}>📍</span>
-                        <div>
-                            <div style={{ fontWeight: 700, color: "#6B7280" }}>Market Map (Coming Soon)</div>
-                            <div style={{ fontSize: "0.85rem", color: "#9CA3AF" }}>
-                                Tap to learn more
-                            </div>
-                        </div>
-                    </div>
-                    <span style={{ fontSize: "1.2rem", color: "#9CA3AF" }}>›</span>
-                </div>
-
-                <div style={{ textAlign: "center", margin: "20px 0", color: "#9CA3AF", fontWeight: 600, fontSize: "0.85rem" }}>
-                    OR
-                </div>
-
-                {/* Option 2: Form Inputs */}
-                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                    <div style={{ display: "flex", gap: "10px" }}>
-                        <div style={{ flex: 1 }}>
-                            <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, color: "#374151", marginBottom: "6px" }}>
-                                First Name <span style={{ color: "#DC2626" }}>*</span>
-                            </label>
-                            <input
-                                type="text"
-                                placeholder="e.g. Mary"
-                                value={firstName}
-                                onChange={(e) => setFirstName(e.target.value)}
-                                className={`input-field ${!firstName.trim() && isSubmitting ? "input-error input-shake" : ""}`}
-                            />
-                            {!firstName.trim() && isSubmitting && (
-                                <div className="input-error-msg">⚠ First name is required</div>
-                            )}
-                        </div>
-                        <div style={{ flex: 1 }}>
-                            <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, color: "#374151", marginBottom: "6px" }}>
-                                Last Name
-                            </label>
-                            <input
-                                type="text"
-                                placeholder="e.g. Wanjiku"
-                                value={lastName}
-                                onChange={(e) => setLastName(e.target.value)}
-                                className="input-field"
-                            />
-                        </div>
-                    </div>
-
-                    <div>
-                        <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, color: "#374151", marginBottom: "6px" }}>
-                            Known As (optional)
-                        </label>
-                        <input
-                            type="text"
-                            placeholder="e.g. Wa Alex, Mama Jane"
-                            value={knownName}
-                            onChange={(e) => setKnownName(e.target.value)}
-                            className="input-field"
-                        />
-                        <div style={{ fontSize: "0.75rem", color: "#9CA3AF", marginTop: "4px" }}>
-                            How the hotel staff knows you — this will appear on your order
-                        </div>
-                    </div>
-
-                    <div>
-                        <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, color: "#374151", marginBottom: "6px" }}>
-                            Phone Number
-                        </label>
-                        <input
-                            type="tel"
-                            placeholder="07XXXXXXXX"
-                            value={phone}
-                            onChange={(e) => setPhone(formatPhone(e.target.value))}
-                            className={`input-field ${!isValidPhone(phone.trim()) && isSubmitting ? "input-error input-shake" : ""}`}
-                            maxLength={14}
-                        />
-                        {!isValidPhone(phone.trim()) && isSubmitting && (
-                            <div className="input-error-msg">⚠ Please enter a valid Kenyan phone number</div>
-                        )}
-                    </div>
-
-                    <div>
-                        <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, color: "#374151", marginBottom: "6px" }}>
-                            Stall Number / Shop Name
-                        </label>
-                        <input
-                            type="text"
-                            placeholder="e.g. Stall 42 — check the number painted on the wall or post near you"
-                            value={stallNumber}
-                            onChange={(e) => setStallNumber(e.target.value)}
-                            className="input-field"
-                        />
-                    </div>
-
-                    <div>
-                        <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, color: "#374151", marginBottom: "6px" }}>
-                            Describe your location
-                        </label>
-                        <textarea
-                            rows={3}
-                            placeholder="e.g. Near Mama Jane's stall, Food section, beside the blue umbrella"
-                            value={locationDescription}
-                            onChange={(e) => setLocationDescription(e.target.value)}
-                            className="input-field"
-                            style={{ resize: "vertical" }}
-                        />
-                    </div>
-
-                    {/* Total & Submit Button */}
-                    <div style={{ marginTop: "12px" }}>
-                        <div style={{ fontSize: "0.9rem", color: "#6B7280", marginBottom: "8px" }}>
-                            Total Order Amount: <strong style={{ color: "#1E4D36" }}>KSh {totalAmount}</strong>
-                        </div>
-
-                        {(() => {
-                            const anyHotelClosed = cart.some((item) => item.hotelId && closedHotelIds.includes(item.hotelId));
-                            return anyHotelClosed ? (
-                                <div style={{ background: "#FEF2F2", border: "1.5px solid #FCA5A5", borderRadius: "12px", padding: "14px", textAlign: "center", marginBottom: "12px" }}>
-                                    <div style={{ fontSize: "0.9rem", fontWeight: 700, color: "#DC2626", marginBottom: "4px" }}>
-                                        Hotel is Currently Closed
-                                    </div>
-                                    <div style={{ fontSize: "0.8rem", color: "#991B1B" }}>
-                                        This hotel is not accepting orders right now. Please check back later.
-                                    </div>
-                                </div>
-                            ) : null;
-                        })()}
-
-                        <button
-                            onClick={handlePlaceOrder}
-                            disabled={isSubmitting || !firstName.trim() || !isValidPhone(phone.trim()) || (!marketSection && !locationDescription.trim() && !stallNumber.trim()) || cart.some((item) => item.hotelId && closedHotelIds.includes(item.hotelId))}
-                            className="btn btn-primary"
-                        >
-                            {isSubmitting ? "Placing Order..." : "Place Order"}
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            {/* Interactive Market Map Modal */}
-            {showMapModal && (
-                <MarketMapModal
-                    initialSection={marketSection}
-                    onConfirm={(section, note) => {
-                        setMarketSection(section);
-                        if (note) setLocationDescription(note);
-                        setShowMapModal(false);
-                    }}
-                    onClose={() => setShowMapModal(false)}
-                />
-            )}
-
-            {/* Reusable Modal Dialog */}
-            <Modal
-                isOpen={modalConfig.isOpen}
-                type={modalConfig.type}
-                title={modalConfig.title}
-                message={modalConfig.message}
-                confirmText={modalConfig.confirmText}
-                cancelText={modalConfig.cancelText}
-                onConfirm={modalConfig.onConfirm}
-                onCancel={modalConfig.onCancel}
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className="flex gap-3 justify-center">
+        {[0, 1, 2, 3].map((idx) => {
+          const isFilled = Boolean(digits[idx]?.trim());
+          return (
+            <input
+              key={idx} ref={refs[idx]} type="password" inputMode="numeric" pattern="[0-9]*" maxLength={1}
+              value={digits[idx]?.trim() || ""}
+              onChange={(e) => handleChange(idx, e.target.value)}
+              onKeyDown={(e) => handleKeyDown(idx, e)}
+              onFocus={(e) => e.target.select()}
+              autoComplete="off"
+              className={`
+                w-14 h-16 rounded-xl text-center text-2xl font-bold outline-none transition-all duration-150
+                ${error ? "border-2 border-[#EF4444] bg-[#FEF2F2]" : isFilled ? "border-2 border-[#114B36] bg-[#EBF5F0]" : "border-2 border-[#D1D5DB] bg-white"}
+                text-[#1F2937] focus:border-[#114B36] focus:ring-3 focus:ring-[rgba(17,75,54,0.1)]
+              `}
             />
+          );
+        })}
+      </div>
+      {error && <p className="text-xs font-semibold text-[#DC2626]">{error}</p>}
+    </div>
+  );
+};
+
+export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrderPlaced }) => {
+  const { cart, totalAmount, clearCart, closedHotelIds, setClosedHotelIds } = useCart();
+  const { customer, isLoggedIn } = useCustomerAuth();
+
+  const [marketSection, setMarketSection] = useState(isLoggedIn && customer?.marketSection ? customer.marketSection : "");
+  const [locationDescription, setLocationDescription] = useState(isLoggedIn && customer?.locationDescription ? customer.locationDescription : "");
+  const [stallNumber, setStallNumber] = useState(isLoggedIn && customer?.stallNumber ? customer.stallNumber : "");
+  const [firstName, setFirstName] = useState(isLoggedIn && customer?.firstName ? customer.firstName : "");
+  const [lastName, setLastName] = useState(isLoggedIn && customer?.lastName ? customer.lastName : "");
+  const [knownName, setKnownName] = useState("");
+  const [phone, setPhone] = useState(isLoggedIn && customer?.phone ? customer.phone : "");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pin, setPin] = useState("");
+  const [pinError, setPinError] = useState("");
+  const [pinLoading, setPinLoading] = useState(false);
+  const [orderError, setOrderError] = useState("");
+
+  useEffect(() => {
+    if (isLoggedIn && customer) {
+      if (!firstName && customer.firstName) setFirstName(customer.firstName);
+      if (!lastName && customer.lastName) setLastName(customer.lastName);
+      if (!knownName && customer.knownName) setKnownName(customer.knownName);
+      if (!phone && customer.phone) setPhone(customer.phone);
+      if (!marketSection && customer.marketSection) setMarketSection(customer.marketSection);
+      if (!locationDescription && customer.locationDescription) setLocationDescription(customer.locationDescription);
+      if (!stallNumber && customer.stallNumber) setStallNumber(customer.stallNumber);
+    }
+  }, [isLoggedIn, customer]);
+
+  useWebSocket("customer", undefined, (event) => {
+    if (event.type === "HOTEL_CLOSING") {
+      const data = event.payload as { hotelId?: string };
+      if (data.hotelId) setClosedHotelIds((prev) => prev.includes(data.hotelId!) ? prev : [...prev, data.hotelId!]);
+    } else if (event.type === "HOTEL_STATUS_UPDATED") {
+      const status = event.payload as { isOpen: boolean; hotelId?: string };
+      if (status.hotelId) setClosedHotelIds((prev) => status.isOpen ? prev.filter((id) => id !== status.hotelId) : prev.includes(status.hotelId!) ? prev : [...prev, status.hotelId!]);
+    }
+  });
+
+  useEffect(() => {
+    if (!isLoggedIn && (firstName || phone || stallNumber || locationDescription || marketSection)) {
+      localStorage.setItem("ladha_guest_delivery", JSON.stringify({ firstName, lastName, knownName, phone, stallNumber, marketSection, locationDescription }));
+    }
+  }, [firstName, lastName, knownName, phone, stallNumber, marketSection, locationDescription, isLoggedIn]);
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      try {
+        const saved = localStorage.getItem("ladha_guest_delivery");
+        if (saved) {
+          const d = JSON.parse(saved);
+          if (d.firstName) setFirstName(d.firstName);
+          if (d.lastName) setLastName(d.lastName);
+          if (d.knownName) setKnownName(d.knownName);
+          if (d.phone) setPhone(d.phone);
+          if (d.stallNumber) setStallNumber(d.stallNumber);
+          if (d.marketSection) setMarketSection(d.marketSection);
+          if (d.locationDescription) setLocationDescription(d.locationDescription);
+        }
+      } catch { /* ignore */ }
+    }
+  }, []);
+
+  const handlePlaceOrder = () => {
+    setOrderError("");
+    if (!firstName.trim()) {
+      setOrderError("Please enter your first name before placing the order."); return;
+    }
+    if (!isValidPhone(phone.trim())) {
+      setOrderError("Please enter a valid phone number (e.g. 0712345678)."); return;
+    }
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmOrder = () => {
+    setShowConfirmModal(false);
+    if (isLoggedIn) {
+      setPin("");
+      setPinError("");
+      setShowPinModal(true);
+    } else {
+      submitOrder();
+    }
+  };
+
+  const handlePinSubmit = async () => {
+    if (pin.length < 4) { setPinError("Please enter your full 4-digit PIN."); return; }
+    setPinLoading(true);
+    setPinError("");
+    const res = await apiPost<{ token: string }>("/customers/login", { phone: customer?.phone, pin });
+    setPinLoading(false);
+    if (res.success) {
+      setShowPinModal(false);
+      submitOrder();
+    } else {
+      setPinError("Incorrect PIN. Please try again.");
+      setPin("");
+    }
+  };
+
+  const submitOrder = async () => {
+    setIsSubmitting(true);
+    const payload = {
+      firstName: firstName.trim(), lastName: lastName.trim() || undefined,
+      phone: phone.trim(), knownName: knownName.trim() || undefined,
+      stallNumber: stallNumber.trim() || undefined, marketSection, locationDescription,
+      items: cart.map((item) => ({ productId: item.id, quantity: item.quantity })),
+    };
+    const res = await apiPost<any>("/orders", payload);
+    setIsSubmitting(false);
+    if (res.success && res.data) {
+      localStorage.setItem("ladha_last_order", JSON.stringify(res.data));
+      clearCart();
+      onOrderPlaced(res.data);
+    } else {
+      setOrderError(res.error || "Failed to place order. Please try again.");
+    }
+  };
+
+  const anyHotelClosed = cart.some((item) => item.hotelId && closedHotelIds.includes(item.hotelId));
+
+  return (
+    <div className="app-container">
+      <Header title="Delivery Location" onBack={onBackToCart} />
+
+      <PageTransition>
+        <div className="px-4 py-5">
+          {isLoggedIn && customer && (
+            <div className="bg-[#DCFCE7] border border-[#BBF7D0] rounded-2xl p-3.5 mb-5 flex items-center gap-2.5">
+              <CheckCircle2 size={16} className="text-[#15803D]" />
+              <span className="text-sm font-semibold text-[#15803D]">
+                Details pre-filled from your saved account — {customer.firstName}{customer.lastName ? ` ${customer.lastName}` : ""}
+              </span>
+            </div>
+          )}
+
+          <h2 className="text-lg font-bold text-[#1F2937] mb-4">How would you like to set your location?</h2>
+
+          <div onClick={() => setOrderError("Market mapping is coming soon! For now, please enter your stall number and location description below.")}
+            className="border-2 border-dashed border-[#D1D5DB] rounded-2xl p-4 bg-[#F9FAFB] cursor-pointer opacity-70 hover:opacity-100 transition-opacity flex items-center justify-between"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">📍</span>
+              <div>
+                <p className="font-bold text-sm text-[#6B7280]">Market Map <span className="font-normal text-xs">(Coming Soon)</span></p>
+                <p className="text-xs text-[#9CA3AF]">Tap to learn more</p>
+              </div>
+            </div>
+            <span className="text-[#9CA3AF] text-lg">›</span>
+          </div>
+
+          <div className="flex items-center gap-3 my-5">
+            <div className="flex-1 h-px bg-[#E5E7EB]" />
+            <span className="text-xs font-semibold text-[#9CA3AF]">OR</span>
+            <div className="flex-1 h-px bg-[#E5E7EB]" />
+          </div>
+
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <Input label="First Name *" placeholder="e.g. Mary" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+              <Input label="Last Name" placeholder="e.g. Wanjiku" value={lastName} onChange={(e) => setLastName(e.target.value)} />
+            </div>
+            <Input label="Known As (optional)" placeholder="e.g. Wa Alex, Mama Jane" value={knownName} onChange={(e) => setKnownName(e.target.value)} hint="How the hotel staff knows you" />
+            <Input label="Phone Number *" placeholder="07XXXXXXXX" value={phone} onChange={(e) => setPhone(formatPhone(e.target.value))} maxLength={14} />
+            <Input label="Stall Number / Shop Name" placeholder="e.g. Stall 42" value={stallNumber} onChange={(e) => setStallNumber(e.target.value)} />
+            <Textarea label="Describe your location" placeholder="e.g. Near Mama Jane's stall, Food section" value={locationDescription} onChange={(e) => setLocationDescription(e.target.value)} rows={3} />
+          </div>
+
+          {orderError && (
+            <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
+              className="mt-4 bg-[#FEE2E2] text-[#DC2626] rounded-xl px-4 py-3 text-sm font-semibold"
+            >{orderError}</motion.div>
+          )}
+
+          <div className="mt-6 space-y-3">
+            <div className="flex items-center justify-between py-3 px-4 bg-white rounded-2xl border border-[#E5E7EB]">
+              <span className="text-sm text-[#6B7280]">Total</span>
+              <span className="text-xl font-extrabold text-[#114B36]">KSh {totalAmount}</span>
+            </div>
+            {anyHotelClosed && (
+              <div className="bg-[#FEF2F2] border border-[#FCA5A5] rounded-2xl p-4 text-center">
+                <p className="font-bold text-sm text-[#DC2626]">Hotel is Currently Closed</p>
+                <p className="text-xs text-[#991B1B] mt-1">Not accepting orders right now.</p>
+              </div>
+            )}
+            <Button onClick={handlePlaceOrder} disabled={isSubmitting || !firstName.trim() || !isValidPhone(phone.trim()) || (!marketSection && !locationDescription.trim() && !stallNumber.trim()) || anyHotelClosed} loading={isSubmitting} fullWidth size="lg">
+              {anyHotelClosed ? "Hotel Closed" : "Place Order"}
+            </Button>
+          </div>
         </div>
-    );
+      </PageTransition>
+
+      {/* Confirm Order Modal */}
+      <AnimatePresence>
+        {showConfirmModal && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/45 backdrop-blur-sm"
+            onClick={() => setShowConfirmModal(false)}
+          >
+            <motion.div initial={{ y: "100%", opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: "100%", opacity: 0 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              className="bg-white rounded-3xl rounded-b-none sm:rounded-3xl w-full max-w-md p-6 shadow-[0_-8px_30px_rgba(0,0,0,0.12)] sm:mx-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="w-14 h-14 rounded-2xl bg-[#EBF5F0] text-[#114B36] flex items-center justify-center mx-auto mb-4">
+                <CheckCircle2 size={28} />
+              </div>
+              <h3 className="text-lg font-bold text-[#1F2937] text-center mb-2">Confirm Your Order</h3>
+              <p className="text-sm text-[#6B7280] text-center leading-relaxed mb-6">
+                By placing this order, you agree that your selected meals will be prepared and delivered to your location. <strong>Total: KSh {totalAmount}</strong>
+              </p>
+              <div className="flex gap-3">
+                <Button variant="secondary" fullWidth onClick={() => setShowConfirmModal(false)}>Cancel</Button>
+                <Button fullWidth onClick={handleConfirmOrder}>Yes, Place Order</Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* PIN Verification Modal */}
+      <AnimatePresence>
+        {showPinModal && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/45 backdrop-blur-sm"
+            onClick={() => { setShowPinModal(false); setPin(""); setPinError(""); }}
+          >
+            <motion.div initial={{ y: "100%", opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: "100%", opacity: 0 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              className="bg-white rounded-3xl rounded-b-none sm:rounded-3xl w-full max-w-md p-6 shadow-[0_-8px_30px_rgba(0,0,0,0.12)] sm:mx-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="w-14 h-14 rounded-2xl bg-[#FEF3C7] text-[#D97706] flex items-center justify-center mx-auto mb-4">
+                <Lock size={24} />
+              </div>
+              <h3 className="text-lg font-bold text-[#1F2937] text-center mb-1">Confirm with PIN</h3>
+              <p className="text-sm text-[#6B7280] text-center mb-5">
+                Enter your 4-digit PIN to confirm this order.
+              </p>
+              <PinInput value={pin} onChange={(v) => { setPin(v); setPinError(""); }} error={pinError} />
+              <div className="flex gap-3 mt-5">
+                <Button variant="secondary" fullWidth onClick={() => { setShowPinModal(false); setPin(""); setPinError(""); }}>Cancel</Button>
+                <Button fullWidth onClick={handlePinSubmit} disabled={pin.length < 4 || pinLoading} loading={pinLoading}>
+                  Confirm
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
 };

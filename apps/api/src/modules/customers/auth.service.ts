@@ -152,6 +152,50 @@ export const getCustomerProfile = async (customerId: string) => {
   };
 };
 
+/**
+ * Generates a 4-digit OTP and stores it on the customer record with a 10-minute expiry.
+ */
+export const generatePinResetCode = async (phone: string) => {
+  const formattedPhone = formatPhone(phone);
+  const customer = await prisma.customer.findUnique({ where: { phone: formattedPhone } });
+  if (!customer) {
+    throw new Error("No account found for this phone number.");
+  }
+  const otp = String(Math.floor(1000 + Math.random() * 9000));
+  const expires = new Date(Date.now() + 10 * 60 * 1000);
+  await prisma.customer.update({
+    where: { id: customer.id },
+    data: { pinResetCode: otp, pinResetCodeExpires: expires },
+  });
+  return { message: "Reset code sent to your phone.", otp }; // otp returned for dev; prod would SMS it
+};
+
+/**
+ * Validates the OTP and resets the PIN.
+ */
+export const resetCustomerPin = async (input: { phone: string; otp: string; newPin: string }) => {
+  const formattedPhone = formatPhone(input.phone);
+  const customer = await prisma.customer.findUnique({ where: { phone: formattedPhone } });
+  if (!customer) {
+    throw new Error("No account found for this phone number.");
+  }
+  if (!customer.pinResetCode || !customer.pinResetCodeExpires) {
+    throw new Error("No reset code has been requested. Please request a new one.");
+  }
+  if (customer.pinResetCode !== input.otp) {
+    throw new Error("Invalid reset code. Please try again.");
+  }
+  if (new Date() > customer.pinResetCodeExpires) {
+    throw new Error("Reset code has expired. Please request a new one.");
+  }
+  const pinHash = await Bun.password.hash(input.newPin);
+  await prisma.customer.update({
+    where: { id: customer.id },
+    data: { pinHash, pinResetCode: null, pinResetCodeExpires: null },
+  });
+  return { message: "PIN has been reset successfully." };
+};
+
 export const verifyCustomerToken = async (
   token: string,
   jwtVerify: (token: string) => Promise<Record<string, any> | false>

@@ -52,7 +52,7 @@ function s(num: number) { return `${num * 4}px`; }
 export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const { token, user, login: authLogin, logout: authLogout } = usePlatformAdminAuth();
     const [view, setView] = useState<PlatformView>(() => {
-        const tok = localStorage.getItem("tableDash_platform_token");
+        const tok = localStorage.getItem("ladha_platform_token");
         return tok ? "overview" : "login";
     });
     const [dashboard, setDashboard] = useState<PlatformDashboard | null>(null);

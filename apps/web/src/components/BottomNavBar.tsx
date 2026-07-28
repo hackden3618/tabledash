@@ -1,5 +1,5 @@
 /**
- * Purpose: Customer Navigation Bar for tableDash web application.
+ * Purpose: Customer Navigation Bar for Ladha web application.
  * Responsibilities: Renders a sticky bottom navigation bar allowing instant switching between
  *   Menu, Cart, Order Tracking, and My Account (4 tabs).
  * Dependencies: React, CartContext, CustomerAuthContext.

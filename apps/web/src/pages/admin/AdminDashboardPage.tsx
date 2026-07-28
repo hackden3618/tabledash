@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { apiGet } from "../../lib/api";
 import { useWebSocket } from "../../lib/websocket";
 import {
   ArrowLeft, CheckCircle2, Clock, Settings,
   ShoppingBag, TrendingUp, Utensils, Wallet, XCircle, Calendar
 } from "lucide-react";
+import { PageTransition } from "../../components/ui/PageTransition";
+import { Badge } from "../../components/ui/Badge";
 
 interface AdminDashboardPageProps {
   token: string;
@@ -14,6 +17,23 @@ interface AdminDashboardPageProps {
   onNavigateToSettings?: () => void;
   onNavigateToHistory?: () => void;
 }
+
+const METRIC_CARDS = [
+  { key: "totalOrders", label: "Total Orders", icon: ShoppingBag, color: "#4F46E5", bg: "#EEF2FF", suffix: "" },
+  { key: "deliveredOrders", label: "Delivered", icon: CheckCircle2, color: "#22C55E", bg: "#DCFCE7", suffix: "" },
+  { key: "pendingOrders", label: "Pending", icon: Clock, color: "#D97706", bg: "#FEF3C7", suffix: "" },
+  { key: "totalSales", label: "Sales (excl. cancelled)", icon: TrendingUp, color: "#114B36", bg: "#EBF5F0", suffix: "KSh", prefix: true },
+  { key: "outstandingBalance", label: "Outstanding", icon: Wallet, color: "#D97706", bg: "#FFFBEB", suffix: "KSh", prefix: true },
+  { key: "cancelledOrders", label: "Cancelled", icon: XCircle, color: "#EF4444", bg: "#FEE2E2", suffix: "" },
+  { key: "averageOrderValue", label: "Avg Value", icon: TrendingUp, color: "#7C3AED", bg: "#EDE9FE", suffix: "KSh", prefix: true },
+];
+
+const ACTIONS = [
+  { label: "Orders", icon: ShoppingBag, color: "#4F46E5", bg: "#EEF2FF" },
+  { label: "Menu", icon: Utensils, color: "#D97706", bg: "#FEF3C7" },
+  { label: "Settings", icon: Settings, color: "#114B36", bg: "#EBF5F0" },
+  { label: "History", icon: Calendar, color: "#7C3AED", bg: "#EDE9FE" },
+];
 
 export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   token,
@@ -47,140 +67,129 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     fetchMetrics();
   }, []);
 
-  const actions = [
-    { label: "Orders", icon: <ShoppingBag size={28} />, color: "#4F46E5", bg: "#EEF2FF", onClick: onNavigateToOrders ?? onBackToOrders },
-    { label: "Menu", icon: <Utensils size={28} />, color: "#D97706", bg: "#FEF3C7", onClick: onNavigateToMenu ?? onBackToOrders },
-    { label: "Settings", icon: <Settings size={28} />, color: "#1E4D36", bg: "#EBF4F0", onClick: onNavigateToSettings ?? onBackToOrders },
-    { label: "History", icon: <Calendar size={28} />, color: "#7C3AED", bg: "#EDE9FE", onClick: onNavigateToHistory ?? onBackToOrders },
-  ];
+  const actionOnClick = (label: string) => {
+    switch (label) {
+      case "Orders": return onNavigateToOrders ?? onBackToOrders;
+      case "Menu": return onNavigateToMenu ?? onBackToOrders;
+      case "Settings": return onNavigateToSettings ?? onBackToOrders;
+      case "History": return onNavigateToHistory ?? onBackToOrders;
+      default: return onBackToOrders;
+    }
+  };
 
   return (
     <div className="admin-container">
-      {/* Header Bar */}
-      <header className="header-bar">
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+      <header className="bg-[#114B36] text-white px-4 py-3 sticky top-0 z-40 shadow-[0_2px_8px_rgba(17,75,54,0.15)]">
+        <div className="flex items-center gap-3 max-w-4xl mx-auto">
           <button
             onClick={onBackToOrders}
-            style={{ background: "none", border: "none", color: "white", fontSize: "1.2rem", cursor: "pointer", display: "flex" }}
+            className="p-1 -ml-1 rounded-lg hover:bg-white/10 transition-colors bg-none border-none cursor-pointer text-white"
           >
             <ArrowLeft size={20} />
           </button>
-          <div className="header-title">Dashboard</div>
+          <h1 className="font-bold text-lg">Dashboard</h1>
         </div>
       </header>
 
-      {/* Main Content */}
-      <div style={{ padding: "20px" }}>
-        {/* Action Menu Grid */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "12px", marginBottom: "24px" }}>
-          {actions.map((action) => (
-            <button
-              key={action.label}
-              onClick={action.onClick}
-              className="card"
-              style={{
-                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-                padding: "24px 16px", gap: "10px", cursor: "pointer", border: "none",
-                background: action.bg, color: action.color, fontWeight: 700, fontSize: "0.95rem",
-                borderRadius: "14px", transition: "all 0.15s",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.1)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = ""; }}
-            >
-              {action.icon}
-              <span>{action.label}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* Performance Metrics */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-          <h2 style={{ fontSize: "1.1rem", fontWeight: 700, color: "#1F2937" }}>Today's Metrics</h2>
-          <span style={{ fontSize: "0.8rem", background: "#E5E7EB", padding: "3px 10px", borderRadius: "999px", fontWeight: 600 }}>
-            Today
-          </span>
-        </div>
-
-        {loading ? (
-          <div style={{ textAlign: "center", padding: "40px 0", color: "#6B7280" }}>Calculating daily metrics...</div>
-        ) : !metrics ? (
-          <div style={{ textAlign: "center", padding: "40px 0", color: "#6B7280" }}>Failed to load metrics.</div>
-        ) : (
-          <div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "12px", marginBottom: "24px" }}>
-              <div onClick={onBackToOrders} className="card" style={{ textAlign: "center", padding: "16px 12px", cursor: "pointer", border: newOrderAlert ? "2px solid #22C55E" : "1.5px solid #E5E7EB", position: "relative" }}>
-                {newOrderAlert && (
-                  <span style={{ position: "absolute", top: "-6px", right: "-6px", background: "#22C55E", color: "white", borderRadius: "50%", width: "22px", height: "22px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: 800 }}>!</span>
-                )}
-                <ShoppingBag size={20} style={{ color: "#4F46E5", marginBottom: "4px" }} />
-                <div style={{ fontSize: "1.6rem", fontWeight: 800, color: "#4F46E5" }}>{metrics.totalOrders}</div>
-                <div style={{ fontSize: "0.75rem", color: "#6B7280", fontWeight: 600 }}>Total Orders</div>
-              </div>
-
-              <div className="card" style={{ textAlign: "center", padding: "16px 12px", border: "1.5px solid #E5E7EB" }}>
-                <CheckCircle2 size={20} style={{ color: "#22C55E", marginBottom: "4px" }} />
-                <div style={{ fontSize: "1.6rem", fontWeight: 800, color: "#22C55E" }}>{metrics.deliveredOrders}</div>
-                <div style={{ fontSize: "0.75rem", color: "#6B7280", fontWeight: 600 }}>Delivered</div>
-              </div>
-
-              <div className="card" style={{ textAlign: "center", padding: "16px 12px", border: "1.5px solid #E5E7EB" }}>
-                <Clock size={20} style={{ color: "#D97706", marginBottom: "4px" }} />
-                <div style={{ fontSize: "1.6rem", fontWeight: 800, color: "#D97706" }}>{metrics.pendingOrders}</div>
-                <div style={{ fontSize: "0.75rem", color: "#6B7280", fontWeight: 600 }}>Pending</div>
-              </div>
-
-              <div className="card" style={{ textAlign: "center", padding: "16px 12px", border: "1.5px solid #E5E7EB" }}>
-                <TrendingUp size={20} style={{ color: "#1E4D36", marginBottom: "4px" }} />
-                <div style={{ fontSize: "1.2rem", fontWeight: 800, color: "#1E4D36" }}>KSh {metrics.totalSales}</div>
-                <div style={{ fontSize: "0.7rem", color: "#6B7280", fontWeight: 600 }}>Sales (excl. cancelled)</div>
-              </div>
-
-              <div className="card" style={{ textAlign: "center", padding: "16px 12px", border: "1.5px solid #F59E0B" }}>
-                <Wallet size={20} style={{ color: "#D97706", marginBottom: "4px" }} />
-                <div style={{ fontSize: "1.2rem", fontWeight: 800, color: "#D97706" }}>KSh {metrics.outstandingBalance}</div>
-                <div style={{ fontSize: "0.7rem", color: "#6B7280", fontWeight: 600 }}>Outstanding</div>
-              </div>
-
-              <div className="card" style={{ textAlign: "center", padding: "16px 12px", border: "1.5px solid #FCA5A5" }}>
-                <XCircle size={20} style={{ color: "#EF4444", marginBottom: "4px" }} />
-                <div style={{ fontSize: "1.6rem", fontWeight: 800, color: "#EF4444" }}>{metrics.cancelledOrders}</div>
-                <div style={{ fontSize: "0.75rem", color: "#6B7280", fontWeight: 600 }}>Cancelled</div>
-              </div>
-
-              {metrics.refundsDue > 0 && (
-                <div className="card" style={{ textAlign: "center", padding: "16px 12px", border: "1.5px solid #F97316" }}>
-                  <Wallet size={20} style={{ color: "#EA580C", marginBottom: "4px" }} />
-                  <div style={{ fontSize: "1.2rem", fontWeight: 800, color: "#EA580C" }}>KSh {metrics.refundsDue}</div>
-                  <div style={{ fontSize: "0.7rem", color: "#6B7280", fontWeight: 600 }}>Refunds Due</div>
-                </div>
-              )}
-
-              <div className="card" style={{ textAlign: "center", padding: "16px 12px", border: "1.5px solid #A78BFA" }}>
-                <TrendingUp size={20} style={{ color: "#7C3AED", marginBottom: "4px" }} />
-                <div style={{ fontSize: "1.2rem", fontWeight: 800, color: "#7C3AED" }}>KSh {metrics.averageOrderValue?.toFixed(2)}</div>
-                <div style={{ fontSize: "0.7rem", color: "#6B7280", fontWeight: 600 }}>Avg Value</div>
-              </div>
-            </div>
-
-            {/* Top Items */}
-            <div className="card">
-              <h3 style={{ fontSize: "0.95rem", fontWeight: 700, color: "#1F2937", marginBottom: "12px" }}>Top Ordered Items</h3>
-              {metrics.topItems?.length === 0 ? (
-                <div style={{ color: "#6B7280", fontSize: "0.85rem" }}>No item sales recorded yet.</div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                  {metrics.topItems?.map((item: any, idx: number) => (
-                    <div key={item.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: "8px", background: "#F9FAFB", border: "1px solid #F3F4F6" }}>
-                      <span style={{ fontWeight: 600, color: "#1F2937", fontSize: "0.85rem" }}>{idx + 1}. {item.name}</span>
-                      <span style={{ fontWeight: 800, color: "#1E4D36", background: "#EBF4F0", padding: "3px 8px", borderRadius: "999px", fontSize: "0.78rem" }}>{item.count} sold</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+      <PageTransition>
+        <div className="p-4 max-w-4xl mx-auto">
+          {/* Action Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+            {ACTIONS.map((action, i) => (
+              <motion.button
+                key={action.label}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.05 }}
+                whileHover={{ y: -2 }}
+                whileTap={{ scale: 0.97 }}
+                onClick={actionOnClick(action.label)}
+                className="flex flex-col items-center justify-center p-5 rounded-2xl gap-2.5 cursor-pointer border-none"
+                style={{ background: action.bg, color: action.color }}
+              >
+                <action.icon size={28} />
+                <span className="font-bold text-sm">{action.label}</span>
+              </motion.button>
+            ))}
           </div>
-        )}
-      </div>
+
+          {/* Metrics */}
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-bold text-lg text-[#1F2937]">Today's Metrics</h2>
+            <span className="text-xs font-semibold bg-[#E5E7EB] text-[#6B7280] px-3 py-1.5 rounded-full">Today</span>
+          </div>
+
+          {loading ? (
+            <div className="text-center py-16">
+              <div className="w-8 h-8 border-4 border-[#E5E7EB] border-t-[#114B36] rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-sm text-[#6B7280]">Calculating metrics...</p>
+            </div>
+          ) : !metrics ? (
+            <div className="text-center py-16 text-sm text-[#6B7280]">Failed to load metrics.</div>
+          ) : (
+            <div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
+                {METRIC_CARDS.map((card, i) => {
+                  const value = metrics[card.key];
+      const displayValue = value !== undefined && value !== null
+                    ? card.prefix ? `KSh ${Number(value).toFixed(2)}` : value
+                    : "—";
+
+                  return (
+                    <motion.div
+                      key={card.key}
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.1 + i * 0.03 }}
+                      className="bg-white rounded-2xl p-4 text-center shadow-[0_2px_8px_rgba(17,75,54,0.06)] border border-[#E5E7EB]"
+                    >
+                      <div className="flex justify-center mb-2">
+                        <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: card.bg }}>
+                          <card.icon size={18} style={{ color: card.color }} />
+                        </div>
+                      </div>
+                      <p className="text-xl font-extrabold" style={{ color: card.color }}>
+                        {newOrderAlert && card.key === "totalOrders" && (
+                          <span className="inline-block w-2 h-2 bg-[#22C55E] rounded-full animate-pulse mr-1" />
+                        )}
+                        {displayValue}
+                      </p>
+                      <p className="text-[0.65rem] text-[#6B7280] font-semibold mt-1 uppercase tracking-wider">{card.label}</p>
+                    </motion.div>
+                  );
+                })}
+              </div>
+
+              {/* Top Items */}
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="bg-white rounded-2xl p-5 shadow-[0_2px_8px_rgba(17,75,54,0.06)]"
+              >
+                <h3 className="font-bold text-sm text-[#1F2937] mb-3">Top Ordered Items</h3>
+                {metrics.topItems?.length === 0 ? (
+                  <p className="text-sm text-[#6B7280]">No item sales recorded yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {metrics.topItems?.map((item: any, idx: number) => (
+                      <div
+                        key={item.name}
+                        className="flex items-center justify-between py-2 px-3 rounded-xl bg-[#F9FAFB] border border-[#F3F4F6]"
+                      >
+                        <span className="font-semibold text-sm text-[#1F2937]">
+                          <span className="text-[#9CA3AF] font-normal">{idx + 1}.</span> {item.name}
+                        </span>
+                        <Badge variant="brand">{item.count} sold</Badge>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
+            </div>
+          )}
+        </div>
+      </PageTransition>
     </div>
   );
 };

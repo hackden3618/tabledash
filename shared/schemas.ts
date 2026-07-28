@@ -86,6 +86,16 @@ export const CancelOrderSchema = t.Object({
   reason: t.Optional(t.String({ maxLength: 500, error: "Cancellation reason is too long" })),
 });
 
+export const CustomerForgotPinSchema = t.Object({
+  phone: PhoneString,
+});
+
+export const CustomerResetPinSchema = t.Object({
+  phone: PhoneString,
+  otp: t.String({ minLength: 4, maxLength: 4, pattern: "^[0-9]{4}$", error: "OTP must be exactly 4 digits" }),
+  newPin: t.String({ minLength: 4, maxLength: 4, pattern: "^[0-9]{4}$", error: "PIN must be exactly 4 digits" }),
+});
+
 export const UpdateOrderPaymentSchema = t.Object({
   paymentStatus: t.Optional(t.Union([
     t.Literal("UNPAID"),

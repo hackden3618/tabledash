@@ -1,264 +1,262 @@
-/**
- * Purpose: Customer Cart View for tableDash ("Mama's Hotel").
- * Responsibilities: Renders cart items breakdown, item quantity adjustments, total pricing, and action triggers for proceeding to delivery or WhatsApp ordering.
- * Dependencies: React, useCart context.
- * When to modify: When altering cart line item summaries or WhatsApp message formats.
- */
-
 import React, { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import { useCart } from "../../context/CartContext";
 import { useWebSocket } from "../../lib/websocket";
 import { apiGet } from "../../lib/api";
-import { AlertTriangle, Building2, X } from "lucide-react";
+import { AlertTriangle, Building2, X, Trash2, ShoppingBag } from "lucide-react";
+import { Header } from "../../components/ui/Header";
+import { Button } from "../../components/ui/Button";
+import { Badge } from "../../components/ui/Badge";
+import { EmptyState } from "../../components/ui/EmptyState";
+import { PageTransition } from "../../components/ui/PageTransition";
 
 interface CartPageProps {
-    onBackToMenu: () => void;
-    onContinueToDelivery: () => void;
+  onBackToMenu: () => void;
+  onContinueToDelivery: () => void;
 }
 
 let cachedWhatsAppPhone = "+254757030743";
 
 export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDelivery }) => {
-    const { cart, updateQuantity, clearCart, totalAmount, markItemAvailability, closedHotelIds, setClosedHotelIds } = useCart();
-    const [whatsappPhone, setWhatsappPhone] = useState(cachedWhatsAppPhone);
+  const { cart, updateQuantity, clearCart, totalAmount, markItemAvailability, closedHotelIds, setClosedHotelIds } = useCart();
+  const [whatsappPhone, setWhatsappPhone] = useState(cachedWhatsAppPhone);
 
-    useEffect(() => {
-        apiGet<{ staffPhone?: string }>("/settings").then((res) => {
-            if (res.success && res.data?.staffPhone) {
-                const formatted = res.data.staffPhone.replace(/\D/g, "");
-                const num = formatted.startsWith("254") ? `+${formatted}` : `+254${formatted.replace(/^0/, "")}`;
-                cachedWhatsAppPhone = num;
-                setWhatsappPhone(num);
-            }
-        }).catch(() => {});
-    }, []);
+  useEffect(() => {
+    apiGet<{ staffPhone?: string }>("/settings").then((res) => {
+      if (res.success && res.data?.staffPhone) {
+        const formatted = res.data.staffPhone.replace(/\D/g, "");
+        const num = formatted.startsWith("254") ? `+${formatted}` : `+254${formatted.replace(/^0/, "")}`;
+        cachedWhatsAppPhone = num;
+        setWhatsappPhone(num);
+      }
+    }).catch(() => {});
+  }, []);
 
-    // Listen for out-of-stock and hotel-status events
-    useWebSocket("customer", undefined, (event) => {
-        if (event.type === "MENU_AVAILABILITY_UPDATED") {
-            const updated = event.payload as { id: string; available: boolean; stockQty: number };
-            if (!updated.available || updated.stockQty <= 0) {
-                markItemAvailability(updated.id, false);
-            }
-        } else if (event.type === "HOTEL_CLOSING") {
-            const data = event.payload as { hotelId?: string };
-            if (data.hotelId) {
-                setClosedHotelIds((prev) => prev.includes(data.hotelId!) ? prev : [...prev, data.hotelId!]);
-            }
-        } else if (event.type === "HOTEL_STATUS_UPDATED") {
-            const status = event.payload as { isOpen: boolean; hotelId?: string };
-            if (status.hotelId) {
-                setClosedHotelIds((prev) =>
-                    status.isOpen
-                        ? prev.filter((id) => id !== status.hotelId)
-                        : prev.includes(status.hotelId!) ? prev : [...prev, status.hotelId!]
-                );
-            }
-        }
-    });
-
-    const groupedCart = useMemo(() => {
-        const groups = new Map<string, { hotelName: string; availableItems: typeof cart; unavailableItems: typeof cart }>();
-        for (const item of cart) {
-            const key = item.hotelId || "default";
-            if (!groups.has(key)) {
-                groups.set(key, { hotelName: item.hotelName || "TableDash Deliveries", availableItems: [], unavailableItems: [] });
-            }
-            const group = groups.get(key)!;
-            if (item.available) {
-                group.availableItems.push(item);
-            } else {
-                group.unavailableItems.push(item);
-            }
-        }
-        return Array.from(groups.entries());
-    }, [cart]);
-
-    const handleWhatsAppOrder = () => {
-        const availableOnly = cart.filter((i) => i.available);
-        const text = availableOnly
-            .map((item) => `${item.quantity}x ${item.name} (KSh ${item.price * item.quantity})`)
-            .join("\n");
-
-        const message = encodeURIComponent(
-            `Hello! I would like to order:\n\n${text}\n\nTotal: KSh ${totalAmount}`
+  useWebSocket("customer", undefined, (event) => {
+    if (event.type === "MENU_AVAILABILITY_UPDATED") {
+      const updated = event.payload as { id: string; available: boolean; stockQty: number };
+      if (!updated.available || updated.stockQty <= 0) {
+        markItemAvailability(updated.id, false);
+      }
+    } else if (event.type === "HOTEL_CLOSING") {
+      const data = event.payload as { hotelId?: string };
+      if (data.hotelId) {
+        setClosedHotelIds((prev) => prev.includes(data.hotelId!) ? prev : [...prev, data.hotelId!]);
+      }
+    } else if (event.type === "HOTEL_STATUS_UPDATED") {
+      const status = event.payload as { isOpen: boolean; hotelId?: string };
+      if (status.hotelId) {
+        setClosedHotelIds((prev) =>
+          status.isOpen
+            ? prev.filter((id) => id !== status.hotelId)
+            : prev.includes(status.hotelId!) ? prev : [...prev, status.hotelId!]
         );
+      }
+    }
+  });
 
-        window.open(`https://wa.me/${whatsappPhone}?text=${message}`, "_blank");
-    };
+  const groupedCart = useMemo(() => {
+    const groups = new Map<string, { hotelName: string; availableItems: typeof cart; unavailableItems: typeof cart }>();
+    for (const item of cart) {
+      const key = item.hotelId || "default";
+      if (!groups.has(key)) {
+        groups.set(key, { hotelName: item.hotelName || "Ladha", availableItems: [], unavailableItems: [] });
+      }
+      const group = groups.get(key)!;
+      if (item.available) {
+        group.availableItems.push(item);
+      } else {
+        group.unavailableItems.push(item);
+      }
+    }
+    return Array.from(groups.entries());
+  }, [cart]);
 
-    return (
-        <div className="app-container">
-            {/* Header Bar */}
-            <header className="header-bar">
-                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <button
-                        onClick={onBackToMenu}
-                        style={{
-                            background: "none",
-                            border: "none",
-                            color: "white",
-                            fontSize: "1.2rem",
-                            cursor: "pointer",
-                        }}
-                    >
-                        ←
-                    </button>
-                    <div className="header-title">Your Cart</div>
-                </div>
-                {cart.length > 0 && (
-                    <button
-                        onClick={clearCart}
-                        title="Clear Cart"
-                        style={{
-                            background: "none",
-                            border: "none",
-                            color: "#FCA5A5",
-                            fontSize: "1.2rem",
-                            cursor: "pointer",
-                        }}
-                    >
-                        🗑
-                    </button>
-                )}
-            </header>
+  const handleWhatsAppOrder = () => {
+    const availableOnly = cart.filter((i) => i.available);
+    const text = availableOnly
+      .map((item) => `${item.quantity}x ${item.name} (KSh ${item.price * item.quantity})`)
+      .join("\n");
 
-            {/* Main Content */}
-            <div style={{ padding: "20px" }}>
-                {cart.length === 0 ? (
-                    <div style={{ textAlign: "center", padding: "60px 0", color: "#6B7280" }}>
-                        <div style={{ fontSize: "3rem", marginBottom: "12px" }}>🛒</div>
-                        <h2 style={{ fontSize: "1.2rem", fontWeight: 700, color: "#1F2937" }}>Your cart is empty</h2>
-                        <p style={{ fontSize: "0.875rem", marginTop: "4px", marginBottom: "20px" }}>
-                            Explore today's fresh menu items to place an order.
-                        </p>
-                        <button onClick={onBackToMenu} className="btn btn-primary" style={{ maxWidth: "200px" }}>
-                            Browse Menu
-                        </button>
-                    </div>
-                ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-                        {groupedCart.map(([hotelId, group]) => (
-                            <div key={hotelId}>
-                                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-                                    <Building2 size={16} color="#1E4D36" />
-                                    <h3 style={{ fontSize: "0.95rem", fontWeight: 700, color: "#1E4D36", display: "flex", alignItems: "center", gap: "6px" }}>
-                                        {group.hotelName}
-                                        {closedHotelIds.includes(hotelId) && (
-                                            <span style={{ fontSize: "0.6rem", fontWeight: 700, color: "#DC2626", background: "#FEE2E2", padding: "2px 8px", borderRadius: "999px", textTransform: "uppercase" }}>
-                                                Closed
-                                            </span>
-                                        )}
-                                    </h3>
-                                </div>
-
-                                {/* Available Items */}
-                                {group.availableItems.length > 0 && (
-                                    <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "12px" }}>
-                                        {group.availableItems.map((item) => (
-                                            <div key={item.id} className="card" style={{ display: "flex", gap: "14px", alignItems: "center" }}>
-                                                <img src={item.imageUrl} alt={item.name} style={{ width: "64px", height: "64px", borderRadius: "10px", objectFit: "cover" }} />
-                                                <div style={{ flex: 1 }}>
-                                                    <h3 style={{ fontSize: "1rem", fontWeight: 600, color: "#1F2937" }}>{item.name}</h3>
-                                                    <div style={{ fontSize: "0.875rem", color: "#6B7280" }}>KSh {item.price} each</div>
-                                                    <div style={{ fontSize: "0.95rem", fontWeight: 700, color: "#1E4D36", marginTop: "2px" }}>
-                                                        Subtotal: KSh {item.price * item.quantity}
-                                                    </div>
-                                                </div>
-
-                                                <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "#EBF4F0", padding: "4px 8px", borderRadius: "8px", border: "1px solid #1E4D36" }}>
-                                                    <button onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                                                        style={{ border: "none", background: "none", fontWeight: 700, fontSize: "1.1rem", color: "#1E4D36", cursor: "pointer", padding: "0 4px" }}>-</button>
-                                                    <input type="number" min={1} value={item.quantity}
-                                                        onChange={(e) => { const val = parseInt(e.target.value, 10); if (!isNaN(val) && val >= 1) updateQuantity(item.id, val); }}
-                                                        style={{ width: "48px", textAlign: "center", fontWeight: 700, fontSize: "0.95rem", border: "1px solid #D1D5DB", borderRadius: "6px", padding: "4px 2px", background: "white", outline: "none" }} />
-                                                    <button onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                                                        style={{ border: "none", background: "none", fontWeight: 700, fontSize: "1.1rem", color: "#1E4D36", cursor: "pointer", padding: "0 4px" }}>+</button>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-
-                                {/* Unavailable Items */}
-                                {group.unavailableItems.length > 0 && (
-                                    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                                        <div style={{ display: "flex", alignItems: "center", gap: "6px", borderTop: "1px solid #FEE2E2", paddingTop: "12px", marginTop: "4px" }}>
-                                            <AlertTriangle size={14} color="#DC2626" />
-                                            <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "#DC2626" }}>
-                                                Sold Out / Unavailable
-                                            </span>
-                                        </div>
-                                        {group.unavailableItems.map((item) => (
-                                            <div key={item.id} className="card"
-                                                style={{ display: "flex", gap: "14px", alignItems: "center", opacity: 0.6, background: "#FEF2F2", border: "1.5px dashed #FCA5A5" }}>
-                                                <img src={item.imageUrl} alt={item.name}
-                                                    style={{ width: "64px", height: "64px", borderRadius: "10px", objectFit: "cover", filter: "grayscale(60%)" }} />
-                                                <div style={{ flex: 1 }}>
-                                                    <h3 style={{ fontSize: "1rem", fontWeight: 600, color: "#6B7280" }}>{item.name}</h3>
-                                                    <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#DC2626", background: "#FEE2E2", padding: "2px 8px", borderRadius: "20px" }}>
-                                                        Sold Out
-                                                    </span>
-                                                </div>
-                                                <button onClick={() => updateQuantity(item.id, 0)}
-                                                    style={{ border: "none", background: "#FEE2E2", color: "#DC2626", cursor: "pointer", padding: "6px", borderRadius: "8px", display: "flex" }}>
-                                                    <X size={16} />
-                                                </button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        ))}
-
-                        {/* Total summary box */}
-                        <div
-                            style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                padding: "16px",
-                                borderRadius: "12px",
-                                background: "#F9FAFB",
-                                border: "1.5px solid #E5E7EB",
-                                marginTop: "12px",
-                            }}
-                        >
-                            <span style={{ fontSize: "1.1rem", fontWeight: 700, color: "#1F2937" }}>Total</span>
-                            <span style={{ fontSize: "1.3rem", fontWeight: 800, color: "#1E4D36" }}>
-                                KSh {totalAmount}
-                            </span>
-                        </div>
-
-                        {/* Action Buttons */}
-                        <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginTop: "12px" }}>
-                            {(() => {
-                                const anyHotelClosed = cart.some((item) => item.hotelId && closedHotelIds.includes(item.hotelId));
-                                return anyHotelClosed ? (
-                                    <div style={{ background: "#FEF2F2", border: "1.5px solid #FCA5A5", borderRadius: "12px", padding: "14px", textAlign: "center" }}>
-                                        <div style={{ fontSize: "0.9rem", fontWeight: 700, color: "#DC2626", marginBottom: "4px" }}>
-                                            Hotel is Currently Closed
-                                        </div>
-                                        <div style={{ fontSize: "0.8rem", color: "#991B1B" }}>
-                                            This hotel is not accepting orders right now. Please check back later.
-                                        </div>
-                                    </div>
-                                ) : null;
-                            })()}
-                            <button onClick={onContinueToDelivery}
-                                disabled={cart.some((item) => item.hotelId && closedHotelIds.includes(item.hotelId))}
-                                className="btn btn-primary"
-                                style={{ opacity: cart.some((item) => item.hotelId && closedHotelIds.includes(item.hotelId)) ? 0.5 : 1 }}>
-                                Continue to Delivery
-                            </button>
-
-                            <button onClick={handleWhatsAppOrder} className="btn btn-whatsapp">
-                                💬 Order via WhatsApp
-                            </button>
-                        </div>
-                    </div>
-                )}
-            </div>
-        </div>
+    const message = encodeURIComponent(
+      `Hello! I would like to order:\n\n${text}\n\nTotal: KSh ${totalAmount}`
     );
+
+    window.open(`https://wa.me/${whatsappPhone}?text=${message}`, "_blank");
+  };
+
+  const anyHotelClosed = cart.some((item) => item.hotelId && closedHotelIds.includes(item.hotelId));
+
+  return (
+    <div className="app-container">
+      <Header
+        title="Your Cart"
+        onBack={onBackToMenu}
+        rightAction={
+          cart.length > 0 ? (
+            <button
+              onClick={clearCart}
+              className="p-2 rounded-xl hover:bg-white/10 transition-colors bg-none border-none cursor-pointer text-white/70 hover:text-white"
+              aria-label="Clear cart"
+            >
+              <Trash2 size={18} />
+            </button>
+          ) : undefined
+        }
+      />
+
+      <PageTransition>
+        <div className="px-4 py-5">
+          {cart.length === 0 ? (
+            <EmptyState
+              icon={<ShoppingBag size={36} />}
+              title="Your cart is empty"
+              description="Explore today's fresh menu items to place an order."
+              action={{ label: "Browse Menu", onClick: onBackToMenu }}
+            />
+          ) : (
+            <div className="space-y-5">
+              {groupedCart.map(([hotelId, group]) => (
+                <div key={hotelId}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Building2 size={16} className="text-[#114B36]" />
+                    <h3 className="font-bold text-sm text-[#114B36] flex items-center gap-2">
+                      {group.hotelName}
+                      {closedHotelIds.includes(hotelId) && (
+                        <Badge variant="danger" size="sm">Closed</Badge>
+                      )}
+                    </h3>
+                  </div>
+
+                  {/* Available Items */}
+                  {group.availableItems.length > 0 && (
+                    <div className="space-y-3">
+                      {group.availableItems.map((item) => (
+                        <motion.div
+                          key={item.id}
+                          layout
+                          className="flex gap-4 items-center p-4 bg-white rounded-2xl shadow-[0_2px_8px_rgba(17,75,54,0.06)]"
+                        >
+                          <img
+                            src={item.imageUrl}
+                            alt={item.name}
+                            className="w-16 h-16 rounded-xl object-cover shrink-0"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-semibold text-sm text-[#1F2937]">{item.name}</h4>
+                            <p className="text-xs text-[#6B7280]">KSh {item.price} each</p>
+                            <p className="font-bold text-sm text-[#114B36] mt-0.5">
+                              KSh {item.price * item.quantity}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-1 bg-[#EBF5F0] rounded-xl border-2 border-[#114B36] shrink-0">
+                            <button
+                              onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                              className="flex items-center justify-center w-8 h-8 text-[#114B36] font-bold bg-none border-none cursor-pointer hover:bg-[#C2E2D3] transition-colors rounded-l-lg"
+                            >
+                              −
+                            </button>
+                            <span className="w-8 text-center font-bold text-xs text-[#114B36]">
+                              {item.quantity}
+                            </span>
+                            <button
+                              onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                              className="flex items-center justify-center w-8 h-8 text-[#114B36] font-bold bg-none border-none cursor-pointer hover:bg-[#C2E2D3] transition-colors rounded-r-lg"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Unavailable Items */}
+                  {group.unavailableItems.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      <div className="flex items-center gap-1.5">
+                        <AlertTriangle size={13} className="text-[#DC2626]" />
+                        <span className="text-xs font-bold text-[#DC2626]">Sold Out</span>
+                      </div>
+                      {group.unavailableItems.map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex gap-4 items-center p-3 bg-[#FEF2F2] rounded-xl border border-dashed border-[#FCA5A5] opacity-60"
+                        >
+                          <img
+                            src={item.imageUrl}
+                            alt={item.name}
+                            className="w-12 h-12 rounded-lg object-cover shrink-0 grayscale-[60%]"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-semibold text-sm text-[#6B7280]">{item.name}</h4>
+                            <Badge variant="danger" size="sm">Sold Out</Badge>
+                          </div>
+                          <button
+                            onClick={() => updateQuantity(item.id, 0)}
+                            className="p-2 bg-[#FEE2E2] rounded-lg text-[#DC2626] bg-none border-none cursor-pointer"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {/* Total Summary */}
+              <motion.div
+                layout
+                className="bg-white rounded-2xl p-5 shadow-[0_2px_8px_rgba(17,75,54,0.06)] border border-[#E5E7EB]"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-[#6B7280]">Subtotal</span>
+                  <span className="font-semibold text-[#1F2937]">KSh {totalAmount}</span>
+                </div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-[#6B7280]">Delivery</span>
+                  <span className="text-sm font-semibold text-[#22C55E]">Free</span>
+                </div>
+                <div className="border-t border-[#E5E7EB] pt-3 mt-3 flex items-center justify-between">
+                  <span className="font-bold text-[#1F2937]">Total</span>
+                  <span className="text-xl font-extrabold text-[#114B36]">KSh {totalAmount}</span>
+                </div>
+              </motion.div>
+
+              {/* Action Buttons */}
+              <div className="space-y-3 pt-2">
+                {anyHotelClosed && (
+                  <div className="bg-[#FEF2F2] border border-[#FCA5A5] rounded-2xl p-4 text-center">
+                    <p className="font-bold text-sm text-[#DC2626] mb-1">Hotel is Currently Closed</p>
+                    <p className="text-xs text-[#991B1B]">Not accepting orders right now.</p>
+                  </div>
+                )}
+
+                <Button
+                  onClick={onContinueToDelivery}
+                  disabled={anyHotelClosed}
+                  fullWidth
+                  size="lg"
+                  variant="primary"
+                >
+                  {anyHotelClosed ? "Hotel Closed" : "Continue to Delivery"}
+                </Button>
+
+                <Button
+                  onClick={handleWhatsAppOrder}
+                  fullWidth
+                  size="md"
+                  variant="whatsapp"
+                >
+                  💬 Order via WhatsApp
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </PageTransition>
+    </div>
+  );
 };
