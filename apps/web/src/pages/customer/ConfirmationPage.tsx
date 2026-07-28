@@ -27,7 +27,7 @@ export const ConfirmationPage: React.FC<ConfirmationPageProps> = ({
     : new Date().toLocaleString();
 
   return (
-    <div className="app-container bg-[#FAFAFA]">
+    <div className="app-container bg-[#FFF8F0]">
       <PageTransition>
         <div className="px-4 py-8">
           {/* Success Animation */}
