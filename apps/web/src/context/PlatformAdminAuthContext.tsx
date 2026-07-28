@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { isJwtExpired, getJwtExpiry } from "../lib/jwt";
 
-const STORAGE_KEY = "tableDash_platform_token";
+const STORAGE_KEY = "ladha_platform_token";
 
 interface PlatformMe {
   id: string;

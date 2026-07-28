@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { isJwtExpired, getJwtExpiry } from "../lib/jwt";
 import { apiGet } from "../lib/api";
 
-const STORAGE_KEY = "tableDash_token";
+const STORAGE_KEY = "ladha_token";
 
 interface AdminUser {
   id: string;

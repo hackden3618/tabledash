@@ -1,5 +1,5 @@
 /**
- * Purpose: Main React Application Container and Navigation Router for tableDash.
+ * Purpose: Main React Application Container and Navigation Router for Ladha.
  * Responsibilities: Wraps application in CartProvider + CustomerAuthProvider + NotificationsProvider contexts,
  *   manages active page view transitions, and handles admin session tokens.
  * Dependencies: CartProvider, CustomerAuthProvider, NotificationsProvider, NotificationToastContainer, customer pages, admin pages.
@@ -15,7 +15,7 @@ import { NotificationsProvider, useNotifications } from "./context/Notifications
 import { NotificationToastContainer } from "./components/NotificationToast";
 
 // Customer Views
-import { BottomNavBar, type CustomerTab } from "./components/BottomNavBar";
+import { BottomNav, type CustomerTab } from "./components/ui/BottomNav";
 import { CartPage } from "./pages/customer/CartPage";
 import { ConfirmationPage } from "./pages/customer/ConfirmationPage";
 import { CustomerAuthPage } from "./pages/customer/CustomerAuthPage";
@@ -23,6 +23,8 @@ import { LocationPage } from "./pages/customer/LocationPage";
 import { MenuListPage } from "./pages/customer/MenuListPage";
 import { MyOrdersPage } from "./pages/customer/MyOrdersPage";
 import { OrderTrackingPage } from "./pages/customer/OrderTrackingPage";
+import { TrackingListPage } from "./pages/customer/TrackingListPage";
+import { CustomerProfilePage } from "./pages/customer/CustomerProfilePage";
 
 // Admin Views
 import { AdminBottomNavBar, type AdminTab } from "./components/AdminBottomNavBar";
@@ -46,6 +48,8 @@ type ViewState =
   | "customer_tracking"
   | "customer_auth"
   | "customer_my_orders"
+  | "customer_profile"
+  | "customer_tracker_list"
   | "admin_login"
   | "admin_orders"
   | "admin_order_details"
@@ -64,11 +68,11 @@ export function AppContent() {
   const [currentView, setCurrentView] = useState<ViewState>(() => {
     const path = window.location.pathname;
     if (path === "/kitchen") {
-      const stored = localStorage.getItem("tableDash_token");
+      const stored = localStorage.getItem("ladha_token");
       return stored ? "admin_orders" : "admin_login";
     }
     if (path === "/platform") {
-      const stored = localStorage.getItem("tableDash_platform_token");
+      const stored = localStorage.getItem("ladha_platform_token");
       return stored ? "platform_admin" : "platform_admin";
     }
     return "customer_menu";
@@ -145,15 +149,15 @@ export function AppContent() {
 
   const getActiveTab = (): CustomerTab => {
     if (currentView === "customer_cart") return "cart";
-    if (currentView === "customer_tracking" || currentView === "customer_confirmation") return "tracking";
-    if (currentView === "customer_auth" || currentView === "customer_my_orders") return "account";
+    if (currentView === "customer_tracker_list" || currentView === "customer_tracking" || currentView === "customer_confirmation") return "tracking";
+    if (currentView === "customer_auth" || currentView === "customer_my_orders" || currentView === "customer_profile") return "account";
     return "menu";
   };
 
   const handleSelectTab = (tab: CustomerTab) => {
     if (tab === "menu") setCurrentView("customer_menu");
     if (tab === "cart") setCurrentView("customer_cart");
-    if (tab === "tracking") setCurrentView("customer_tracking");
+    if (tab === "tracking") setCurrentView("customer_tracker_list");
     if (tab === "account") setCurrentView("customer_my_orders");
   };
 
@@ -199,6 +203,16 @@ export function AppContent() {
         />
       )}
 
+      {currentView === "customer_tracker_list" && (
+        <TrackingListPage
+          onTrackOrder={(orderId) => {
+            setTrackingOrderId(orderId);
+            setCurrentView("customer_tracking");
+          }}
+          onGoToAuth={() => setCurrentView("customer_auth")}
+        />
+      )}
+
       {currentView === "customer_tracking" && (
         <OrderTrackingPage
           orderId={trackingOrderId || placedOrder?.id}
@@ -220,12 +234,19 @@ export function AppContent() {
             setTrackingOrderId(orderId);
             setCurrentView("customer_tracking");
           }}
+          onGoToProfile={() => setCurrentView("customer_profile")}
+        />
+      )}
+
+      {currentView === "customer_profile" && (
+        <CustomerProfilePage
+          onBack={() => setCurrentView("customer_my_orders")}
         />
       )}
 
       {/* Customer Sticky Bottom Navigation */}
       {isCustomerView && (
-        <BottomNavBar
+        <BottomNav
           activeTab={getActiveTab()}
           onSelectTab={handleSelectTab}
           hasActiveOrder={Boolean(placedOrder || trackingOrderId)}

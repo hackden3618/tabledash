@@ -1,5 +1,5 @@
 /**
- * Purpose: Reusable Modal & Dialog component for tableDash.
+ * Purpose: Reusable Modal & Dialog component for Ladha.
  * Responsibilities: Replaces native window.alert and window.confirm popups with a beautiful, mobile-first bottom-sheet/centered modal.
  * Dependencies: React, lucide-react.
  * When to modify: When adding modal animation styles or altering button variants.
