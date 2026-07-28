@@ -195,6 +195,7 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
     const res = await apiPost<any>("/orders", payload);
     setIsSubmitting(false);
     if (res.success && res.data) {
+      localStorage.setItem("ladha_last_order", JSON.stringify(res.data));
       clearCart();
       onOrderPlaced(res.data);
     } else {

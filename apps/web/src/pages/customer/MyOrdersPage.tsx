@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import { apiGet } from "../../lib/api";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
 import { useWebSocket } from "../../lib/websocket";
 import { ClipboardList, Package, RefreshCw, ChevronRight, Settings } from "lucide-react";
 import { Header } from "../../components/ui/Header";
-import { Badge } from "../../components/ui/Badge";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { PageTransition } from "../../components/ui/PageTransition";
 
@@ -22,8 +22,33 @@ const TERMINAL_CONFIG: Record<string, { label: string; variant: "success" | "dan
 export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackOrder, onGoToProfile }) => {
   const { customer, isLoggedIn, isLoading, logout, refreshProfile } = useCustomerAuth();
   const [orders, setOrders] = useState<any[]>([]);
+  const [guestOrders, setGuestOrders] = useState<any[]>([]);
   const [lastUpdatedId, setLastUpdatedId] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Hydrate guest orders from localStorage
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("ladha_last_order");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setGuestOrders([parsed]);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  // Keep guest order data fresh by fetching latest
+  useEffect(() => {
+    if (!isLoggedIn && guestOrders.length > 0) {
+      const gid = guestOrders[0].id;
+      apiGet<any>(`/orders/${gid}`).then((res) => {
+        if (res.success && res.data) {
+          setGuestOrders([res.data]);
+          localStorage.setItem("ladha_last_order", JSON.stringify(res.data));
+        }
+      });
+    }
+  }, [isLoggedIn]);
 
   useEffect(() => {
     if (customer?.recentOrders) {
@@ -75,8 +100,8 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
     );
   }
 
-  // Logged-out state
-  if (!isLoggedIn) {
+  // Logged-out state — show guest order if available, otherwise prompt sign-in
+  if (!isLoggedIn && guestOrders.length === 0) {
     return (
       <div className="app-container">
         <Header title="My Orders" />
@@ -89,49 +114,56 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
       </div>
     );
   }
+  const allOrders = isLoggedIn ? orders : [...guestOrders, ...orders.filter((o) => !guestOrders.some((g) => g.id === o.id))];
 
-  // Logged-in state
   return (
     <div className="app-container">
       <Header
         title="My Orders"
-        rightAction={
+        rightAction={isLoggedIn ? (
           <button
             onClick={logout}
             className="px-3 py-1.5 rounded-xl bg-white/15 text-xs font-semibold text-white hover:bg-white/20 transition-colors bg-none border-none cursor-pointer"
           >
             Sign Out
           </button>
-        }
+        ) : undefined}
       />
 
       <PageTransition>
         <div className="px-4 py-5">
-          {/* Welcome strip */}
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-[#EBF5F0] rounded-2xl p-4 mb-5"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-[#114B36] flex items-center justify-center text-white font-bold text-base shrink-0">
-                {customer?.firstName?.[0]?.toUpperCase() || "?"}
+          {isLoggedIn && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-[#EBF5F0] rounded-2xl p-4 mb-5"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-[#114B36] flex items-center justify-center text-white font-bold text-base shrink-0">
+                  {customer?.firstName?.[0]?.toUpperCase() || "?"}
+                </div>
+                <div className="flex-1">
+                  <p className="font-bold text-sm text-[#1F2937]">Hi, {customer?.firstName}!</p>
+                  <p className="text-xs text-[#6B7280]">{customer?.phone}</p>
+                </div>
+                {onGoToProfile && (
+                  <button onClick={onGoToProfile}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/60 text-xs font-bold text-[#114B36] border border-[#C2E2D3] cursor-pointer bg-none transition-colors hover:bg-white"
+                  >
+                    <Settings size={13} /> Profile
+                  </button>
+                )}
               </div>
-              <div className="flex-1">
-                <p className="font-bold text-sm text-[#1F2937]">Hi, {customer?.firstName}!</p>
-                <p className="text-xs text-[#6B7280]">{customer?.phone}</p>
-              </div>
-              {onGoToProfile && (
-                <button onClick={onGoToProfile}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/60 text-xs font-bold text-[#114B36] border border-[#C2E2D3] cursor-pointer bg-none transition-colors hover:bg-white"
-                >
-                  <Settings size={13} /> Profile
-                </button>
-              )}
-            </div>
-          </motion.div>
+            </motion.div>
+          )}
 
-          {orders.length === 0 ? (
+          {!isLoggedIn && guestOrders.length > 0 && (
+            <div className="bg-[#FEF3C7] border border-[#FCD34D] rounded-2xl p-3.5 mb-5">
+              <p className="text-xs font-semibold text-[#92400E]">Guest session — your order is saved on this device. <button onClick={onGoToAuth} className="underline font-bold bg-none border-none cursor-pointer text-[#92400E]">Sign in</button> to keep it forever.</p>
+            </div>
+          )}
+
+          {allOrders.length === 0 ? (
             <div className="flex flex-col items-center py-12 text-center">
               <Package size={40} className="text-[#D1D5DB] mb-3" />
               <p className="font-semibold text-[#6B7280]">No orders yet</p>
@@ -141,18 +173,20 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
             <div className="space-y-3">
               <div className="flex items-center justify-between mb-1">
                 <h2 className="font-bold text-[#114B36] text-sm">Recent Orders</h2>
-                <button
-                  onClick={handleManualRefresh}
-                  disabled={isRefreshing}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#EBF5F0] text-xs font-bold text-[#16A34A] border border-[#C2E2D3] cursor-pointer disabled:opacity-50 bg-none transition-colors hover:bg-[#C2E2D3]"
-                >
-                  <RefreshCw size={11} className={isRefreshing ? "animate-spin" : ""} />
-                  {isRefreshing ? "Syncing..." : "Sync"}
-                </button>
+                {isLoggedIn && (
+                  <button
+                    onClick={handleManualRefresh}
+                    disabled={isRefreshing}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#EBF5F0] text-xs font-bold text-[#16A34A] border border-[#C2E2D3] cursor-pointer disabled:opacity-50 bg-none transition-colors hover:bg-[#C2E2D3]"
+                  >
+                    <RefreshCw size={11} className={isRefreshing ? "animate-spin" : ""} />
+                    {isRefreshing ? "Syncing..." : "Sync"}
+                  </button>
+                )}
               </div>
 
               <AnimateOrders
-                orders={orders}
+                orders={allOrders}
                 lastUpdatedId={lastUpdatedId}
                 onTrackOrder={onTrackOrder}
                 terminalConfig={TERMINAL_CONFIG}
@@ -216,7 +250,9 @@ function AnimateOrders({
               </div>
 
               {isTerminal && termCfg ? (
-                <Badge variant={termCfg.variant}>{termCfg.label}</Badge>
+                <span className={`text-[0.6rem] font-bold px-2.5 py-1 rounded-full ${
+                  termCfg.variant === "success" ? "bg-[#DCFCE7] text-[#15803D]" : "bg-[#FEE2E2] text-[#DC2626]"
+                }`}>{termCfg.label}</span>
               ) : (
                 <span className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FEF3C7] text-[#D97706] rounded-lg text-xs font-bold">
                   <span className="w-1.5 h-1.5 bg-[#F59E0B] rounded-full animate-pulse" />

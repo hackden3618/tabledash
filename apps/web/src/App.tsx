@@ -205,6 +205,7 @@ export function AppContent() {
 
       {currentView === "customer_tracker_list" && (
         <TrackingListPage
+          placedOrderId={placedOrder?.id || trackingOrderId || undefined}
           onTrackOrder={(orderId) => {
             setTrackingOrderId(orderId);
             setCurrentView("customer_tracking");

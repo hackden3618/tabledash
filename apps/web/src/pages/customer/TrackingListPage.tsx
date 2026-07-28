@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
+import { apiGet } from "../../lib/api";
 import { useWebSocket } from "../../lib/websocket";
 import { Truck, ChevronRight, Package } from "lucide-react";
 import { Header } from "../../components/ui/Header";
@@ -10,6 +11,7 @@ import { PageTransition } from "../../components/ui/PageTransition";
 interface TrackingListPageProps {
   onTrackOrder: (orderId: string) => void;
   onGoToAuth?: () => void;
+  placedOrderId?: string;
 }
 
 const ACTIVE_STATUSES = ["NEW", "ACCEPTED", "PREPARING", "READY_FOR_DELIVERY", "OUT_FOR_DELIVERY"];
@@ -22,11 +24,32 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   OUT_FOR_DELIVERY:   { label: "Out for Delivery",   color: "#4F46E5" },
 };
 
-export const TrackingListPage: React.FC<TrackingListPageProps> = ({ onTrackOrder, onGoToAuth }) => {
+export const TrackingListPage: React.FC<TrackingListPageProps> = ({ onTrackOrder, onGoToAuth, placedOrderId }) => {
   const { customer, isLoggedIn, isLoading, refreshProfile } = useCustomerAuth();
   const [orders, setOrders] = useState<any[]>([]);
+  const [guestOrder, setGuestOrder] = useState<any | null>(null);
   const [activeOrders, setActiveOrders] = useState<any[]>([]);
   const [lastUpdatedId, setLastUpdatedId] = useState<string | null>(null);
+
+  // Hydrate guest order from localStorage
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("ladha_last_order");
+      if (raw) setGuestOrder(JSON.parse(raw));
+    } catch { /* ignore */ }
+  }, []);
+
+  // Fetch guest order live data if not logged in
+  useEffect(() => {
+    if (!isLoggedIn && placedOrderId) {
+      apiGet<any>(`/orders/${placedOrderId}`).then((res) => {
+        if (res.success && res.data) {
+          setGuestOrder(res.data);
+          localStorage.setItem("ladha_last_order", JSON.stringify(res.data));
+        }
+      });
+    }
+  }, [placedOrderId, isLoggedIn]);
 
   useEffect(() => {
     if (customer?.recentOrders) {
@@ -35,8 +58,11 @@ export const TrackingListPage: React.FC<TrackingListPageProps> = ({ onTrackOrder
   }, [customer?.recentOrders]);
 
   useEffect(() => {
-    setActiveOrders(orders.filter((o: any) => ACTIVE_STATUSES.includes(o.status)));
-  }, [orders]);
+    const fromAccount = orders.filter((o: any) => ACTIVE_STATUSES.includes(o.status));
+    const fromGuest = guestOrder && ACTIVE_STATUSES.includes(guestOrder.status) ? [guestOrder] : [];
+    const merged = [...fromGuest, ...fromAccount.filter((o) => !fromGuest.some((g) => g.id === o.id))];
+    setActiveOrders(merged);
+  }, [orders, guestOrder]);
 
   useWebSocket("customer", undefined, (event) => {
     if (event.type === "ORDER_STATUS_UPDATED" || event.type === "ORDER_CREATED") {
@@ -63,7 +89,7 @@ export const TrackingListPage: React.FC<TrackingListPageProps> = ({ onTrackOrder
     );
   }
 
-  if (!isLoggedIn) {
+  if (!isLoggedIn && activeOrders.length === 0) {
     return (
       <div className="app-container">
         <Header title="Live Tracker" />
