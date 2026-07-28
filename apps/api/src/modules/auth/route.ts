@@ -73,7 +73,7 @@ export const authRoute = new Elysia({
       }
     },
     {
-      body: t.Object({ phone: t.String({ minLength: PHONE_MIN, maxLength: PHONE_MAX, pattern: PHONE_PATTERN }) }),
+      body: t.Object({ phone: t.String({ minLength: 10, maxLength: 13 }) }),
     }
   )
   .post(
@@ -96,7 +96,7 @@ export const authRoute = new Elysia({
     },
     {
       body: t.Object({
-        phone: t.String({ minLength: PHONE_MIN, maxLength: PHONE_MAX, pattern: PHONE_PATTERN }),
+        phone: t.String({ minLength: 10, maxLength: 13 }),
         otp: t.String({ minLength: 6, maxLength: 6 }),
         newPassword: t.String({ minLength: 6 }),
       }),

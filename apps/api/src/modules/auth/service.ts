@@ -7,6 +7,7 @@
 
 import { prisma } from "../../../../../infrastructure/database/prisma";
 import { formatPhone } from "../../../../../shared/phone";
+import { smsService } from "../notifications/sms.service";
 import type { HotelRole } from "../../../../../generated/prisma/client";
 
 export interface AdminAuthResult {
@@ -167,23 +168,36 @@ const otpStore = new Map<string, { code: string; expiresAt: number }>();
 
 export const requestPasswordResetOtp = async (phone: string): Promise<boolean> => {
   const formattedPhone = formatPhone(phone);
+
+  // Verify this phone belongs to an admin or customer
+  const admin = await prisma.adminUser.findFirst({ where: { username: formattedPhone } });
+  const customer = await prisma.customer.findFirst({ where: { phone: formattedPhone } });
+  if (!admin && !customer) {
+    throw new Error("No account found with this phone number");
+  }
+
   const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
 
   otpStore.set(formattedPhone, { code: otpCode, expiresAt });
 
+  const message = `Your TableDash password reset code is: ${otpCode}. It expires in 10 minutes. - TableDash Deliveries`;
+  const sent = await smsService.sendSms(formattedPhone, message);
+
   await prisma.eventOutbox.create({
     data: {
-      eventName: "order_status_updated", // Re-using event infrastructure log
+      eventName: "hotel_admin_created", // General audit trail
       payload: JSON.stringify({
         type: "PASSWORD_RESET_OTP",
         phone: formattedPhone,
+        otpCode,
+        sent,
       }),
       status: "done",
     },
   });
 
-  return true;
+  return sent;
 };
 
 export const resetPasswordWithOtp = async (phone: string, otpCode: string, newPassword: string): Promise<boolean> => {
@@ -203,7 +217,8 @@ export const resetPasswordWithOtp = async (phone: string, otpCode: string, newPa
     return true;
   }
 
-  const admin = await prisma.adminUser.findFirst({ where: { username: { contains: formattedPhone } } });
+  // Admin usernames are phone numbers — exact match
+  const admin = await prisma.adminUser.findFirst({ where: { username: formattedPhone } });
   if (admin) {
     await prisma.adminUser.update({ where: { id: admin.id }, data: { passwordHash } });
     otpStore.delete(formattedPhone);

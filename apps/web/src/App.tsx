@@ -74,11 +74,13 @@ export function AppContent() {
     return "customer_menu";
   });
 
-  // Auto-redirect admin to login on token expiry (but wait for hydration to complete)
+  // Auto-redirect admin to/from login based on auth state
   useEffect(() => {
     if (adminHydrating) return;
     if (currentView.startsWith("admin_") && !isAdminLoggedIn) {
       setCurrentView("admin_login");
+    } else if (currentView === "admin_login" && isAdminLoggedIn) {
+      setCurrentView("admin_orders");
     }
   }, [isAdminLoggedIn, adminHydrating, currentView]);
 
@@ -233,8 +235,8 @@ export function AppContent() {
       {/* ─── Admin Management Application Flow ─────────────────────────────────── */}
       {currentView === "admin_login" && (
         <AdminLoginPage
-          onLoginSuccess={(token) => {
-            adminLogin(token);
+          onLoginSuccess={(token, loginUser) => {
+            adminLogin(token, loginUser);
             setCurrentView("admin_orders");
           }}
         />

@@ -623,25 +623,12 @@ body {
 }
 
 /* Platform Admin Responsive Sidebar */
-.platform-main.collapsed {
-    margin-left: 0 !important;
-}
-
 @media (max-width: 768px) {
     .platform-sidebar {
-        width: 240px !important;
+        width: 260px !important;
+        padding: 20px 16px !important;
     }
     .platform-main {
-        margin-left: 0 !important;
-        padding: 48px 12px !important;
-    }
-    .platform-sidebar-overlay {
-        display: block !important;
-    }
-}
-
-@media (min-width: 769px) {
-    .platform-sidebar-overlay {
-        display: none !important;
+        padding: 16px 12px !important;
     }
 }

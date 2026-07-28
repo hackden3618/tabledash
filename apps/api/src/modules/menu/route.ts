@@ -38,9 +38,22 @@ export const menuRoute = new Elysia({
   )
   .get(
     "/",
-    async ({ query, set }) => {
+    async ({ query, set, headers, jwt }) => {
       try {
-        const hotelId = (query as any).hotelId as string | undefined;
+        let hotelId = (query as any).hotelId as string | undefined;
+
+        // If an admin token is present, scope to that admin's hotel
+        const authHeader = headers["authorization"];
+        if (authHeader && authHeader.startsWith("Bearer ")) {
+          const token = authHeader.split(" ")[1] ?? "";
+          try {
+            const admin = await verifyAdminToken(token, (t) => jwt.verify(t));
+            hotelId = admin.hotelId ?? hotelId;
+          } catch {
+            // Invalid token — fall through to public behavior
+          }
+        }
+
         const items = await getAllMenuItems(hotelId);
         return { success: true, data: items };
       } catch (err: any) {

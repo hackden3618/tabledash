@@ -273,7 +273,7 @@ export const platformRoute = new Elysia({
 
       const tempPassword = crypto.randomUUID().split("-")[0]!;
       const passwordHash = await Bun.password.hash(tempPassword);
-      const formattedPhone = body.phone ? formatPhone(body.phone) : null;
+      const formattedPhone = formatPhone(body.phone);
 
       const admin = await prisma.platformAdmin.create({
         data: { username: body.username, passwordHash, name: body.name },
@@ -287,6 +287,7 @@ export const platformRoute = new Elysia({
             name: admin.name,
             username: admin.username,
             phone: formattedPhone,
+            tempPassword,
             createdBy: creator.name,
           }),
           status: "initialized",
@@ -302,7 +303,7 @@ export const platformRoute = new Elysia({
       body: t.Object({
         username: t.String({ minLength: 3 }),
         name: t.String({ minLength: 1 }),
-        phone: t.Optional(t.String({ minLength: 10, maxLength: 13 })),
+        phone: t.String({ minLength: 10, maxLength: 13 }),
       }),
     }
   )

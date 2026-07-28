@@ -78,7 +78,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
     const [submitting, setSubmitting] = useState(false);
 
     // ── Create Admin ──
-    const [adminForm, setAdminForm] = useState({ username: "", name: "" });
+    const [adminForm, setAdminForm] = useState({ username: "", name: "", phone: "" });
     const [adminResult, setAdminResult] = useState<any>(null);
     const [adminSubmitting, setAdminSubmitting] = useState(false);
 
@@ -172,18 +172,33 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
         }
     };
 
-    // ── Styles ──
+    // ── Nav icon mapping ──
+    const navIcon = (v: PlatformView): string => {
+        switch (v) {
+            case "overview": return "📊";
+            case "hotels": return "🏨";
+            case "create_hotel": return "➕";
+            case "admins": return "👤";
+            case "create_admin": return "➕";
+            case "audit": return "📋";
+            case "outbox": return "📤";
+            default: return "•";
+        }
+    };
+
     const navItem = (v: PlatformView, label: string) => (
         <button
-            onClick={() => setView(v)}
+            onClick={() => { setView(v); setSidebarOpen(false); }}
             style={{
                 background: view === v ? T.primaryMuted : "transparent",
                 color: view === v ? T.primary : T.textMuted,
                 border: "none", padding: `${s(3)} ${s(4)}`, borderRadius: T.radius,
                 fontWeight: view === v ? 700 : 500, fontSize: "0.9rem", cursor: "pointer",
                 textAlign: "left", width: "100%", transition: "all 0.15s",
+                display: "flex", alignItems: "center", gap: s(3),
             }}
         >
+            <span style={{ fontSize: "1rem", width: "20px", textAlign: "center", opacity: view === v ? 1 : 0.5 }}>{navIcon(v)}</span>
             {label}
         </button>
     );
@@ -220,84 +235,88 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
     );
 
     // ── Layout ──
-    const sidebarWidth = 220;
+    const sidebarWidth = 240;
     return (
         <div style={{ minHeight: "100vh", background: T.bg, fontFamily: T.font, display: "flex" }}>
-            {/* Hamburger toggle — visible when sidebar is collapsed (mobile + desktop) */}
+            {/* Subtle menu toggle — thin line icon, no background blob */}
             <button onClick={() => setSidebarOpen(true)}
                 style={{
-                    position: "fixed", top: s(3), left: s(3), zIndex: 60,
-                    background: T.primary, color: "white", border: "none",
-                    width: "36px", height: "36px", borderRadius: T.radius,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: "1.2rem", cursor: "pointer",
+                    position: "fixed", top: s(4), right: s(4), zIndex: 60,
+                    background: sidebarOpen ? "transparent" : T.surface,
+                    border: `1px solid ${T.border}`, cursor: "pointer",
+                    width: "36px", height: "36px", display: "flex",
+                    flexDirection: "column", alignItems: "center", justifyContent: "center",
+                    gap: "4.5px", padding: 0, borderRadius: "10px",
                     opacity: sidebarOpen ? 0 : 1, pointerEvents: sidebarOpen ? "none" : "auto",
                     transition: "opacity 0.2s",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
                 }}
-                aria-label="Open sidebar"
+                aria-label="Open menu"
             >
-                ☰
+                <span style={{ display: "block", width: "16px", height: "2px", background: T.textMuted, borderRadius: "2px" }} />
+                <span style={{ display: "block", width: "16px", height: "2px", background: T.textMuted, borderRadius: "2px" }} />
+                <span style={{ display: "block", width: "16px", height: "2px", background: T.textMuted, borderRadius: "2px" }} />
             </button>
 
-            {/* Overlay backdrop (mobile only) */}
+            {/* Overlay backdrop */}
             {sidebarOpen && (
                 <div onClick={() => setSidebarOpen(false)}
-                    style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", zIndex: 49 }}
+                    style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.4)", zIndex: 49 }}
                     className="platform-sidebar-overlay"
                 />
             )}
 
-            {/* Sidebar */}
+            {/* Sidebar — clean drawer panel */}
             <nav style={{
-                width: sidebarWidth, background: T.surface, borderRight: `1px solid ${T.border}`,
+                width: sidebarWidth, background: T.surface,
                 display: "flex", flexDirection: "column",
                 position: "fixed", top: 0, left: 0, bottom: 0, zIndex: 50,
-                padding: s(4), gap: s(1),
+                padding: s(6), gap: s(1),
                 transform: sidebarOpen ? "translateX(0)" : "translateX(-100%)",
-                transition: "transform 0.2s ease",
+                transition: "transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
+                boxShadow: sidebarOpen ? "4px 0 24px rgba(0,0,0,0.08)" : "none",
             }}
                 className="platform-sidebar"
             >
-                {/* Sidebar header with collapse toggle */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: s(6) }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: s(2) }}>
-                        <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: T.primary, color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.85rem" }}>TD</div>
+                {/* Sidebar header */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: s(8) }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: s(3) }}>
+                        <div style={{ width: "34px", height: "34px", borderRadius: "10px", background: T.primary, color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.9rem" }}>TD</div>
                         <div>
-                            <div style={{ fontWeight: 700, color: T.text, fontSize: "0.9rem" }}>TableDash</div>
+                            <div style={{ fontWeight: 700, color: T.text, fontSize: "0.95rem", lineHeight: 1.3 }}>TableDash</div>
                             <div style={{ fontSize: "0.75rem", color: T.textMuted }}>Platform Admin</div>
                         </div>
                     </div>
-                    {/* Close/collapse button on the right side */}
                     <button onClick={() => setSidebarOpen(false)}
-                        className="platform-sidebar-close"
                         style={{
-                            background: "none", border: "none", color: T.textMuted, cursor: "pointer",
+                            background: "transparent", border: "none", color: T.textDim, cursor: "pointer",
                             width: "28px", height: "28px", borderRadius: "6px", display: "flex",
-                            alignItems: "center", justifyContent: "center", fontSize: "1rem",
+                            alignItems: "center", justifyContent: "center", fontSize: "1.1rem",
+                            transition: "background 0.15s",
                         }}
-                        aria-label="Close sidebar"
+                        aria-label="Close menu"
                     >
-                        ◀
+                        ✕
                     </button>
                 </div>
 
                 {navItem("overview", "Overview")}
                 {navItem("hotels", "Hotels")}
-                {navItem("create_hotel", "＋ Add Hotel")}
+                {navItem("create_hotel", "Add Hotel")}
                 {navItem("admins", "Platform Admins")}
-                {navItem("create_admin", "＋ Add Admin")}
+                {navItem("create_admin", "Add Admin")}
                 {navItem("audit", "Audit Log")}
                 {navItem("outbox", "Outbox")}
 
-                <div style={{ marginTop: "auto", paddingTop: s(4), borderTop: `1px solid ${T.border}` }}>
-                    {user && <div style={{ fontSize: "0.8rem", color: T.textMuted, marginBottom: s(2) }}>{user.name}</div>}
-                    <button onClick={handleLogout} style={{ background: "none", border: "none", color: T.textMuted, fontSize: "0.85rem", cursor: "pointer", padding: 0, fontWeight: 500 }}>Sign Out</button>
+                <div style={{ marginTop: "auto", paddingTop: s(5), borderTop: `1px solid ${T.border}` }}>
+                    {user && <div style={{ fontSize: "0.8rem", color: T.textMuted, marginBottom: s(2), fontWeight: 500 }}>{user.name}</div>}
+                    <button onClick={handleLogout} style={{ background: "none", border: "none", color: T.textDim, fontSize: "0.85rem", cursor: "pointer", padding: 0, fontWeight: 500 }}>Sign Out</button>
                 </div>
             </nav>
 
             {/* Main content */}
-            <main style={{ marginLeft: sidebarWidth, flex: 1, minHeight: "100vh", padding: s(8), maxWidth: "960px" }}
-                className={`platform-main${sidebarOpen ? "" : " collapsed"}`}>
+            <main style={{ flex: 1, minHeight: "100vh", padding: s(8), maxWidth: "960px", marginLeft: "auto", marginRight: "auto" }}
+                className="platform-main">
                 {loading ? (
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "40vh", color: T.textDim }}>Loading…</div>
                 ) : view === "overview" ? (
@@ -477,7 +496,8 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                 <div style={{ color: T.textMuted }}>Name: <strong>{adminResult.name}</strong></div>
                                 <div style={{ color: T.textMuted }}>Temp password: <strong style={{ fontFamily: "monospace" }}>{adminResult.tempPassword}</strong></div>
                             </div>
-                            <button onClick={() => { setAdminResult(null); setAdminForm({ username: "", name: "" }); setView("admins"); }}
+                            <div style={{ fontSize: "0.85rem", color: T.textMuted, marginTop: s(2) }}>The password has also been sent via SMS to their phone.</div>
+                            <button onClick={() => { setAdminResult(null); setAdminForm({ username: "", name: "", phone: "" }); setView("admins"); }}
                                 style={{ background: T.primary, color: "white", border: "none", padding: `${s(3)} ${s(6)}`, borderRadius: T.radius, fontWeight: 700, cursor: "pointer", marginTop: s(4) }}>Done</button>
                         </div>
                     ) : (
@@ -497,8 +517,15 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                     <input value={adminForm.username} onChange={(e) => setAdminForm({ ...adminForm, username: e.target.value })}
                                         className="input-field" style={{ fontFamily: T.font }} />
                                 </div>
-                                <button onClick={handleCreateAdmin} disabled={adminSubmitting || !adminForm.name || !adminForm.username}
-                                    style={{ background: T.primary, color: "white", border: "none", padding: s(4), borderRadius: T.radius, fontWeight: 700, fontSize: "0.95rem", cursor: adminSubmitting ? "not-allowed" : "pointer", opacity: adminSubmitting || !adminForm.name || !adminForm.username ? 0.6 : 1, alignSelf: "flex-start", minWidth: "180px" }}>
+                                <div>
+                                    <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: T.textMuted, marginBottom: s(1) }}>Phone Number <span style={{ color: T.danger }}>*</span></label>
+                                    <input type="tel" value={adminForm.phone} onChange={(e) => setAdminForm({ ...adminForm, phone: e.target.value })}
+                                        placeholder="07XXXXXXXX"
+                                        className="input-field" style={{ fontFamily: T.font }} />
+                                    <div style={{ fontSize: "0.75rem", color: T.textDim, marginTop: s(1) }}>They will receive login credentials via SMS</div>
+                                </div>
+                                <button onClick={handleCreateAdmin} disabled={adminSubmitting || !adminForm.name || !adminForm.username || !adminForm.phone}
+                                    style={{ background: T.primary, color: "white", border: "none", padding: s(4), borderRadius: T.radius, fontWeight: 700, fontSize: "0.95rem", cursor: adminSubmitting ? "not-allowed" : "pointer", opacity: adminSubmitting || !adminForm.name || !adminForm.username || !adminForm.phone ? 0.6 : 1, alignSelf: "flex-start", minWidth: "180px" }}>
                                     {adminSubmitting ? "Creating…" : "Create Platform Admin"}
                                 </button>
                             </div>

@@ -17,7 +17,7 @@ interface AdminAuthContextValue {
   user: AdminUser | null;
   isLoggedIn: boolean;
   hydrating: boolean;
-  login: (token: string) => void;
+  login: (token: string, userData?: AdminUser) => void;
   logout: () => void;
 }
 
@@ -49,14 +49,18 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, []);
 
-  const login = useCallback((newToken: string) => {
+  const login = useCallback((newToken: string, userData?: AdminUser) => {
     localStorage.setItem(STORAGE_KEY, newToken);
     setToken(newToken);
-    apiGet<AdminUser>("/auth/me", newToken).then((res) => {
-      if (res.success && res.data) {
-        setUser(res.data);
-      }
-    });
+    if (userData) {
+      setUser(userData);
+    } else {
+      apiGet<AdminUser>("/auth/me", newToken).then((res) => {
+        if (res.success && res.data) {
+          setUser(res.data);
+        }
+      });
+    }
   }, []);
 
   // Hydrate profile on mount — only logout on explicit auth failure, not network errors
