@@ -21,6 +21,7 @@ export interface CustomerData {
   firstName: string;
   lastName?: string | null;
   phone: string;
+  knownName?: string | null;
   stallNumber?: string | null;
   locationDescription?: string | null;
   marketSection?: string | null;
@@ -61,6 +62,7 @@ export interface OrderData {
   marketSection?: string | null;
   locationDescription?: string | null;
   stallNumber?: string | null;
+  knownName?: string | null;
   orderedAt: string;
   completedAt?: string | null;
   cancelReason?: string | null;
@@ -106,6 +108,7 @@ export interface CustomerProfileData {
   firstName: string;
   lastName?: string | null;
   phone: string;
+  knownName?: string | null;
   stallNumber?: string | null;
   marketSection?: string | null;
   locationDescription?: string | null;

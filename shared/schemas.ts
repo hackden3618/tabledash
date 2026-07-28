@@ -21,8 +21,10 @@ const PhoneString = t.String({
 });
 
 export const CreateOrderSchema = t.Object({
-  customerName: t.String({ minLength: 2, error: "Customer name is required" }),
+  firstName: t.String({ minLength: 2, error: "First name is required" }),
+  lastName: t.Optional(t.String()),
   phone: PhoneString,
+  knownName: t.Optional(t.String()),
   stallNumber: t.Optional(t.String()),
   marketSection: t.Optional(t.String()),
   locationDescription: t.Optional(t.String()),
@@ -70,6 +72,7 @@ export const IdParamSchema = t.Object({
 
 export const CustomerRegisterSchema = t.Object({
   firstName: t.String({ minLength: 2, error: "First name is required" }),
+  lastName: t.Optional(t.String()),
   phone: PhoneString,
   pin: t.String({ minLength: 4, maxLength: 4, pattern: "^[0-9]{4}$", error: "PIN must be exactly 4 digits" }),
 });

@@ -28,13 +28,13 @@ export const updateStaffPhone = async (phone: string): Promise<string> => {
   return setting.value;
 };
 
-export const getHotelImageUrl = async (): Promise<string | null> => {
-  const hotel = await getDefaultHotel();
+export const getHotelImageUrl = async (hotelId?: string): Promise<string | null> => {
+  const hotel = hotelId ? await prisma.hotel.findUnique({ where: { id: hotelId } }) : await getDefaultHotel();
   return hotel?.imageUrl ?? null;
 };
 
-export const updateHotelImageUrl = async (imageUrl: string): Promise<string> => {
-  const hotel = await getDefaultHotel();
+export const updateHotelImageUrl = async (imageUrl: string, hotelId?: string): Promise<string> => {
+  const hotel = hotelId ? await prisma.hotel.findUnique({ where: { id: hotelId } }) : await getDefaultHotel();
   if (!hotel) throw new Error("No hotel configured");
   const updated = await prisma.hotel.update({
     where: { id: hotel.id },
@@ -48,8 +48,8 @@ export interface HotelStatusResult {
   autoCloseAt: string | null;
 }
 
-export const getHotelIsOpen = async (): Promise<HotelStatusResult> => {
-  const hotel = await getDefaultHotel();
+export const getHotelIsOpen = async (hotelId?: string): Promise<HotelStatusResult> => {
+  const hotel = hotelId ? await prisma.hotel.findUnique({ where: { id: hotelId } }) : await getDefaultHotel();
   if (!hotel) return { isOpen: true, autoCloseAt: null };
 
   if (hotel.isOpen && hotel.autoCloseAt) {
@@ -77,9 +77,10 @@ let pendingCloseTimeout: ReturnType<typeof setTimeout> | null = null;
 
 export const updateHotelIsOpen = async (
   isOpen: boolean,
-  autoCloseAt?: string | null
+  autoCloseAt?: string | null,
+  hotelId?: string
 ): Promise<HotelStatusResult> => {
-  const hotel = await getDefaultHotel();
+  const hotel = hotelId ? await prisma.hotel.findUnique({ where: { id: hotelId } }) : await getDefaultHotel();
   if (!hotel) throw new Error("No hotel configured");
 
   // Cancel any pending close timer if we're reopening or toggling again
@@ -99,15 +100,15 @@ export const updateHotelIsOpen = async (
   }
 
   // Closing — update DB immediately so a page-refresh shows closed, then broadcast countdown
-  const hotelId = hotel.id;
+  const hotelUuid = hotel.id;
   await prisma.hotel.update({
-    where: { id: hotelId },
+    where: { id: hotelUuid },
     data: { isOpen: false, autoCloseAt: null },
   });
 
   wsHub.broadcastMenuUpdate({
     type: "HOTEL_CLOSING",
-    payload: { closingIn: 5, isOpen: false, hotelId },
+    payload: { closingIn: 5, isOpen: false, hotelId: hotelUuid },
   });
 
   // After the countdown, broadcast final status update (DB is already closed)
@@ -116,7 +117,7 @@ export const updateHotelIsOpen = async (
     try {
       wsHub.broadcastMenuUpdate({
         type: "HOTEL_STATUS_UPDATED",
-        payload: { isOpen: false, autoCloseAt: null, hotelId },
+        payload: { isOpen: false, autoCloseAt: null, hotelId: hotelUuid },
       });
     } catch (err) {
       console.error("[Hotel Close Timer Error]:", err);
@@ -126,8 +127,8 @@ export const updateHotelIsOpen = async (
   return { isOpen: false, autoCloseAt: null };
 };
 
-export const getHotelName = async (): Promise<string> => {
-  const hotel = await getDefaultHotel();
+export const getHotelName = async (hotelId?: string): Promise<string> => {
+  const hotel = hotelId ? await prisma.hotel.findUnique({ where: { id: hotelId } }) : await getDefaultHotel();
   return hotel?.name ?? "TableDash Deliveries";
 };
 
@@ -144,7 +145,7 @@ export const getStaffUsers = async (hotelId?: string) => {
   });
 };
 
-export const addStaffUser = async (data: StaffUserPayload) => {
+export const addStaffUser = async (data: StaffUserPayload, hotelId?: string) => {
   const formattedPhone = formatPhone(data.phone);
 
   const existing = await prisma.staffUser.findUnique({
@@ -159,21 +160,25 @@ export const addStaffUser = async (data: StaffUserPayload) => {
       name: data.name,
       phone: formattedPhone,
       receiveSms: data.receiveSms,
+      hotelId: hotelId || null,
     },
   });
 };
 
-export const updateStaffUser = async (id: string, data: Partial<StaffUserPayload>) => {
+export const updateStaffUser = async (id: string, data: Partial<StaffUserPayload>, hotelId?: string) => {
+  const existing = await prisma.staffUser.findUnique({ where: { id } });
+  if (!existing) throw new Error("Staff member not found");
+  if (hotelId && existing.hotelId && existing.hotelId !== hotelId) {
+    throw new Error("Staff member does not belong to your hotel");
+  }
+
   const formatted = data.phone ? formatPhone(data.phone) : undefined;
 
   if (formatted) {
-    const existing = await prisma.staffUser.findFirst({
-      where: {
-        phone: formatted,
-        NOT: { id },
-      },
+    const dup = await prisma.staffUser.findFirst({
+      where: { phone: formatted, NOT: { id } },
     });
-    if (existing) {
+    if (dup) {
       throw new Error("Another staff member with this phone number already exists.");
     }
   }
@@ -184,7 +189,13 @@ export const updateStaffUser = async (id: string, data: Partial<StaffUserPayload
   });
 };
 
-export const deleteStaffUser = async (id: string) => {
+export const deleteStaffUser = async (id: string, hotelId?: string) => {
+  const existing = await prisma.staffUser.findUnique({ where: { id } });
+  if (!existing) throw new Error("Staff member not found");
+  if (hotelId && existing.hotelId && existing.hotelId !== hotelId) {
+    throw new Error("Staff member does not belong to your hotel");
+  }
+
   return await prisma.staffUser.delete({
     where: { id },
   });

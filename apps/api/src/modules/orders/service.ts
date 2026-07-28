@@ -19,8 +19,10 @@ export interface CreateOrderInputItem {
 }
 
 export interface CreateOrderInput {
-  customerName: string;
+  firstName: string;
+  lastName?: string;
   phone: string;
+  knownName?: string;
   stallNumber?: string;
   marketSection?: string;
   locationDescription?: string;
@@ -33,6 +35,11 @@ interface OrderItemDraft {
   quantity: number;
   unitPrice: number;
   subtotal: number;
+}
+
+function buildCustomerDisplay(firstName: string, lastName?: string | null, knownName?: string | null): string {
+  const name = lastName ? `${firstName} ${lastName}` : firstName;
+  return knownName ? `${name} (${knownName})` : name;
 }
 
 const PENDING_STATUSES: OrderStatus[] = [
@@ -85,7 +92,7 @@ export const placeOrder = async (input: CreateOrderInput) => {
           reason: "unavailable",
           productName: product.name,
           customerPhone: input.phone,
-          customerName: input.customerName,
+          customerName: buildCustomerDisplay(input.firstName, input.lastName, input.knownName),
           requestedQty: item.quantity,
         },
       });
@@ -98,7 +105,7 @@ export const placeOrder = async (input: CreateOrderInput) => {
           reason: "out_of_stock",
           productName: product.name,
           customerPhone: input.phone,
-          customerName: input.customerName,
+          customerName: buildCustomerDisplay(input.firstName, input.lastName, input.knownName),
           requestedQty: item.quantity,
           availableQty: product.stockQty,
         },
@@ -142,8 +149,10 @@ export const placeOrder = async (input: CreateOrderInput) => {
     if (!customer) {
       customer = await tx.customer.create({
         data: {
-          firstName: input.customerName,
+          firstName: input.firstName,
+          lastName: input.lastName,
           phone: formattedPhone,
+          knownName: input.knownName,
           stallNumber: input.stallNumber,
           marketSection: input.marketSection,
           locationDescription: input.locationDescription,
@@ -153,7 +162,9 @@ export const placeOrder = async (input: CreateOrderInput) => {
       customer = await tx.customer.update({
         where: { id: customer.id },
         data: {
-          firstName: input.customerName,
+          firstName: input.firstName,
+          lastName: input.lastName ?? customer.lastName,
+          knownName: input.knownName ?? customer.knownName,
           stallNumber: input.stallNumber ?? customer.stallNumber,
           marketSection: input.marketSection ?? customer.marketSection,
           locationDescription: input.locationDescription ?? customer.locationDescription,
@@ -196,6 +207,7 @@ export const placeOrder = async (input: CreateOrderInput) => {
           stallNumber: input.stallNumber,
           marketSection: input.marketSection,
           locationDescription: input.locationDescription,
+          knownName: input.knownName,
           hotelId: group.hotelId === "default" ? undefined : group.hotelId,
           orderItems: {
             create: group.orderItemData.map((item) => ({
@@ -220,7 +232,10 @@ export const placeOrder = async (input: CreateOrderInput) => {
           payload: JSON.stringify({
             orderId: order.id,
             orderNumber: order.orderNumber,
-            customerName: input.customerName,
+            customerName: buildCustomerDisplay(customer.firstName, customer.lastName, customer.knownName),
+            firstName: customer.firstName,
+            lastName: customer.lastName,
+            knownName: customer.knownName,
             customerPhone: formattedPhone,
             totalAmount: group.totalAmount,
             itemsSummary,
@@ -270,7 +285,8 @@ export const placeOrder = async (input: CreateOrderInput) => {
       const itemsSummary = formattedOrder.orderItems?.map((it: any) => `${it.quantity}x ${it.name}`).join(", ") || "";
       const stall = input.stallNumber || "N/A";
       const desc = input.locationDescription || "N/A";
-      const msg = `[${group.hotelName}] NEW ORDER #${formattedOrder.orderNumber} from ${input.customerName} (${input.phone}). Total: KSh ${formattedOrder.totalAmount}. Stall: ${stall} — ${desc}. Items: ${itemsSummary}`;
+      const displayName = buildCustomerDisplay(input.firstName, input.lastName, input.knownName);
+      const msg = `[${group.hotelName}] NEW ORDER #${formattedOrder.orderNumber} from ${displayName} (${input.phone}). Total: KSh ${formattedOrder.totalAmount}. Stall: ${stall} — ${desc}. Items: ${itemsSummary}`;
 
       Promise.all(
         staffPhones.map((phone) =>
@@ -299,11 +315,15 @@ export const placeOrder = async (input: CreateOrderInput) => {
 };
 
 /**
- * Retrieves all orders with optional status filter.
+ * Retrieves all orders for a given hotel with optional status filter.
  */
-export const getOrders = async (statusFilter?: OrderStatus) => {
+export const getOrders = async (statusFilter?: OrderStatus, hotelId?: string) => {
+  const where: any = {};
+  if (statusFilter) where.status = statusFilter;
+  if (hotelId) where.hotelId = hotelId;
+
   const orders = await prisma.order.findMany({
-    where: statusFilter ? { status: statusFilter } : undefined,
+    where,
     include: {
       customer: true,
       orderItems: true,
@@ -376,9 +396,7 @@ async function restoreStockFromCancellation(tx: any, orderItems: any[]) {
  * Enforces forward-only progression: an order can never be reverted to a previous status.
  * On CANCELLED, atomically restores stock quantities via restoreStockFromCancellation.
  */
-export const updateOrderStatus = async (id: string, newStatus: OrderStatus, cancelReason?: string) => {
-  const hotel = await getDefaultHotel();
-  const hotelName = hotel?.name ?? "TableDash Deliveries";
+export const updateOrderStatus = async (id: string, newStatus: OrderStatus, cancelReason?: string, hotelId?: string) => {
   const existing = await prisma.order.findUnique({
     where: { id },
     include: { orderItems: true },
@@ -386,6 +404,12 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus, canc
   if (!existing) {
     throw new Error("Order not found");
   }
+  if (hotelId && existing.hotelId && existing.hotelId !== hotelId) {
+    throw new Error("Order does not belong to your hotel");
+  }
+
+  const hotel = hotelId ? await prisma.hotel.findUnique({ where: { id: hotelId } }) : await getDefaultHotel();
+  const hotelName = hotel?.name ?? "TableDash Deliveries";
 
   const currentRank = STATUS_RANK[existing.status] ?? 0;
   const newRank     = STATUS_RANK[newStatus]       ?? 0;
@@ -432,7 +456,10 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus, canc
         payload: JSON.stringify({
           orderId: updatedOrder.id,
           orderNumber: updatedOrder.orderNumber,
-          customerName: updatedOrder.customer.firstName,
+          customerName: buildCustomerDisplay(updatedOrder.customer.firstName, updatedOrder.customer.lastName, updatedOrder.customer.knownName),
+          firstName: updatedOrder.customer.firstName,
+          lastName: updatedOrder.customer.lastName,
+          knownName: updatedOrder.knownName,
           customerPhone: updatedOrder.customer.phone,
           stallNumber: updatedOrder.stallNumber,
           totalAmount: Number(updatedOrder.totalAmount),
@@ -492,7 +519,8 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus, canc
 
   if (newStatus === "OUT_FOR_DELIVERY" && formattedOrder.customer?.phone) {
     const stallInfo = formattedOrder.stallNumber ? ` at Stall ${formattedOrder.stallNumber}` : " at your stall";
-    const customerSmsMessage = `Hello ${formattedOrder.customer.firstName}, your order #${formattedOrder.orderNumber} from ${hotelName} is OUT FOR DELIVERY! Be ready to receive your delivery${stallInfo}. Our rider is on the way. Total: KSh ${formattedOrder.totalAmount}.`;
+    const displayName = buildCustomerDisplay(formattedOrder.customer.firstName, formattedOrder.customer.lastName, formattedOrder.knownName);
+    const customerSmsMessage = `Hello ${displayName}, your order #${formattedOrder.orderNumber} from ${hotelName} is OUT FOR DELIVERY! Be ready to receive your delivery${stallInfo}. Our rider is on the way. Total: KSh ${formattedOrder.totalAmount}.`;
     (async () => {
       try {
         await smsService.sendSms(formattedOrder.customer.phone, customerSmsMessage);
@@ -513,9 +541,10 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus, canc
 
     // Customer SMS: apology if staff-cancelled, confirmation if self-cancelled
     if (formattedOrder.customer?.phone) {
+      const displayName = buildCustomerDisplay(formattedOrder.customer.firstName, formattedOrder.customer.lastName, formattedOrder.knownName);
       const msg = isCustomerCancel
-        ? `Hello ${formattedOrder.customer.firstName}, order #${formattedOrder.orderNumber} from ${hotelName} has been CANCELLED as you requested. Track your orders: https://tabledash.up.railway.app`
-        : `Hello ${formattedOrder.customer.firstName}, we are sorry to inform you that order #${formattedOrder.orderNumber} from ${hotelName} has been cancelled. Reason: ${cancelReason || "Staff unavailable"}. We appreciate your understanding. Track your orders: https://tabledash.up.railway.app`;
+        ? `Hello ${displayName}, order #${formattedOrder.orderNumber} from ${hotelName} has been CANCELLED as you requested. Track your orders: https://tabledash.up.railway.app`
+        : `Hello ${displayName}, we are sorry to inform you that order #${formattedOrder.orderNumber} from ${hotelName} has been cancelled. Reason: ${cancelReason || "Staff unavailable"}. We appreciate your understanding. Track your orders: https://tabledash.up.railway.app`;
       (async () => {
         try {
           await smsService.sendSms(formattedOrder.customer.phone, msg);
@@ -581,13 +610,16 @@ export const cancelOrderByCustomer = async (id: string, customerId: string, reas
  * When marked UNPAID, sets amountPaid = 0.
  * Broadcasts ORDER_PAYMENT_UPDATED via WS and writes outbox event.
  */
-export const updateOrderPayment = async (id: string, data: { paymentStatus?: PaymentStatus; amountPaid?: number }) => {
+export const updateOrderPayment = async (id: string, data: { paymentStatus?: PaymentStatus; amountPaid?: number }, hotelId?: string) => {
   const existing = await prisma.order.findUnique({
     where: { id },
     include: { customer: true, orderItems: true },
   });
   if (!existing) {
     throw new Error("Order not found");
+  }
+  if (hotelId && existing.hotelId && existing.hotelId !== hotelId) {
+    throw new Error("Order does not belong to your hotel");
   }
 
   const total = Number(existing.totalAmount);
@@ -628,7 +660,9 @@ export const updateOrderPayment = async (id: string, data: { paymentStatus?: Pay
           payload: JSON.stringify({
             orderId: updated.id,
             orderNumber: updated.orderNumber,
-            customerName: updated.customer.firstName,
+            customerName: buildCustomerDisplay(updated.customer.firstName, updated.customer.lastName, updated.customer.knownName),
+            firstName: updated.customer.firstName,
+            lastName: updated.customer.lastName,
             customerPhone: updated.customer.phone,
             paymentStatus,
             amountPaid,
@@ -650,17 +684,20 @@ export const updateOrderPayment = async (id: string, data: { paymentStatus?: Pay
 /**
  * Retrieves orders for a specific date with payment info surfaced.
  */
-export const getDailyOrders = async (dateStr: string) => {
+export const getDailyOrders = async (dateStr: string, hotelId?: string) => {
   const startDate = new Date(dateStr + "T00:00:00.000Z");
   const endDate = new Date(dateStr + "T23:59:59.999Z");
 
-  const orders = await prisma.order.findMany({
-    where: {
-      orderedAt: {
-        gte: startDate,
-        lte: endDate,
-      },
+  const where: any = {
+    orderedAt: {
+      gte: startDate,
+      lte: endDate,
     },
+  };
+  if (hotelId) where.hotelId = hotelId;
+
+  const orders = await prisma.order.findMany({
+    where,
     include: {
       customer: true,
       orderItems: true,
@@ -675,8 +712,10 @@ export const getDailyOrders = async (dateStr: string) => {
  * Aggregates analytical metrics for the admin dashboard.
  * Revenue excludes cancelled orders; pending uses an explicit allow-list.
  */
-export const getDashboardMetrics = async (): Promise<DashboardMetrics> => {
+export const getDashboardMetrics = async (hotelId?: string): Promise<DashboardMetrics> => {
+  const where = hotelId ? { hotelId } : {};
   const allOrders = await prisma.order.findMany({
+    where,
     include: {
       orderItems: true,
     },

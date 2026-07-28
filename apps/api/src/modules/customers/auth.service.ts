@@ -20,6 +20,7 @@ const CUSTOMER_TOKEN_EXPIRY_SEC = 7 * 24 * 60 * 60; // 7 days
 export const registerCustomer = async (
   input: {
     firstName: string;
+    lastName?: string;
     phone: string;
     pin: string;
   },
@@ -39,11 +40,11 @@ export const registerCustomer = async (
     // Upgrade the existing guest record to a full account
     customer = await prisma.customer.update({
       where: { id: existing.id },
-      data: { firstName: input.firstName, pinHash },
+      data: { firstName: input.firstName, lastName: input.lastName, pinHash },
     });
   } else {
     customer = await prisma.customer.create({
-      data: { firstName: input.firstName, phone: formattedPhone, pinHash },
+      data: { firstName: input.firstName, lastName: input.lastName, phone: formattedPhone, pinHash },
     });
   }
 
@@ -58,7 +59,9 @@ export const registerCustomer = async (
     customer: {
       id: customer.id,
       firstName: customer.firstName,
+      lastName: customer.lastName,
       phone: customer.phone,
+      knownName: customer.knownName,
       stallNumber: customer.stallNumber,
       marketSection: customer.marketSection,
       locationDescription: customer.locationDescription,
@@ -97,7 +100,9 @@ export const loginCustomer = async (
     customer: {
       id: customer.id,
       firstName: customer.firstName,
+      lastName: customer.lastName,
       phone: customer.phone,
+      knownName: customer.knownName,
       stallNumber: customer.stallNumber,
       marketSection: customer.marketSection,
       locationDescription: customer.locationDescription,
@@ -130,6 +135,7 @@ export const getCustomerProfile = async (customerId: string) => {
     firstName: customer.firstName,
     lastName: customer.lastName,
     phone: customer.phone,
+    knownName: customer.knownName,
     stallNumber: customer.stallNumber,
     marketSection: customer.marketSection,
     locationDescription: customer.locationDescription,

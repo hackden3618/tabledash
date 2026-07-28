@@ -18,7 +18,7 @@ interface CustomerAuthContextValue {
   isLoggedIn: boolean;
   isLoading: boolean;
   login: (phone: string, pin: string) => Promise<{ success: boolean; error?: string }>;
-  register: (firstName: string, phone: string, pin: string) => Promise<{ success: boolean; error?: string }>;
+  register: (firstName: string, phone: string, pin: string, lastName?: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   refreshProfile: () => Promise<void>;
 }
@@ -73,10 +73,10 @@ export const CustomerAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
     return { success: false, error: res.error ?? "Login failed" };
   }, []);
 
-  const register = useCallback(async (firstName: string, phone: string, pin: string) => {
+  const register = useCallback(async (firstName: string, phone: string, pin: string, lastName?: string) => {
     const res = await apiPost<{ token: string; customer: CustomerProfileData }>(
       "/customers/register",
-      { firstName, phone, pin }
+      { firstName, lastName, phone, pin }
     );
     if (res.success && res.data) {
       const { token: newToken, customer: profile } = res.data;

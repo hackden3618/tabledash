@@ -5,6 +5,9 @@ interface OrderCreatedPayload {
   orderId: string;
   orderNumber: number;
   customerName: string;
+  firstName?: string;
+  lastName?: string;
+  knownName?: string;
   customerPhone: string;
   totalAmount: number;
   itemsSummary: string;
@@ -24,7 +27,8 @@ export async function handleOrderCreated(payload: Record<string, unknown>): Prom
 
   const stall = data.stallNumber || "N/A";
   const desc = data.locationDescription || "N/A";
-  const message = `[${hotelName}] NEW ORDER #${data.orderNumber} from ${data.customerName} (${data.customerPhone}). Total: KSh ${data.totalAmount}. Stall: ${stall} — ${desc}. Items: ${data.itemsSummary}`;
+  const displayName = data.customerName;
+  const message = `[${hotelName}] NEW ORDER #${data.orderNumber} from ${displayName} (${data.customerPhone}). Total: KSh ${data.totalAmount}. Stall: ${stall} — ${desc}. Items: ${data.itemsSummary}`;
 
   const results = await Promise.allSettled(
     staffPhones.map((phone) => smsService.sendSms(phone, message))

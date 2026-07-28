@@ -37,11 +37,18 @@ export const settingsRoute = new Elysia({
       secret: env.jwtSecret,
     })
   )
-  .get("/", async () => {
+  .get("/", async ({ headers, jwt }) => {
+    let adminHotelId: string | undefined;
+    const authHeader = headers["authorization"];
+    if (authHeader?.startsWith("Bearer ")) {
+      const token = authHeader.split(" ")[1] ?? "";
+      try { const admin = await verifyAdminToken(token, (t) => jwt.verify(t)); adminHotelId = admin.hotelId ?? undefined; } catch {}
+    }
+
     const staffPhone = await getStaffPhone();
-    const status = await getHotelIsOpen();
-    const hotelName = await getHotelName();
-    const hotelImageUrl = await getHotelImageUrl();
+    const status = await getHotelIsOpen(adminHotelId);
+    const hotelName = await getHotelName(adminHotelId);
+    const hotelImageUrl = await getHotelImageUrl(adminHotelId);
     return {
       success: true,
       data: {
@@ -62,12 +69,13 @@ export const settingsRoute = new Elysia({
         return { success: false, error: "Missing or invalid authorization header" };
       }
       const token = authHeader.split(" ")[1] ?? "";
-      try { await verifyAdminToken(token, (t) => jwt.verify(t)); }
+      let admin;
+      try { admin = await verifyAdminToken(token, (t) => jwt.verify(t)); }
       catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
 
       try {
         let staffPhone = await getStaffPhone();
-        let status = await getHotelIsOpen();
+        let status = await getHotelIsOpen(admin.hotelId ?? undefined);
         let hotelImageUrl: string | null = null;
 
         if (body.staffPhone !== undefined) {
@@ -75,11 +83,11 @@ export const settingsRoute = new Elysia({
         }
 
         if (body.hotelIsOpen !== undefined) {
-          status = await updateHotelIsOpen(body.hotelIsOpen, body.autoCloseAt);
+          status = await updateHotelIsOpen(body.hotelIsOpen, body.autoCloseAt, admin.hotelId ?? undefined);
         }
 
         if (body.hotelImageUrl !== undefined) {
-          hotelImageUrl = await updateHotelImageUrl(body.hotelImageUrl);
+          hotelImageUrl = await updateHotelImageUrl(body.hotelImageUrl, admin.hotelId ?? undefined);
         }
 
         return {
@@ -131,11 +139,12 @@ export const settingsRoute = new Elysia({
         return { success: false, error: "Missing or invalid authorization header" };
       }
       const token = authHeader.split(" ")[1] ?? "";
-      try { await verifyAdminToken(token, (t) => jwt.verify(t)); }
+      let admin;
+      try { admin = await verifyAdminToken(token, (t) => jwt.verify(t)); }
       catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
 
       try {
-        const created = await addStaffUser(body);
+        const created = await addStaffUser(body, admin.hotelId ?? undefined);
         return { success: true, data: created };
       } catch (err: any) {
         set.status = 400;
@@ -159,11 +168,12 @@ export const settingsRoute = new Elysia({
         return { success: false, error: "Missing or invalid authorization header" };
       }
       const token = authHeader.split(" ")[1] ?? "";
-      try { await verifyAdminToken(token, (t) => jwt.verify(t)); }
+      let admin;
+      try { admin = await verifyAdminToken(token, (t) => jwt.verify(t)); }
       catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
 
       try {
-        const updated = await updateStaffUser(params.id, body);
+        const updated = await updateStaffUser(params.id, body, admin.hotelId ?? undefined);
         return { success: true, data: updated };
       } catch (err: any) {
         set.status = 400;
@@ -185,11 +195,12 @@ export const settingsRoute = new Elysia({
       return { success: false, error: "Missing or invalid authorization header" };
     }
     const token = authHeader.split(" ")[1] ?? "";
-    try { await verifyAdminToken(token, (t) => jwt.verify(t)); }
+    let admin;
+    try { admin = await verifyAdminToken(token, (t) => jwt.verify(t)); }
     catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
 
     try {
-      await deleteStaffUser(params.id);
+      await deleteStaffUser(params.id, admin.hotelId ?? undefined);
       return { success: true };
     } catch (err: any) {
       set.status = 400;

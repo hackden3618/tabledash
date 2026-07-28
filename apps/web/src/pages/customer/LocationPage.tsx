@@ -34,7 +34,9 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
     const [marketSection, setMarketSection] = useState(isLoggedIn && customer?.marketSection ? customer.marketSection : "");
     const [locationDescription, setLocationDescription] = useState(isLoggedIn && customer?.locationDescription ? customer.locationDescription : "");
     const [stallNumber, setStallNumber] = useState(isLoggedIn && customer?.stallNumber ? customer.stallNumber : "");
-    const [customerName, setCustomerName] = useState(isLoggedIn && customer?.firstName ? customer.firstName : "");
+    const [firstName, setFirstName] = useState(isLoggedIn && customer?.firstName ? customer.firstName : "");
+    const [lastName, setLastName] = useState(isLoggedIn && customer?.lastName ? customer.lastName : "");
+    const [knownName, setKnownName] = useState("");
     const [phone, setPhone] = useState(isLoggedIn && customer?.phone ? customer.phone : "");
     const [showMapModal, setShowMapModal] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -59,7 +61,9 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
     // Re-sync if the customer profile loads after this component mounts
     useEffect(() => {
         if (isLoggedIn && customer) {
-            if (!customerName && customer.firstName) setCustomerName(customer.firstName);
+            if (!firstName && customer.firstName) setFirstName(customer.firstName);
+            if (!lastName && customer.lastName) setLastName(customer.lastName);
+            if (!knownName && customer.knownName) setKnownName(customer.knownName);
             if (!phone && customer.phone) setPhone(customer.phone);
             if (!marketSection && customer.marketSection) setMarketSection(customer.marketSection);
             if (!locationDescription && customer.locationDescription) setLocationDescription(customer.locationDescription);
@@ -88,13 +92,13 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
 
     // Persist guest delivery details to localStorage so they survive app restarts
     useEffect(() => {
-        if (!isLoggedIn && (customerName || phone || stallNumber || locationDescription || marketSection)) {
+        if (!isLoggedIn && (firstName || phone || stallNumber || locationDescription || marketSection)) {
             localStorage.setItem(
                 "tableDash_guest_delivery",
-                JSON.stringify({ customerName, phone, stallNumber, marketSection, locationDescription })
+                JSON.stringify({ firstName, lastName, knownName, phone, stallNumber, marketSection, locationDescription })
             );
         }
-    }, [customerName, phone, stallNumber, marketSection, locationDescription, isLoggedIn]);
+    }, [firstName, lastName, knownName, phone, stallNumber, marketSection, locationDescription, isLoggedIn]);
 
     // Restore guest delivery details from localStorage on mount
     useEffect(() => {
@@ -103,7 +107,9 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
                 const saved = localStorage.getItem("tableDash_guest_delivery");
                 if (saved) {
                     const d = JSON.parse(saved);
-                    if (d.customerName) setCustomerName(d.customerName);
+                    if (d.firstName) setFirstName(d.firstName);
+                    if (d.lastName) setLastName(d.lastName);
+                    if (d.knownName) setKnownName(d.knownName);
                     if (d.phone) setPhone(d.phone);
                     if (d.stallNumber) setStallNumber(d.stallNumber);
                     if (d.marketSection) setMarketSection(d.marketSection);
@@ -117,12 +123,12 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
     }, []);
 
     const handlePlaceOrder = () => {
-        if (!customerName.trim()) {
+        if (!firstName.trim()) {
             setModalConfig({
                 isOpen: true,
                 type: "warning",
                 title: "Missing Information",
-                message: "Please enter your name before placing the order.",
+                message: "Please enter your first name before placing the order.",
                 onConfirm: () => setModalConfig((prev) => ({ ...prev, isOpen: false })),
             });
             return;
@@ -158,8 +164,10 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
         setIsSubmitting(true);
 
         const payload = {
-            customerName: customerName.trim(),
+            firstName: firstName.trim(),
+            lastName: lastName.trim() || undefined,
             phone: phone.trim(),
+            knownName: knownName.trim() || undefined,
             stallNumber: stallNumber.trim() || undefined,
             marketSection: marketSection,
             locationDescription: locationDescription,
@@ -212,7 +220,7 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
                 {/* Logged-in pre-fill banner */}
                 {isLoggedIn && customer && (
                     <div style={{ background: "#DCFCE7", border: "1px solid #BBF7D0", borderRadius: "10px", padding: "10px 14px", marginBottom: "16px", fontSize: "0.85rem", color: "#15803D", fontWeight: 600, display: "flex", alignItems: "center", gap: "8px" }}>
-                        ✓ Delivery details pre-filled from your saved account — {customer.firstName}
+                        ✓ Delivery details pre-filled from your saved account — {customer.firstName}{customer.lastName ? ` ${customer.lastName}` : ""}
                     </div>
                 )}
 
@@ -261,20 +269,50 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
 
                 {/* Option 2: Form Inputs */}
                 <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                    <div style={{ display: "flex", gap: "10px" }}>
+                        <div style={{ flex: 1 }}>
+                            <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, color: "#374151", marginBottom: "6px" }}>
+                                First Name <span style={{ color: "#DC2626" }}>*</span>
+                            </label>
+                            <input
+                                type="text"
+                                placeholder="e.g. Mary"
+                                value={firstName}
+                                onChange={(e) => setFirstName(e.target.value)}
+                                className={`input-field ${!firstName.trim() && isSubmitting ? "input-error input-shake" : ""}`}
+                            />
+                            {!firstName.trim() && isSubmitting && (
+                                <div className="input-error-msg">⚠ First name is required</div>
+                            )}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                            <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, color: "#374151", marginBottom: "6px" }}>
+                                Last Name
+                            </label>
+                            <input
+                                type="text"
+                                placeholder="e.g. Wanjiku"
+                                value={lastName}
+                                onChange={(e) => setLastName(e.target.value)}
+                                className="input-field"
+                            />
+                        </div>
+                    </div>
+
                     <div>
                         <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, color: "#374151", marginBottom: "6px" }}>
-                            Your Name
+                            Known As (optional)
                         </label>
                         <input
                             type="text"
-                            placeholder="e.g. Mary Wanjiku"
-                            value={customerName}
-                            onChange={(e) => setCustomerName(e.target.value)}
-                            className={`input-field ${!customerName.trim() && isSubmitting ? "input-error input-shake" : ""}`}
+                            placeholder="e.g. Wa Alex, Mama Jane"
+                            value={knownName}
+                            onChange={(e) => setKnownName(e.target.value)}
+                            className="input-field"
                         />
-                        {!customerName.trim() && isSubmitting && (
-                            <div className="input-error-msg">⚠ Please enter your name</div>
-                        )}
+                        <div style={{ fontSize: "0.75rem", color: "#9CA3AF", marginTop: "4px" }}>
+                            How the hotel staff knows you — this will appear on your order
+                        </div>
                     </div>
 
                     <div>
@@ -343,7 +381,7 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
 
                         <button
                             onClick={handlePlaceOrder}
-                            disabled={isSubmitting || !customerName.trim() || !isValidPhone(phone.trim()) || (!marketSection && !locationDescription.trim() && !stallNumber.trim()) || cart.some((item) => item.hotelId && closedHotelIds.includes(item.hotelId))}
+                            disabled={isSubmitting || !firstName.trim() || !isValidPhone(phone.trim()) || (!marketSection && !locationDescription.trim() && !stallNumber.trim()) || cart.some((item) => item.hotelId && closedHotelIds.includes(item.hotelId))}
                             className="btn btn-primary"
                         >
                             {isSubmitting ? "Placing Order..." : "Place Order"}

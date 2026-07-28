@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { apiGet, apiPost, apiDelete } from "../../lib/api";
+import { apiGet, apiPost, apiPatch, apiDelete } from "../../lib/api";
 import { useNotifications } from "../../context/NotificationsContext";
 import { usePlatformAdminAuth } from "../../context/PlatformAdminAuthContext";
 import { Modal } from "../../components/Modal";
@@ -139,7 +139,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
 
     // ── Toggle Hotel ──
     const handleToggleHotel = async (id: string) => {
-        const res = await apiPost<Hotel>(`/platform/hotels/${id}/toggle`, {}, token);
+        const res = await apiPatch<Hotel>(`/platform/hotels/${id}/toggle`, {}, token);
         if (res.success && res.data) {
             pushNotification("info", "Hotel updated", `${res.data.name} is now ${res.data.isOpen ? "open" : "closed"}`, { scope: "platform" });
             await fetch();

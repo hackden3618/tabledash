@@ -46,10 +46,10 @@ export const getAllMenuItems = async (hotelId?: string) => {
  * Automatically marks item unavailable if initial stockQty is <= 0.
  * Sets lastRestockedAt to track the initial stock entry.
  */
-export const createMenuItem = async (input: CreateProductInput) => {
+export const createMenuItem = async (input: CreateProductInput, hotelIdFromJwt?: string) => {
   const stock = input.stockQty ?? 0;
   const isAvailable = input.available !== undefined ? input.available : stock > 0;
-  const hotelId = input.hotelId || (await getDefaultHotel())?.id;
+  const hotelId = hotelIdFromJwt || input.hotelId || (await getDefaultHotel())?.id;
 
   const product = await prisma.product.create({
     data: {
@@ -75,7 +75,13 @@ export const createMenuItem = async (input: CreateProductInput) => {
  * Toggles product availability and broadcasts update via WebSockets to all connected clients.
  * DOES NOT touch freshness timestamps — toggling availability is not a stock event.
  */
-export const updateProductAvailability = async (id: string, available: boolean) => {
+export const updateProductAvailability = async (id: string, available: boolean, hotelId?: string) => {
+  const existing = await prisma.product.findUnique({ where: { id } });
+  if (!existing) throw new Error("Product not found");
+  if (hotelId && existing.hotelId && existing.hotelId !== hotelId) {
+    throw new Error("Product does not belong to your hotel");
+  }
+
   const product = await prisma.product.update({
     where: { id },
     data: { available },
@@ -101,8 +107,12 @@ export const updateProductAvailability = async (id: string, available: boolean) 
  *   If stockQty > 0, automatically sets available = true, clears outOfStockSince, records lastRestockedAt.
  * WHY: Broadcasts immediately so all customer screens reflect the new count in real time.
  */
-export const updateProductStock = async (id: string, stockQty: number) => {
+export const updateProductStock = async (id: string, stockQty: number, hotelId?: string) => {
   const existing = await prisma.product.findUnique({ where: { id } });
+  if (!existing) throw new Error("Product not found");
+  if (hotelId && existing.hotelId && existing.hotelId !== hotelId) {
+    throw new Error("Product does not belong to your hotel");
+  }
   const wasOutOfStock = existing ? existing.stockQty <= 0 : false;
   const isInStock = stockQty > 0;
 
@@ -140,7 +150,13 @@ export const updateProductStock = async (id: string, stockQty: number) => {
  * Soft-deletes a menu item to preserve foreign key order history.
  * Marks deleted=true and available=false, and broadcasts update to clients.
  */
-export const deleteMenuItem = async (id: string) => {
+export const deleteMenuItem = async (id: string, hotelId?: string) => {
+  const existing = await prisma.product.findUnique({ where: { id } });
+  if (!existing) throw new Error("Product not found");
+  if (hotelId && existing.hotelId && existing.hotelId !== hotelId) {
+    throw new Error("Product does not belong to your hotel");
+  }
+
   const product = await prisma.product.update({
     where: { id },
     data: {

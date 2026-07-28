@@ -58,11 +58,12 @@ export const menuRoute = new Elysia({
         return { success: false, error: "Missing or invalid authorization header" };
       }
       const token = authHeader.split(" ")[1] ?? "";
-      try { await verifyAdminToken(token, (t) => jwt.verify(t)); }
+      let admin;
+      try { admin = await verifyAdminToken(token, (t) => jwt.verify(t)); }
       catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
 
       try {
-        const product = await createMenuItem(body);
+        const product = await createMenuItem(body, admin.hotelId ?? undefined);
         set.status = 201;
         return { success: true, data: product };
       } catch (err: any) {
@@ -81,11 +82,12 @@ export const menuRoute = new Elysia({
         return { success: false, error: "Missing or invalid authorization header" };
       }
       const token = authHeader.split(" ")[1] ?? "";
-      try { await verifyAdminToken(token, (t) => jwt.verify(t)); }
+      let admin;
+      try { admin = await verifyAdminToken(token, (t) => jwt.verify(t)); }
       catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
 
       try {
-        const updated = await updateProductAvailability(params.id, body.available);
+        const updated = await updateProductAvailability(params.id, body.available, admin.hotelId ?? undefined);
         return { success: true, data: updated };
       } catch (err: any) {
         set.status = 400;
@@ -103,11 +105,12 @@ export const menuRoute = new Elysia({
         return { success: false, error: "Missing or invalid authorization header" };
       }
       const token = authHeader.split(" ")[1] ?? "";
-      try { await verifyAdminToken(token, (t) => jwt.verify(t)); }
+      let admin;
+      try { admin = await verifyAdminToken(token, (t) => jwt.verify(t)); }
       catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
 
       try {
-        const updated = await updateProductStock(params.id, body.stockQty);
+        const updated = await updateProductStock(params.id, body.stockQty, admin.hotelId ?? undefined);
         return { success: true, data: updated };
       } catch (err: any) {
         set.status = 400;
@@ -125,11 +128,12 @@ export const menuRoute = new Elysia({
         return { success: false, error: "Missing or invalid authorization header" };
       }
       const token = authHeader.split(" ")[1] ?? "";
-      try { await verifyAdminToken(token, (t) => jwt.verify(t)); }
+      let admin;
+      try { admin = await verifyAdminToken(token, (t) => jwt.verify(t)); }
       catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
 
       try {
-        await deleteMenuItem(params.id);
+        await deleteMenuItem(params.id, admin.hotelId ?? undefined);
         return { success: true, message: "Product deleted successfully" };
       } catch (err: any) {
         set.status = 400;

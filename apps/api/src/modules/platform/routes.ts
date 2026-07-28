@@ -171,6 +171,7 @@ export const platformRoute = new Elysia({
                 adminName: body.adminName,
                 adminUsername: body.adminUsername,
                 adminPhone: formattedAdminPhone,
+                tempPassword,
                 createdBy: admin.name,
               }),
               hotelId: hotel.id,
@@ -200,7 +201,7 @@ export const platformRoute = new Elysia({
         slug: t.String({ minLength: 1, pattern: "^[a-z0-9-]+$" }),
         adminUsername: t.String({ minLength: 3 }),
         adminName: t.String({ minLength: 1 }),
-        adminPhone: t.String({ minLength: 12, maxLength: 12, pattern: PHONE_PATTERN }),
+        adminPhone: t.String({ minLength: 10, maxLength: 13 }),
         isOpen: t.Optional(t.Boolean()),
         autoCloseAt: t.Optional(t.String()),
       }),
@@ -301,7 +302,7 @@ export const platformRoute = new Elysia({
       body: t.Object({
         username: t.String({ minLength: 3 }),
         name: t.String({ minLength: 1 }),
-        phone: t.Optional(t.String({ minLength: 12, maxLength: 12, pattern: PHONE_PATTERN })),
+        phone: t.Optional(t.String({ minLength: 10, maxLength: 13 })),
       }),
     }
   )

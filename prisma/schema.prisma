@@ -117,6 +117,7 @@ model Customer {
     stallNumber         String?  @map("stall_number")
     locationDescription String?  @map("location_description")
     marketSection       String?  @map("market_section")
+    knownName           String?  @map("known_name")
     createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
     orders Order[]
@@ -155,6 +156,7 @@ model Order {
     marketSection       String?       @map("market_section")
     locationDescription String?       @map("location_description")
     stallNumber         String?       @map("stall_number")
+    knownName           String?       @map("known_name")
     hotelId             String?       @map("hotel_id") @db.Uuid
     orderedAt           DateTime      @default(now()) @map("ordered_at") @db.Timestamptz()
     completedAt         DateTime?     @map("completed_at") @db.Timestamptz()
