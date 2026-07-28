@@ -181,12 +181,12 @@ export const requestPasswordResetOtp = async (phone: string): Promise<boolean> =
 
   otpStore.set(formattedPhone, { code: otpCode, expiresAt });
 
-  const message = `Your TableDash password reset code is: ${otpCode}. It expires in 10 minutes. - TableDash Deliveries`;
+  const message = `Your Ladha password reset code is: ${otpCode}. It expires in 10 minutes. - Ladha Deliveries`;
   const sent = await smsService.sendSms(formattedPhone, message);
 
   await prisma.eventOutbox.create({
     data: {
-      eventName: "hotel_admin_created", // General audit trail
+      eventName: "hotel_status_updated",
       payload: JSON.stringify({
         type: "PASSWORD_RESET_OTP",
         phone: formattedPhone,

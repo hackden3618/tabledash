@@ -6,6 +6,7 @@
  */
 
 import { cors } from "@elysiajs/cors";
+import { jwt } from "@elysiajs/jwt";
 import { openapi } from "@elysia/openapi";
 import { Elysia, t } from "elysia";
 import { join } from "node:path";
@@ -65,15 +66,29 @@ export const app = new Elysia()
     query: t.Object({
       role: t.Optional(t.String({ default: "customer" })),
       orderId: t.Optional(t.String()),
+      token: t.Optional(t.String()),
     }),
-    open(ws) {
+    async open(ws) {
       const role = (ws.data.query.role === "admin" ? "admin" : "customer") as "admin" | "customer";
       const orderId = ws.data.query.orderId;
 
+      let hotelId: string | undefined;
+      if (role === "admin" && ws.data.query.token) {
+        try {
+          const payload = await ws.data.jwt.verify(ws.data.query.token);
+          if (payload && typeof payload === "object" && (payload as any).hotelId) {
+            hotelId = (payload as any).hotelId;
+          }
+        } catch {
+          console.warn(`[WS] Admin ${ws.id} connected with invalid token — no hotel scoping`);
+        }
+      }
+
       wsHub.registerClient({
         id: ws.id,
-        role: role,
-        orderId: orderId,
+        role,
+        hotelId,
+        orderId,
         send: (data: string) => ws.send(data),
       });
     },

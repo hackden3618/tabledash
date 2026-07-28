@@ -42,13 +42,14 @@ export const customersRoute = new Elysia({
       return { success: false, error: "Missing or invalid authorization header" };
     }
     const token = authHeader.split(" ")[1] ?? "";
+    let admin;
     try {
-      await verifyAdminToken(token, (t) => jwt.verify(t));
+      admin = await verifyAdminToken(token, (t) => jwt.verify(t));
     } catch {
       set.status = 401;
       return { success: false, error: "Invalid or expired session token" };
     }
-    const customers = await getAllCustomers();
+    const customers = await getAllCustomers(admin.hotelId ?? undefined);
     return { success: true, data: customers };
   })
 
@@ -62,19 +63,21 @@ export const customersRoute = new Elysia({
         return { success: false, error: "Missing or invalid authorization header" };
       }
       const token = authHeader.split(" ")[1] ?? "";
-      try {
-        await verifyAdminToken(token, (t) => jwt.verify(t));
-      } catch {
-        set.status = 401;
-        return { success: false, error: "Invalid or expired session token" };
-      }
-      try {
-        const history = await getCustomerHistory(params.id);
-        return { success: true, data: history };
-      } catch (err: any) {
-        set.status = 404;
-        return { success: false, error: err.message };
-      }
+    let admin;
+
+    try {
+      admin = await verifyAdminToken(token, (t) => jwt.verify(t));
+    } catch {
+      set.status = 401;
+      return { success: false, error: "Invalid or expired session token" };
+    }
+    try {
+      const history = await getCustomerHistory(params.id, admin.hotelId ?? undefined);
+      return { success: true, data: history };
+    } catch (err: any) {
+      set.status = 404;
+      return { success: false, error: err.message };
+    }
     },
     { params: IdParamSchema }
   )
