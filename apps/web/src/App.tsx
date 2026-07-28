@@ -14,7 +14,6 @@ import { PlatformAdminAuthProvider, usePlatformAdminAuth } from "./context/Platf
 import { NotificationsProvider, useNotifications } from "./context/NotificationsContext";
 import { NotificationToastContainer } from "./components/NotificationToast";
 
-// Customer Views
 import { BottomNav, type CustomerTab } from "./components/ui/BottomNav";
 import { CartPage } from "./pages/customer/CartPage";
 import { ConfirmationPage } from "./pages/customer/ConfirmationPage";
@@ -23,6 +22,7 @@ import { LocationPage } from "./pages/customer/LocationPage";
 import { MenuListPage } from "./pages/customer/MenuListPage";
 import { MyOrdersPage } from "./pages/customer/MyOrdersPage";
 import { OrderTrackingPage } from "./pages/customer/OrderTrackingPage";
+import { SearchPage } from "./pages/customer/SearchPage";
 import { TrackingListPage } from "./pages/customer/TrackingListPage";
 import { CustomerProfilePage } from "./pages/customer/CustomerProfilePage";
 
@@ -46,6 +46,7 @@ type ViewState =
   | "customer_location"
   | "customer_confirmation"
   | "customer_tracking"
+  | "customer_search"
   | "customer_auth"
   | "customer_my_orders"
   | "customer_profile"
@@ -159,6 +160,7 @@ export function AppContent() {
     if (tab === "cart") setCurrentView("customer_cart");
     if (tab === "tracking") setCurrentView("customer_tracker_list");
     if (tab === "account") setCurrentView("customer_my_orders");
+    return "menu";
   };
 
   return (
@@ -214,14 +216,21 @@ export function AppContent() {
         />
       )}
 
-      {currentView === "customer_tracking" && (
-        <OrderTrackingPage
-          orderId={trackingOrderId || placedOrder?.id}
-          onBackToHome={() => setCurrentView("customer_menu")}
-        />
-      )}
+       {currentView === "customer_tracking" && (
+         <OrderTrackingPage
+           orderId={trackingOrderId || placedOrder?.id}
+           onBackToHome={() => setCurrentView("customer_menu")}
+         />
+       )}
 
-      {currentView === "customer_auth" && (
+       {currentView === "customer_search" && (
+         <SearchPage
+           onBack={() => setCurrentView("customer_menu")}
+           onNavigateToMenu={() => setCurrentView("customer_menu")}
+         />
+       )}
+
+       {currentView === "customer_auth" && (
         <CustomerAuthPage
           onBack={() => setCurrentView("customer_my_orders")}
           onSuccess={() => setCurrentView("customer_my_orders")}
