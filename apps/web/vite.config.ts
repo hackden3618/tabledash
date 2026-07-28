@@ -1,13 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 
-// https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
-  // Serve index.html for all routes (SPA mode) — required so /kitchen
-  // doesn't 404 on direct navigation or page refresh.
+  plugins: [tailwindcss(), react()],
   appType: 'spa',
-  // Proxy API requests to the backend during dev (localhost:3000)
   server: {
     proxy: {
       '/api': {

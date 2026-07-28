@@ -1,5 +1,5 @@
 /**
- * Purpose: Admin Notification Panel for tableDash.
+ * Purpose: Admin Notification Panel for Ladha.
  * Responsibilities: Slide-in panel (triggered by a bell icon with unread badge) that displays
  *   the full notification history for admins — new orders, bounced orders, status updates.
  *   Integrates with NotificationsContext for real data.

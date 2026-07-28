@@ -13,6 +13,7 @@ import type { WsMessage } from "../../../../../shared/types";
 interface ClientSocket {
   id: string;
   role: "admin" | "customer";
+  hotelId?: string;
   orderId?: string;
   send: (data: string) => void;
 }
@@ -38,14 +39,26 @@ export class WebSocketHub {
 
   /**
    * Broadcasts a message to all connected admin clients.
-   * WHY: Admins need immediate push notifications for new orders and status changes without polling.
+   * NOTE: Prefer broadcastToHotelAdmins for tenant-scoped sends.
    */
   public broadcastToAdmins<T>(message: WsMessage<T>): void {
+    this.broadcastToHotelAdmins(undefined, message);
+  }
+
+  /**
+   * Broadcasts a message to admin clients belonging to a specific hotel.
+   * When hotelId is undefined, sends to all admin clients (platform-level).
+   * WHY: Tenant isolation — hotel A's staff should never see hotel B's orders.
+   */
+  public broadcastToHotelAdmins<T>(hotelId: string | undefined, message: WsMessage<T>): void {
     const payloadStr = JSON.stringify(message);
     const staleIds: string[] = [];
 
     for (const client of this.clients.values()) {
-      if (client.role === "admin") {
+      const matches = hotelId !== undefined
+        ? client.role === "admin" && client.hotelId === hotelId
+        : client.role === "admin";
+      if (matches) {
         try {
           client.send(payloadStr);
         } catch (err) {
@@ -60,20 +73,21 @@ export class WebSocketHub {
 
   /**
    * Broadcasts a status update to:
-   *   - All admin clients
+   *   - Admin clients (optionally scoped by hotelId)
    *   - Customers subscribed to this specific orderId (Order Tracker page)
    *   - Customers with NO orderId subscription (My Orders page — browsing history)
    * WHY: My Orders page connects without an orderId, so it must also receive status
    *   patches to stay live without requiring a full profile refetch.
    * @param orderId Target order ID being updated.
    * @param message Payload message containing updated order data.
+   * @param hotelId Optional — scopes admin broadcast to a specific hotel.
    */
-  public notifyOrderStatusUpdate<T>(orderId: string, message: WsMessage<T>): void {
+  public notifyOrderStatusUpdate<T>(orderId: string, message: WsMessage<T>, hotelId?: string): void {
     const payloadStr = JSON.stringify(message);
     const staleIds: string[] = [];
 
     for (const client of this.clients.values()) {
-      const isAdmin             = client.role === "admin";
+      const isAdmin             = client.role === "admin" && (hotelId === undefined || client.hotelId === hotelId);
       const isOrderTracker      = client.role === "customer" && client.orderId === orderId;
       const isMyOrdersBrowser   = client.role === "customer" && !client.orderId;
 
@@ -110,28 +124,36 @@ export class WebSocketHub {
   }
 
   /**
-   * Broadcasts a bounced-order alert to all connected admin clients.
+   * Broadcasts a bounced-order alert to admin clients.
    * WHY: When an order fails at placement (e.g. stock shortage), admins need immediate
    *      visibility so they can restock or reach the customer. Shown as an urgent red alert.
+   * @param message Event payload.
+   * @param hotelId Optional — scopes to a specific hotel's admins.
    */
-  public broadcastOrderBounced<T>(message: WsMessage<T>): void {
-    this.broadcastToAdmins(message);
+  public broadcastOrderBounced<T>(message: WsMessage<T>, hotelId?: string): void {
+    this.broadcastToHotelAdmins(hotelId, message);
   }
 
   /**
-   * Broadcasts a notification event to every connected client (admin + customer).
+   * Broadcasts a notification event to connected clients.
    * Used for in-app toasts: dispatch alerts, payment received, OOS warnings, cancellations.
+   * @param message Event payload.
+   * @param hotelId Optional — scopes admin recipients to a specific hotel.
    */
-  public broadcastNotification<T>(message: WsMessage<T>): void {
+  public broadcastNotification<T>(message: WsMessage<T>, hotelId?: string): void {
     const payloadStr = JSON.stringify(message);
     const staleIds: string[] = [];
 
     for (const client of this.clients.values()) {
-      try {
-        client.send(payloadStr);
-      } catch (err) {
-        console.error(`[WS Hub] Stale socket detected for client ${client.id}:`, err);
-        staleIds.push(client.id);
+      const matchesAdmin = client.role === "admin" && (hotelId === undefined || client.hotelId === hotelId);
+      const matchesCustomer = client.role === "customer";
+      if (matchesAdmin || matchesCustomer) {
+        try {
+          client.send(payloadStr);
+        } catch (err) {
+          console.error(`[WS Hub] Stale socket detected for client ${client.id}:`, err);
+          staleIds.push(client.id);
+        }
       }
     }
 

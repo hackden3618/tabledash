@@ -95,7 +95,7 @@ export const placeOrder = async (input: CreateOrderInput) => {
           customerName: buildCustomerDisplay(input.firstName, input.lastName, input.knownName),
           requestedQty: item.quantity,
         },
-      });
+      }, product.hotelId || undefined);
       throw new Error(`"${product.name}" is currently unavailable`);
     }
     if (product.stockQty < item.quantity) {
@@ -109,7 +109,7 @@ export const placeOrder = async (input: CreateOrderInput) => {
           requestedQty: item.quantity,
           availableQty: product.stockQty,
         },
-      });
+      }, product.hotelId || undefined);
       throw new Error(
         `Only ${product.stockQty} portion(s) of "${product.name}" left in stock (you requested ${item.quantity})`
       );
@@ -275,7 +275,7 @@ export const placeOrder = async (input: CreateOrderInput) => {
     const formattedOrder = formattedOrders[i]!;
     const group = Array.from(hotelGroups.values())[i]!;
 
-    wsHub.broadcastToAdmins({
+    wsHub.broadcastToHotelAdmins(group.hotelId === "default" ? undefined : group.hotelId, {
       type: "ORDER_CREATED",
       payload: formattedOrder,
     });
@@ -488,10 +488,12 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus, canc
     }
   }
 
+  const orderHotelId = existing.hotelId || undefined;
+
   wsHub.notifyOrderStatusUpdate(id, {
     type: "ORDER_STATUS_UPDATED",
     payload: formattedOrder,
-  });
+  }, orderHotelId);
 
   if (newStatus === "OUT_FOR_DELIVERY") {
     wsHub.broadcastNotification({
@@ -502,7 +504,7 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus, canc
         message: `Order #${formattedOrder.orderNumber} is out for delivery!`,
         orderId: id,
       },
-    });
+    }, orderHotelId);
   }
 
   if (newStatus === "CANCELLED") {
@@ -514,7 +516,7 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus, canc
         message: `Order #${formattedOrder.orderNumber} has been cancelled. Reason: ${cancelReason || "N/A"}`,
         orderId: id,
       },
-    });
+    }, orderHotelId);
   }
 
   if (newStatus === "OUT_FOR_DELIVERY" && formattedOrder.customer?.phone) {

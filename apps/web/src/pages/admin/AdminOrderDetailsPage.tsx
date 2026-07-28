@@ -1,14 +1,8 @@
-/**
- * Purpose: Admin Order Details & Status Updater view.
- * Responsibilities: Renders full customer order breakdown, customer contact button, forward-only
- *   order status timeline changer, location map modal trigger, and polite cancellation reason prompt.
- * Dependencies: React, apiPatch helper, lucide-react.
- * When to modify: When altering status progression choices, order detail fields, or adding custom cancellation presets.
- */
-
 import React, { useState } from "react";
 import { apiPatch } from "../../lib/api";
-import { CheckCircle, Circle, Lock, AlertTriangle, X } from "lucide-react";
+import { CheckCircle, Circle, Lock, AlertTriangle, ChevronLeft, Phone, MapPin } from "lucide-react";
+import { Modal } from "../../components/ui/Modal";
+import { Button } from "../../components/ui/Button";
 
 interface AdminOrderDetailsPageProps {
   order: any;
@@ -18,10 +12,6 @@ interface AdminOrderDetailsPageProps {
   onOrderUpdated: (updatedOrder: any) => void;
 }
 
-/**
- * Canonical pipeline steps shown to the admin.
- * CANCELLED is handled separately as a destructive exit action.
- */
 const PIPELINE = [
   { key: "NEW",                label: "New",                emoji: "🛎" },
   { key: "ACCEPTED",           label: "Accepted",           emoji: "✅" },
@@ -55,7 +45,6 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Cancellation Modal states
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelReasonOption, setCancelReasonOption] = useState("sold_out");
   const [customCancelReason, setCustomCancelReason] = useState("");
@@ -106,88 +95,81 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
 
   return (
     <div className="admin-container">
-      {/* Header Bar */}
-      <header className="header-bar">
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+      <header className="bg-[#114B36] text-white px-4 py-3 sticky top-0 z-40 shadow-[0_2px_8px_rgba(17,75,54,0.15)]">
+        <div className="flex items-center gap-3 max-w-4xl mx-auto">
           <button
             onClick={onBack}
-            style={{ background: "none", border: "none", color: "white", fontSize: "1.2rem", cursor: "pointer" }}
+            className="p-1 -ml-1 rounded-lg hover:bg-white/10 transition-colors bg-none border-none cursor-pointer text-white"
           >
-            ←
+            <ChevronLeft size={20} />
           </button>
-          <div className="header-title">Order #{order.orderNumber}</div>
+          <h1 className="font-bold text-lg">Order #{order.orderNumber}</h1>
         </div>
       </header>
 
-      {/* Main Content */}
-      <div style={{ padding: "20px" }}>
-        {/* Customer Contact Info Card */}
-        <div className="card" style={{ marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div className="p-4 max-w-4xl mx-auto space-y-4">
+
+        {/* Customer card */}
+        <div className="bg-white rounded-2xl p-4 shadow-[0_2px_8px_rgba(17,75,54,0.06)] flex items-center justify-between">
           <div>
-            <h2 style={{ fontSize: "1.1rem", fontWeight: 700, color: "#1F2937" }}>
+            <h2 className="font-bold text-lg text-[#1F2937]">
               {order.customer?.firstName}
             </h2>
-            <div style={{ fontSize: "0.9rem", color: "#4B5563", marginTop: "2px" }}>
+            <p className="text-sm text-[#6B7280] mt-0.5">
               {order.customer?.phone}
-            </div>
+            </p>
           </div>
           <a
             href={`tel:${order.customer?.phone}`}
-            style={{
-              width: "44px", height: "44px", borderRadius: "50%",
-              background: "#22C55E", color: "white",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              textDecoration: "none", fontSize: "1.2rem",
-              boxShadow: "0 4px 12px rgba(34, 197, 94, 0.3)",
-            }}
+            className="w-11 h-11 rounded-full bg-[#22C55E] text-white flex items-center justify-center no-underline shadow-[0_4px_12px_rgba(34,197,94,0.3)] hover:bg-[#16A34A] transition-colors"
           >
-            📞
+            <Phone size={18} />
           </a>
         </div>
 
-        {/* Order Items Summary */}
-        <div className="card" style={{ marginBottom: "20px" }}>
-          <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "#6B7280", marginBottom: "10px" }}>Items</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "12px" }}>
+        {/* Order Items */}
+        <div className="bg-white rounded-2xl p-4 shadow-[0_2px_8px_rgba(17,75,54,0.06)]">
+          <p className="font-bold text-xs text-[#6B7280] uppercase tracking-wider mb-3">Items</p>
+          <div className="space-y-2 mb-3">
             {order.orderItems?.map((it: any) => (
-              <div key={it.id} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.95rem" }}>
-                <span>{it.quantity} x {it.name}</span>
-                <span style={{ fontWeight: 600 }}>KSh {it.subtotal}</span>
+              <div key={it.id} className="flex justify-between text-sm">
+                <span className="text-[#1F2937]">{it.quantity} x {it.name}</span>
+                <span className="font-semibold text-[#1F2937]">KSh {it.subtotal}</span>
               </div>
             ))}
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #E5E7EB", paddingTop: "10px", fontWeight: 800, fontSize: "1.1rem" }}>
-            <span>Total</span>
-            <span style={{ color: "#1E4D36" }}>KSh {order.totalAmount}</span>
+          <div className="flex justify-between border-t border-[#F3F4F6] pt-3 font-bold text-base">
+            <span className="text-[#1F2937]">Total</span>
+            <span className="text-[#114B36]">KSh {order.totalAmount}</span>
           </div>
         </div>
 
-        {/* Delivery Location & Map Trigger */}
-        <div className="card" style={{ marginBottom: "20px" }}>
-          <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "#6B7280", marginBottom: "6px" }}>Delivery Location</div>
-          <div style={{ fontSize: "0.95rem", fontWeight: 600, color: "#1F2937", marginBottom: "12px" }}>
-            📍 {order.marketSection} — {order.locationDescription}
-          </div>
-          <button onClick={() => onOpenMap(order)} className="btn btn-secondary" style={{ padding: "8px 16px" }}>
-            Open Map Inspector
-          </button>
+        {/* Delivery Location */}
+        <div className="bg-white rounded-2xl p-4 shadow-[0_2px_8px_rgba(17,75,54,0.06)]">
+          <p className="font-bold text-xs text-[#6B7280] uppercase tracking-wider mb-1">Delivery Location</p>
+          <p className="text-sm font-semibold text-[#1F2937] mb-3">
+            <MapPin size={14} className="inline mr-1 text-[#EF4444]" />
+            {order.marketSection} — {order.locationDescription}
+          </p>
+          <Button variant="secondary" size="sm" onClick={() => onOpenMap(order)}>
+            <MapPin size={14} /> Open Map Inspector
+          </Button>
         </div>
 
-        {/* Forward-Only Status Timeline */}
-        <div className="card" style={{ opacity: updating ? 0.7 : 1 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-            <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1F2937" }}>Order Progress</div>
-            {updating && <span style={{ fontSize: "0.8rem", color: "#1E4D36", fontWeight: 600 }}>Updating...</span>}
+        {/* Status Timeline */}
+        <div className={`bg-white rounded-2xl p-4 shadow-[0_2px_8px_rgba(17,75,54,0.06)] transition-opacity ${updating ? "opacity-70" : ""}`}>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="font-bold text-sm text-[#1F2937]">Order Progress</h2>
+            {updating && <span className="text-xs font-semibold text-[#114B36] animate-pulse">Updating...</span>}
           </div>
 
           {error && (
-            <div style={{ background: "#FEE2E2", border: "1px solid #FECACA", borderRadius: "8px", padding: "10px 14px", marginBottom: "14px", fontSize: "0.85rem", color: "#DC2626", fontWeight: 600 }}>
-              ⚠️ {error}
+            <div className="bg-[#FEE2E2] border border-[#FECACA] rounded-xl px-4 py-3 mb-4 text-sm font-semibold text-[#DC2626] flex items-center gap-2">
+              <AlertTriangle size={15} /> {error}
             </div>
           )}
 
-          {/* Pipeline step-by-step timeline */}
-          <div style={{ display: "flex", flexDirection: "column" }}>
+          <div className="space-y-0">
             {PIPELINE.map((step, idx) => {
               const stepRank  = STATUS_RANK[step.key] ?? 0;
               const isDone    = stepRank < currentRank;
@@ -197,71 +179,68 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
               const isLast    = idx === PIPELINE.length - 1;
 
               return (
-                <div key={step.key} style={{ display: "flex", gap: "14px", alignItems: "flex-start" }}>
-                  {/* Connector icon column */}
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, width: "32px" }}>
-                    <div
-                      style={{
-                        width: "32px", height: "32px", borderRadius: "50%",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        background: isDone ? "#22C55E" : isCurrent ? "#1E4D36" : isNext ? "#EBF4F0" : "#F3F4F6",
-                        border: isCurrent ? "2.5px solid #1E4D36" : isNext ? "2px dashed #1E4D36" : "2px solid transparent",
-                        transition: "all 0.2s",
-                        cursor: isNext && !isTerminal ? "pointer" : "default",
-                      }}
+                <div key={step.key} className="flex gap-3.5 items-start">
+                  <div className="flex flex-col items-center shrink-0 w-8">
+                    <button
                       onClick={() => isNext && handleStatusChange(step.key)}
+                      disabled={!isNext || isTerminal || updating}
+                      className={`
+                        w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200
+                        ${isDone ? "bg-[#22C55E] cursor-default" : ""}
+                        ${isCurrent ? "bg-[#114B36] border-2 border-[#114B36] cursor-default" : ""}
+                        ${isNext ? "bg-[#EBF5F0] border-2 border-dashed border-[#114B36] cursor-pointer hover:bg-[#C2E2D3]" : ""}
+                        ${isFuture ? "bg-[#F3F4F6] cursor-default" : ""}
+                        ${isTerminal && isCurrent ? "bg-[#22C55E]" : ""}
+                        disabled:opacity-50 disabled:cursor-not-allowed
+                      `}
                     >
-                      {isDone ? (
-                        <CheckCircle size={16} color="white" />
+                      {isDone || (isTerminal && isCurrent && currentStatus === "DELIVERED") ? (
+                        <CheckCircle size={16} className="text-white" />
                       ) : isCurrent ? (
-                        <span style={{ fontSize: "0.85rem" }}>{step.emoji}</span>
+                        <span className="text-xs">{step.emoji}</span>
                       ) : isNext ? (
-                        <Circle size={16} color="#1E4D36" />
+                        <Circle size={15} className="text-[#114B36]" />
+                      ) : isFuture ? (
+                        <Circle size={15} className="text-[#D1D5DB]" />
                       ) : (
-                        <Circle size={16} color="#D1D5DB" />
+                        <Circle size={15} className="text-[#D1D5DB]" />
                       )}
-                    </div>
+                    </button>
                     {!isLast && (
-                      <div style={{ width: "2px", minHeight: "20px", flex: 1, background: isDone ? "#22C55E" : "#E5E7EB", margin: "2px 0" }} />
+                      <div className={`w-0.5 flex-1 min-h-[20px] my-0.5 ${isDone ? "bg-[#22C55E]" : "bg-[#E5E7EB]"}`} />
                     )}
                   </div>
 
-                  {/* Step content */}
-                  <div style={{ paddingBottom: "16px", flex: 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "5px" }}>
-                      <span
-                        style={{
-                          fontWeight: isCurrent || isDone ? 700 : isNext ? 600 : 500,
-                          fontSize: "0.9rem",
-                          color: isDone ? "#15803D" : isCurrent ? "#1E4D36" : isNext ? "#374151" : "#9CA3AF",
-                        }}
-                      >
+                  <div className="pb-4 flex-1">
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <span className={`
+                        text-sm font-semibold
+                        ${isDone ? "text-[#15803D]" : ""}
+                        ${isCurrent ? "text-[#114B36] font-bold" : ""}
+                        ${isNext ? "text-[#1F2937]" : ""}
+                        ${isFuture ? "text-[#9CA3AF]" : ""}
+                      `}>
                         {step.label}
                       </span>
                       {isCurrent && !isTerminal && (
-                        <span style={{ fontSize: "0.7rem", fontWeight: 700, background: "#EBF4F0", color: "#1E4D36", padding: "2px 8px", borderRadius: "20px" }}>
+                        <span className="text-[0.6rem] font-bold bg-[#EBF5F0] text-[#114B36] px-2 py-0.5 rounded-full">
                           CURRENT
                         </span>
                       )}
-                      {isDone && <span style={{ fontSize: "0.7rem", color: "#15803D" }}>✓</span>}
+                      {isDone && <span className="text-[0.65rem] text-[#15803D]">✓ Done</span>}
                     </div>
                     {isNext && !isTerminal && (
                       <button
                         onClick={() => handleStatusChange(step.key)}
                         disabled={updating}
-                        style={{
-                          marginTop: "6px", padding: "6px 16px",
-                          background: "#1E4D36", color: "white",
-                          border: "none", borderRadius: "8px",
-                          fontSize: "0.82rem", fontWeight: 700, cursor: "pointer",
-                        }}
+                        className="mt-1.5 px-4 py-1.5 bg-[#114B36] text-white rounded-lg text-xs font-bold border-none cursor-pointer hover:bg-[#0D3D2B] transition-colors disabled:opacity-50"
                       >
                         Mark as {step.label} →
                       </button>
                     )}
                     {isFuture && (
-                      <div style={{ fontSize: "0.72rem", color: "#9CA3AF", marginTop: "3px", display: "flex", alignItems: "center", gap: "4px" }}>
-                        <Lock size={10} /> Unlocks after previous step
+                      <div className="text-[0.65rem] text-[#9CA3AF] mt-1 flex items-center gap-1">
+                        <Lock size={9} /> Unlocks after previous step
                       </div>
                     )}
                   </div>
@@ -270,137 +249,93 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
             })}
           </div>
 
-          {/* Terminal state banner */}
           {isTerminal ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "8px" }}>
-              <div
-                style={{
-                  borderRadius: "10px", padding: "12px 16px",
-                  display: "flex", alignItems: "center", gap: "8px",
-                  fontSize: "0.875rem", fontWeight: 700,
-                  background: currentStatus === "DELIVERED" ? "#DCFCE7" : "#FEE2E2",
-                  color: currentStatus === "DELIVERED" ? "#15803D" : "#DC2626",
-                }}
-              >
-                <Lock size={16} />
+            <div className="mt-2 space-y-2">
+              <div className={`rounded-xl px-4 py-3 flex items-center gap-2 text-sm font-bold ${
+                currentStatus === "DELIVERED" ? "bg-[#DCFCE7] text-[#15803D]" : "bg-[#FEE2E2] text-[#DC2626]"
+              }`}>
+                <Lock size={15} />
                 This order is {currentStatus === "DELIVERED" ? "completed ✓" : "cancelled"} and cannot be updated further.
               </div>
               {currentStatus === "CANCELLED" && cancelReason && (
-                <div style={{ background: "#FAFAFA", border: "1px solid #E5E7EB", borderRadius: "8px", padding: "10px 14px", fontSize: "0.85rem", color: "#4B5563" }}>
-                  <strong>Cancellation Reason:</strong> "{cancelReason}"
+                <div className="bg-[#FAFAFA] border border-[#E5E7EB] rounded-xl px-4 py-3 text-sm text-[#4B5563]">
+                  <strong>Cancellation Reason:</strong> &ldquo;{cancelReason}&rdquo;
                 </div>
               )}
             </div>
           ) : (
-            /* Cancel button — always available from any active state */
-            <div style={{ marginTop: "16px", borderTop: "1px solid #F3F4F6", paddingTop: "16px" }}>
-              <button
-                onClick={() => setShowCancelModal(true)}
-                disabled={updating}
-                style={{
-                  width: "100%", padding: "10px",
-                  background: "none", border: "1.5px solid #FCA5A5",
-                  borderRadius: "8px", color: "#DC2626",
-                  fontWeight: 700, fontSize: "0.85rem", cursor: "pointer",
-                  transition: "all 0.2s ease",
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#FFF5F5"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
-              >
+            <div className="mt-4 border-t border-[#F3F4F6] pt-4">
+              <Button variant="danger" size="sm" fullWidth onClick={() => setShowCancelModal(true)} disabled={updating}>
                 ✕ Cancel This Order
-              </button>
+              </Button>
             </div>
           )}
         </div>
       </div>
 
       {/* Cancellation Reason Modal */}
-      {showCancelModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
-          <div style={{ background: "white", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "480px", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)", animation: "fadeIn 0.2s ease" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#DC2626" }}>
-                <AlertTriangle size={22} />
-                <h3 style={{ fontWeight: 800, fontSize: "1.1rem", margin: 0 }}>Polite Cancellation Reason</h3>
-              </div>
-              <button onClick={() => setShowCancelModal(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "#9CA3AF" }}>
-                <X size={20} />
-              </button>
-            </div>
+      <Modal
+        isOpen={showCancelModal}
+        onClose={() => setShowCancelModal(false)}
+        title="Cancel Order"
+        type="danger"
+      >
+        <p className="text-sm text-[#6B7280] mb-4 leading-relaxed">
+          Select a reason below. This will be sent to the customer via SMS to politely explain the cancellation.
+        </p>
 
-            <p style={{ fontSize: "0.85rem", color: "#6B7280", lineHeight: 1.5, marginBottom: "20px" }}>
-              Select a reason below. This will be automatically sent to the customer via SMS to explain the cancellation politely.
-            </p>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "20px" }}>
-              {POLITE_REASONS.map((reason) => (
-                <label
-                  key={reason.key}
-                  style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: "10px",
-                    padding: "12px",
-                    borderRadius: "10px",
-                    border: cancelReasonOption === reason.key ? "1.5px solid #FCA5A5" : "1.5px solid #E5E7EB",
-                    background: cancelReasonOption === reason.key ? "#FFF5F5" : "#FFFFFF",
-                    cursor: "pointer",
-                    transition: "all 0.15s ease",
-                  }}
-                >
-                  <input
-                    type="radio"
-                    name="cancelReasonOption"
-                    value={reason.key}
-                    checked={cancelReasonOption === reason.key}
-                    onChange={() => setCancelReasonOption(reason.key)}
-                    style={{ marginTop: "3px", accentColor: "#DC2626" }}
-                  />
-                  <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "#374151" }}>{reason.label}</span>
-                </label>
-              ))}
-            </div>
-
-            {cancelReasonOption === "custom" && (
-              <div style={{ marginBottom: "20px" }}>
-                <textarea
-                  className="input-field"
-                  placeholder="Type a polite custom cancellation message here..."
-                  value={customCancelReason}
-                  onChange={(e) => setCustomCancelReason(e.target.value)}
-                  rows={3}
-                  required
-                  style={{ padding: "10px 12px", resize: "none", fontSize: "0.875rem" }}
-                />
-              </div>
-            )}
-
-            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
-              <button
-                onClick={() => setShowCancelModal(false)}
-                className="btn btn-secondary"
-                style={{ padding: "10px 18px", fontSize: "0.85rem" }}
-              >
-                Keep Order
-              </button>
-              <button
-                onClick={handleConfirmCancel}
-                disabled={cancelReasonOption === "custom" && !customCancelReason.trim()}
-                className="btn btn-primary"
-                style={{
-                  padding: "10px 18px", fontSize: "0.85rem",
-                  backgroundColor: "#DC2626", border: "1px solid #DC2626",
-                  color: "white",
-                  opacity: (cancelReasonOption === "custom" && !customCancelReason.trim()) ? 0.5 : 1,
-                  cursor: (cancelReasonOption === "custom" && !customCancelReason.trim()) ? "not-allowed" : "pointer"
-                }}
-              >
-                Confirm Cancel
-              </button>
-            </div>
-          </div>
+        <div className="space-y-2.5 mb-4">
+          {POLITE_REASONS.map((reason) => (
+            <label
+              key={reason.key}
+              className={`
+                flex items-start gap-2.5 p-3 rounded-xl cursor-pointer transition-all duration-150
+                ${cancelReasonOption === reason.key
+                  ? "border-2 border-[#FCA5A5] bg-[#FFF5F5]"
+                  : "border-2 border-[#E5E7EB] bg-white hover:border-[#D1D5DB]"
+                }
+              `}
+            >
+              <input
+                type="radio"
+                name="cancelReasonOption"
+                value={reason.key}
+                checked={cancelReasonOption === reason.key}
+                onChange={() => setCancelReasonOption(reason.key)}
+                className="mt-0.5 accent-[#DC2626]"
+              />
+              <span className="text-sm font-semibold text-[#374151]">{reason.label}</span>
+            </label>
+          ))}
         </div>
-      )}
+
+        {cancelReasonOption === "custom" && (
+          <div className="mb-4">
+            <textarea
+              placeholder="Type a polite custom cancellation message here..."
+              value={customCancelReason}
+              onChange={(e) => setCustomCancelReason(e.target.value)}
+              rows={3}
+              required
+              className="w-full px-3.5 py-3 rounded-xl border-2 border-[#D1D5DB] outline-none text-sm resize-none focus:border-[#114B36] focus:ring-3 focus:ring-[rgba(17,75,54,0.1)]"
+            />
+          </div>
+        )}
+
+        <div className="flex gap-3 mt-2">
+          <Button variant="secondary" fullWidth onClick={() => setShowCancelModal(false)}>
+            Keep Order
+          </Button>
+          <Button
+            variant="danger"
+            fullWidth
+            onClick={handleConfirmCancel}
+            disabled={cancelReasonOption === "custom" && !customCancelReason.trim()}
+          >
+            Confirm Cancel
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 };

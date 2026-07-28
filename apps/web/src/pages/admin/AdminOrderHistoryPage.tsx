@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { apiGet, apiPatch } from "../../lib/api";
-import { ArrowLeft, Calendar, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Calendar, CheckCircle2, DollarSign } from "lucide-react";
+import { Button } from "../../components/ui/Button";
 
 interface AdminOrderHistoryPageProps {
   token: string;
@@ -74,90 +76,103 @@ export const AdminOrderHistoryPage: React.FC<AdminOrderHistoryPageProps> = ({
 
   return (
     <div className="admin-container">
-      <header className="header-bar">
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <button onClick={onBackToOrders} style={{ background: "none", border: "none", color: "white", fontSize: "1.2rem", cursor: "pointer", display: "flex" }}>
+      <header className="bg-[#114B36] text-white px-4 py-3 sticky top-0 z-40 shadow-[0_2px_8px_rgba(17,75,54,0.15)]">
+        <div className="flex items-center gap-3 max-w-4xl mx-auto">
+          <button onClick={onBackToOrders} className="p-1 -ml-1 rounded-lg hover:bg-white/10 transition-colors bg-none border-none cursor-pointer text-white">
             <ArrowLeft size={20} />
           </button>
-          <div className="header-title">Daily Order History</div>
+          <h1 className="font-bold text-lg">Order History</h1>
         </div>
       </header>
 
-      <div style={{ padding: "20px" }}>
-        {/* Date Picker + Summary */}
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "20px", flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "#F3F4F6", padding: "8px 12px", borderRadius: "10px" }}>
-            <Calendar size={18} color="#6B7280" />
+      <div className="p-4 max-w-4xl mx-auto">
+        <div className="flex items-center gap-3 mb-5 flex-wrap">
+          <div className="flex items-center gap-2 bg-[#F3F4F6] rounded-xl px-3.5 py-2.5">
+            <Calendar size={18} className="text-[#6B7280]" />
             <input
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              style={{ border: "none", background: "transparent", fontSize: "0.95rem", fontWeight: 600, outline: "none" }}
+              className="border-none bg-transparent text-sm font-semibold outline-none text-[#1F2937]"
             />
           </div>
-          <div style={{ fontSize: "0.85rem", color: "#6B7280", display: "flex", gap: "16px", flexWrap: "wrap" }}>
-            <span>Revenue: <strong style={{ color: "#1E4D36" }}>KSh {totalDailyRevenue}</strong></span>
-            <span>Collected: <strong style={{ color: "#15803D" }}>KSh {totalDailyCollected}</strong></span>
-            <span>Orders: <strong>{orders.length}</strong></span>
+          <div className="flex items-center gap-4 text-xs text-[#6B7280] flex-wrap">
+            <span>Revenue: <span className="font-bold text-[#114B36]">KSh {totalDailyRevenue}</span></span>
+            <span>Collected: <span className="font-bold text-[#15803D]">KSh {totalDailyCollected}</span></span>
+            <span>Orders: <span className="font-bold text-[#1F2937]">{orders.length}</span></span>
           </div>
         </div>
 
         {loading ? (
-          <div style={{ textAlign: "center", padding: "40px 0", color: "#6B7280" }}>Loading daily orders...</div>
+          <div className="text-center py-16 text-sm text-[#6B7280]">
+            <div className="w-8 h-8 border-4 border-[#E5E7EB] border-t-[#114B36] rounded-full animate-spin mx-auto mb-3" />
+            Loading daily orders...
+          </div>
         ) : orders.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "40px 0", color: "#6B7280" }}>
+          <div className="text-center py-16 text-sm text-[#6B7280] bg-white rounded-2xl shadow-[0_2px_8px_rgba(17,75,54,0.06)]">
+            <DollarSign size={32} className="mx-auto mb-2 text-[#D1D5DB]" />
             No orders found for this date.
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            {orders.map((ord) => {
+          <div className="space-y-3">
+            {orders.map((ord, idx) => {
               const payBadge = PAYMENT_BADGE[ord.paymentStatus as PaymentStatus] ?? PAYMENT_BADGE.UNPAID;
               const statusBadge = STATUS_BADGE[ord.status] ?? STATUS_BADGE.NEW!;
               const edit = editingPayment[ord.id] || {};
               const balance = Number(ord.totalAmount) - Number(edit.amount ?? ord.amountPaid ?? 0);
 
               return (
-                <div key={ord.id} className="card" style={{ padding: "16px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                <motion.div
+                  key={ord.id}
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.02 }}
+                  className="bg-white rounded-2xl p-4 shadow-[0_2px_8px_rgba(17,75,54,0.06)]"
+                >
+                  <div className="flex justify-between items-start mb-2">
                     <div>
-                      <span style={{ fontWeight: 800, fontSize: "1rem", color: "#1E4D36" }}>#{ord.orderNumber}</span>
-                      <span style={{ fontSize: "0.75rem", color: "#6B7280", marginLeft: "8px" }}>
+                      <span className="font-extrabold text-base text-[#114B36]">#{ord.orderNumber}</span>
+                      <span className="text-[0.65rem] text-[#6B7280] ml-2">
                         {new Date(ord.orderedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                       </span>
                     </div>
-                    <div style={{ display: "flex", gap: "6px" }}>
-                      <span style={{ background: statusBadge.bg, color: statusBadge.color, borderRadius: "8px", padding: "2px 8px", fontWeight: 700, fontSize: "0.7rem" }}>
-                        {ord.status.replace(/_/g, " ")}
-                      </span>
-                    </div>
+                    <span
+                      className="text-[0.6rem] font-bold px-2 py-0.5 rounded-lg whitespace-nowrap"
+                      style={{ background: statusBadge.bg, color: statusBadge.color }}
+                    >
+                      {ord.status.replace(/_/g, " ")}
+                    </span>
                   </div>
 
-                  <div style={{ fontSize: "0.85rem", color: "#4B5563", marginBottom: "10px" }}>
-                    {ord.customer?.firstName} ({ord.customer?.phone}) — {ord.orderItems?.map((it: any) => `${it.quantity}x ${it.name}`).join(", ")}
-                  </div>
+                  <p className="text-xs text-[#4B5563] mb-2.5">
+                    {ord.customer?.firstName} ({ord.customer?.phone}) &mdash; {ord.orderItems?.map((it: any) => `${it.quantity}x ${it.name}`).join(", ")}
+                  </p>
 
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", borderTop: "1px solid #F3F4F6", paddingTop: "10px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                      <span style={{ fontWeight: 700, color: "#1F2937" }}>KSh {ord.totalAmount}</span>
-                      <span style={{ color: "#9CA3AF" }}>|</span>
-                      <span style={{ background: payBadge.bg, color: payBadge.color, padding: "3px 10px", borderRadius: "999px", fontWeight: 700, fontSize: "0.75rem" }}>
+                  <div className="flex justify-between items-center flex-wrap gap-2 border-t border-[#F3F4F6] pt-3">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-sm text-[#1F2937]">KSh {ord.totalAmount}</span>
+                      <span className="text-[#D1D5DB]">|</span>
+                      <span
+                        className="text-[0.65rem] font-bold px-2.5 py-1 rounded-full"
+                        style={{ background: payBadge.bg, color: payBadge.color }}
+                      >
                         {payBadge.label}
                       </span>
                       {balance > 0 && ord.paymentStatus !== "CANCELLED" && (
-                        <span style={{ fontSize: "0.75rem", color: "#DC2626", fontWeight: 600 }}>
+                        <span className="text-[0.65rem] font-semibold text-[#DC2626]">
                           Balance: KSh {balance.toFixed(2)}
                         </span>
                       )}
                     </div>
 
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <div className="flex items-center gap-1.5">
                       <select
                         value={edit.status ?? ord.paymentStatus ?? "UNPAID"}
                         onChange={(e) => setEditingPayment((prev) => ({
                           ...prev,
                           [ord.id]: { ...prev[ord.id], status: e.target.value as PaymentStatus },
                         }))}
-                        style={{ padding: "6px 8px", borderRadius: "6px", border: "1px solid #D1D5DB", fontSize: "0.78rem", fontWeight: 600 }}
+                        className="px-2 py-1.5 rounded-lg border border-[#D1D5DB] text-[0.65rem] font-semibold outline-none bg-white"
                       >
                         <option value="UNPAID">Unpaid</option>
                         <option value="PARTIAL">Partial</option>
@@ -173,18 +188,18 @@ export const AdminOrderHistoryPage: React.FC<AdminOrderHistoryPageProps> = ({
                           ...prev,
                           [ord.id]: { ...prev[ord.id], amount: e.target.value },
                         }))}
-                        style={{ width: "80px", padding: "6px 8px", borderRadius: "6px", border: "1px solid #D1D5DB", fontSize: "0.78rem", fontWeight: 600, textAlign: "center" }}
+                        className="w-16 px-2 py-1.5 rounded-lg border border-[#D1D5DB] text-[0.65rem] font-semibold text-center outline-none"
                       />
-                      <button
+                      <Button
+                        size="sm"
+                        variant="primary"
                         onClick={() => handleSavePayment(ord.id)}
-                        className="btn btn-primary"
-                        style={{ padding: "6px 10px", fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "4px" }}
                       >
-                        <CheckCircle2 size={14} /> Save
-                      </button>
+                        <CheckCircle2 size={12} /> Save
+                      </Button>
                     </div>
                   </div>
-                </div>
+                </motion.div>
               );
             })}
           </div>

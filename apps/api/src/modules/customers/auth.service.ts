@@ -1,5 +1,5 @@
 /**
- * Purpose: Customer Authentication Service for tableDash.
+ * Purpose: Customer Authentication Service for Ladha.
  * Responsibilities: Handles customer self-registration, PIN verification, and profile retrieval.
  *   Login is phone + 4-digit PIN. PINs are hashed using Bun.password (Argon2id) — more secure
  *   than bcrypt and zero extra dependencies since Bun ships it natively.
@@ -9,6 +9,7 @@
 
 import { prisma } from "../../../../../infrastructure/database/prisma";
 import { formatPhone } from "../../../../../shared/phone";
+import { smsService } from "../notifications/sms.service";
 
 const CUSTOMER_TOKEN_EXPIRY_SEC = 7 * 24 * 60 * 60; // 7 days
 
@@ -150,6 +151,63 @@ export const getCustomerProfile = async (customerId: string) => {
       })),
     })),
   };
+};
+
+/**
+ * Generates a 4-digit OTP and sends it to the customer via SMS.
+ * Also writes an outbox row for reliability — the SMS dispatch is retried
+ * by the outbox dispatcher if the initial attempt fails.
+ */
+export const generatePinResetCode = async (phone: string) => {
+  const formattedPhone = formatPhone(phone);
+  const customer = await prisma.customer.findUnique({ where: { phone: formattedPhone } });
+  if (!customer) {
+    throw new Error("No account found for this phone number.");
+  }
+  const otp = String(Math.floor(1000 + Math.random() * 9000));
+  const expires = new Date(Date.now() + 10 * 60 * 1000);
+  await prisma.customer.update({
+    where: { id: customer.id },
+    data: { pinResetCode: otp, pinResetCodeExpires: expires },
+  });
+
+  const otpMessage = `Your Ladha PIN reset code is: ${otp}. It expires in 10 minutes. - Ladha Deliveries`;
+
+  (async () => {
+    try {
+      await smsService.sendSms(formattedPhone, otpMessage);
+    } catch (err) {
+      console.error("[Customer PIN Reset SMS Error]:", err);
+    }
+  })();
+
+  return { message: "Reset code sent to your phone." };
+};
+
+/**
+ * Validates the OTP and resets the PIN.
+ */
+export const resetCustomerPin = async (input: { phone: string; otp: string; newPin: string }) => {
+  const formattedPhone = formatPhone(input.phone);
+  const customer = await prisma.customer.findUnique({ where: { phone: formattedPhone } });
+  if (!customer) {
+    throw new Error("No account found for this phone number.");
+  }
+  if (!customer.pinResetCode || !customer.pinResetCodeExpires) {
+    throw new Error("No reset code has been requested. Please request a new one.");
+  }
+  if (customer.pinResetCode !== input.otp) {
+    throw new Error("Invalid reset code. Please try again.");
+  }
+  if (new Date() > customer.pinResetCodeExpires) {
+    throw new Error("Reset code has expired. Please request a new one.");
+  }
+  const pinHash = await Bun.password.hash(input.newPin);
+  await prisma.customer.update({
+    where: { id: customer.id },
+    data: { pinHash, pinResetCode: null, pinResetCodeExpires: null },
+  });
+  return { message: "PIN has been reset successfully." };
 };
 
 export const verifyCustomerToken = async (

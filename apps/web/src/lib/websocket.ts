@@ -13,7 +13,7 @@ export interface WsEventPayload<T = unknown> {
 }
 
 /**
- * Custom React hook for connecting to the tableDash WebSocket server with auto-reconnect.
+ * Custom React hook for connecting to the Ladha WebSocket server with auto-reconnect.
  * @param role Client role ('admin' | 'customer').
  * @param orderId Optional order ID for customer order tracking topic.
  * @param onMessage Callback function executed when an event message arrives.
@@ -38,6 +38,14 @@ export function useWebSocket<T = unknown>(
       let query = `role=${role}`;
       if (orderId) {
         query += `&orderId=${orderId}`;
+      }
+
+      // Automatically append admin JWT token if role is admin to enforce tenant isolation
+      if (role === "admin") {
+        const adminToken = localStorage.getItem("ladha_token");
+        if (adminToken) {
+          query += `&token=${encodeURIComponent(adminToken)}`;
+        }
       }
 
       const proto = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:";

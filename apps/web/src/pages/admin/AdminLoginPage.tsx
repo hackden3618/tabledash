@@ -1,12 +1,16 @@
 import React, { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { apiPost } from "../../lib/api";
+import { Button } from "../../components/ui/Button";
+import { Input } from "../../components/ui/Input";
+import { Lock, ChevronLeft, Phone, KeyRound, CheckCircle2 } from "lucide-react";
 
 const formatPhone = (raw: string): string => {
-    const cleaned = raw.replace(/\D/g, "");
-    if (cleaned.startsWith("0") && cleaned.length === 10) return `254${cleaned.slice(1)}`;
-    if ((cleaned.startsWith("7") || cleaned.startsWith("1")) && cleaned.length === 9) return `254${cleaned}`;
-    if (cleaned.startsWith("254") && cleaned.length === 12) return cleaned;
-    return cleaned;
+  const cleaned = raw.replace(/\D/g, "");
+  if (cleaned.startsWith("0") && cleaned.length === 10) return `254${cleaned.slice(1)}`;
+  if ((cleaned.startsWith("7") || cleaned.startsWith("1")) && cleaned.length === 9) return `254${cleaned}`;
+  if (cleaned.startsWith("254") && cleaned.length === 12) return cleaned;
+  return cleaned;
 };
 
 interface AdminLoginPageProps {
@@ -15,16 +19,13 @@ interface AdminLoginPageProps {
 
 type LoginView = "login" | "forgot" | "reset" | "done";
 
-export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
-  onLoginSuccess,
-}) => {
+export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }) => {
   const [view, setView] = useState<LoginView>("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // Forgot password flow
   const [resetPhone, setResetPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -39,7 +40,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
     setLoading(false);
 
     if (res.success && res.data) {
-      localStorage.setItem("tableDash_token", res.data.token);
+      localStorage.setItem("ladha_token", res.data.token);
       onLoginSuccess(res.data.token, res.data.user);
     } else {
       setError(res.error || "Invalid username or password");
@@ -77,14 +78,19 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
   };
 
   return (
-    <div className="admin-container" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}>
-      <div style={{ padding: "30px", width: "100%", maxWidth: "400px" }}>
-        <div style={{ textAlign: "center", marginBottom: "24px" }}>
-          <span style={{ fontSize: "3rem" }}>🔑</span>
-          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#1E4D36", marginTop: "8px" }}>
-            tableDash Admin
-          </h1>
-          <p style={{ fontSize: "0.875rem", color: "#6B7280" }}>
+    <div className="min-h-screen flex items-center justify-center bg-[#FFF8F0] p-4">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-sm"
+      >
+        {/* Brand */}
+        <div className="text-center mb-8">
+          <div className="w-16 h-16 rounded-2xl bg-[#114B36] flex items-center justify-center mx-auto mb-4 shadow-lg shadow-[rgba(17,75,54,0.2)]">
+            <Lock size={28} className="text-white" />
+          </div>
+          <h1 className="text-2xl font-bold text-[#114B36]">Ladha Admin</h1>
+          <p className="text-sm text-[#6B7280] mt-1">
             {view === "login" && "Sign in to manage orders & menu"}
             {view === "forgot" && "Enter your registered phone number"}
             {view === "reset" && "Enter the reset code and new password"}
@@ -92,146 +98,191 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
           </p>
         </div>
 
-        {view === "login" && (
-          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            <div>
-              <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, color: "#374151", marginBottom: "6px" }}>
-                Username
-              </label>
-              <input
-                type="text"
+        <AnimatePresence mode="wait">
+          {view === "login" && (
+            <motion.form
+              key="login"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              onSubmit={handleSubmit}
+              className="space-y-4"
+            >
+              <Input
+                label="Username"
+                placeholder="Enter your username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="input-field"
                 required
               />
-            </div>
 
-            <div>
-              <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, color: "#374151", marginBottom: "6px" }}>
-                Password
-              </label>
-              <input
+              <Input
+                label="Password"
                 type="password"
+                placeholder="Enter your password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="input-field"
                 required
               />
-            </div>
 
-            {error && (
-              <div style={{ padding: "10px", borderRadius: "8px", background: "#FEE2E2", color: "#DC2626", fontSize: "0.85rem", fontWeight: 600 }}>
-                {error}
-              </div>
-            )}
+              <AnimatePresence>
+                {error && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    className="bg-[#FEE2E2] text-[#DC2626] rounded-xl px-4 py-3 text-sm font-semibold"
+                  >
+                    {error}
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-            <button type="submit" disabled={loading || !username.trim() || !password.trim()} className="btn btn-primary">
-              {loading ? "Signing in..." : "Sign In"}
-            </button>
+              <Button type="submit" disabled={loading || !username.trim() || !password.trim()} loading={loading} fullWidth>
+                Sign In
+              </Button>
 
-            <button
-              type="button"
-              onClick={() => { setView("forgot"); setError(""); setResetMsg(""); setResetPhone(""); }}
-              style={{ background: "none", border: "none", color: "#6B7280", fontSize: "0.85rem", cursor: "pointer", padding: "8px 0", fontWeight: 500 }}
+              <button
+                type="button"
+                onClick={() => { setView("forgot"); setError(""); setResetMsg(""); setResetPhone(""); }}
+                className="w-full text-center text-sm font-medium text-[#6B7280] hover:text-[#114B36] transition-colors bg-none border-none cursor-pointer py-2"
+              >
+                Forgot password?
+              </button>
+            </motion.form>
+          )}
+
+          {view === "forgot" && (
+            <motion.div
+              key="forgot"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="space-y-4"
             >
-              Forgot password?
-            </button>
-          </form>
-        )}
+              <Input
+                label="Phone Number"
+                placeholder="07XXXXXXXX"
+                value={resetPhone}
+                onChange={(e) => setResetPhone(e.target.value)}
+                icon={<Phone size={16} />}
+              />
 
-        {view === "forgot" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            <input
-              type="tel"
-              placeholder="07XXXXXXXX"
-              value={resetPhone}
-              onChange={(e) => setResetPhone(e.target.value)}
-              className="input-field"
-            />
+              <AnimatePresence>
+                {error && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    className="bg-[#FEE2E2] text-[#DC2626] rounded-xl px-4 py-3 text-sm font-semibold"
+                  >
+                    {error}
+                  </motion.div>
+                )}
+                {resetMsg && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-[#DCFCE7] text-[#059669] rounded-xl px-4 py-3 text-sm font-semibold"
+                  >
+                    {resetMsg}
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-            {error && (
-              <div style={{ padding: "10px", borderRadius: "8px", background: "#FEE2E2", color: "#DC2626", fontSize: "0.85rem", fontWeight: 600 }}>
-                {error}
-              </div>
-            )}
-            {resetMsg && (
-              <div style={{ padding: "10px", borderRadius: "8px", background: "#ECFDF5", color: "#059669", fontSize: "0.85rem", fontWeight: 600 }}>
-                {resetMsg}
-              </div>
-            )}
+              <Button onClick={handleSendOtp} disabled={loading || !resetPhone.trim()} loading={loading} fullWidth>
+                Send Reset Code
+              </Button>
 
-            <button onClick={handleSendOtp} disabled={loading || !resetPhone.trim()} className="btn btn-primary">
-              {loading ? "Sending..." : "Send Reset Code"}
-            </button>
+              <button
+                onClick={() => { setView("login"); setError(""); }}
+                className="w-full flex items-center justify-center gap-1 text-sm font-medium text-[#6B7280] hover:text-[#114B36] transition-colors bg-none border-none cursor-pointer py-2"
+              >
+                <ChevronLeft size={16} /> Back to sign in
+              </button>
+            </motion.div>
+          )}
 
-            <button
-              onClick={() => { setView("login"); setError(""); }}
-              style={{ background: "none", border: "none", color: "#6B7280", fontSize: "0.85rem", cursor: "pointer", padding: "8px 0", fontWeight: 500 }}
+          {view === "reset" && (
+            <motion.div
+              key="reset"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="space-y-4"
             >
-              ← Back to sign in
-            </button>
-          </div>
-        )}
+              {resetMsg && (
+                <div className="bg-[#DCFCE7] text-[#059669] rounded-xl px-4 py-3 text-sm font-semibold">
+                  {resetMsg}
+                </div>
+              )}
 
-        {view === "reset" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            {resetMsg && (
-              <div style={{ padding: "10px", borderRadius: "8px", background: "#ECFDF5", color: "#059669", fontSize: "0.85rem", fontWeight: 600 }}>
-                {resetMsg}
-              </div>
-            )}
+              <Input
+                label="Reset Code"
+                placeholder="6-digit code"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                icon={<KeyRound size={16} />}
+                maxLength={6}
+              />
 
-            <input
-              type="text"
-              placeholder="6-digit reset code"
-              value={otp}
-              onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-              className="input-field"
-              maxLength={6}
-            />
+              <Input
+                label="New Password"
+                type="password"
+                placeholder="Min 6 characters"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                icon={<Lock size={16} />}
+              />
 
-            <input
-              type="password"
-              placeholder="New password (min 6 characters)"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              className="input-field"
-            />
+              <AnimatePresence>
+                {error && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    className="bg-[#FEE2E2] text-[#DC2626] rounded-xl px-4 py-3 text-sm font-semibold"
+                  >
+                    {error}
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-            {error && (
-              <div style={{ padding: "10px", borderRadius: "8px", background: "#FEE2E2", color: "#DC2626", fontSize: "0.85rem", fontWeight: 600 }}>
-                {error}
-              </div>
-            )}
+              <Button onClick={handleResetPassword} disabled={loading || otp.length !== 6 || newPassword.length < 6} loading={loading} fullWidth>
+                Reset Password
+              </Button>
 
-            <button onClick={handleResetPassword} disabled={loading || otp.length !== 6 || newPassword.length < 6} className="btn btn-primary">
-              {loading ? "Resetting..." : "Reset Password"}
-            </button>
+              <button
+                onClick={() => { setView("forgot"); setError(""); setOtp(""); setNewPassword(""); }}
+                className="w-full flex items-center justify-center gap-1 text-sm font-medium text-[#6B7280] hover:text-[#114B36] transition-colors bg-none border-none cursor-pointer py-2"
+              >
+                <ChevronLeft size={16} /> Send code again
+              </button>
+            </motion.div>
+          )}
 
-            <button
-              onClick={() => { setView("forgot"); setError(""); setOtp(""); setNewPassword(""); }}
-              style={{ background: "none", border: "none", color: "#6B7280", fontSize: "0.85rem", cursor: "pointer", padding: "8px 0", fontWeight: 500 }}
+          {view === "done" && (
+            <motion.div
+              key="done"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="text-center space-y-4"
             >
-              ← Send code again
-            </button>
-          </div>
-        )}
-
-        {view === "done" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px", textAlign: "center" }}>
-            <div style={{ fontSize: "2.5rem" }}>✅</div>
-            {resetMsg && (
-              <div style={{ padding: "10px", borderRadius: "8px", background: "#ECFDF5", color: "#059669", fontSize: "0.85rem", fontWeight: 600 }}>
-                {resetMsg}
+              <div className="w-16 h-16 rounded-2xl bg-[#DCFCE7] flex items-center justify-center mx-auto">
+                <CheckCircle2 size={32} className="text-[#15803D]" />
               </div>
-            )}
-            <button onClick={() => { setView("login"); setError(""); setPassword(""); }} className="btn btn-primary">
-              Sign In
-            </button>
-          </div>
-        )}
-      </div>
+              {resetMsg && (
+                <div className="bg-[#DCFCE7] text-[#059669] rounded-xl px-4 py-3 text-sm font-semibold">
+                  {resetMsg}
+                </div>
+              )}
+              <Button onClick={() => { setView("login"); setError(""); setPassword(""); }} fullWidth>
+                Sign In
+              </Button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
     </div>
   );
 };

@@ -1,5 +1,5 @@
 /**
- * Purpose: Global Notifications Context for tableDash.
+ * Purpose: Global Notifications Context for Ladha.
  * Responsibilities: Manages a queue of in-app toast notifications and a persistent
  *   notification log. Provides helpers to push new notifications and dismiss them.
  *   Also tracks unread count for the admin bell badge.

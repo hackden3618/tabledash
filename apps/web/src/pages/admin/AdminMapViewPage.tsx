@@ -6,6 +6,7 @@
  */
 
 import React from "react";
+import { ChevronLeft } from "lucide-react";
 
 interface AdminMapViewPageProps {
   order: any;
@@ -24,21 +25,15 @@ export const AdminMapViewPage: React.FC<AdminMapViewPageProps> = ({ order, onBac
 
   return (
     <div className="admin-container">
-      <header className="header-bar">
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+      <header className="bg-[#114B36] text-white px-4 py-3 sticky top-0 z-40 shadow-[0_2px_8px_rgba(17,75,54,0.15)]">
+        <div className="flex items-center gap-3 max-w-4xl mx-auto">
           <button
             onClick={onBack}
-            style={{
-              background: "none",
-              border: "none",
-              color: "white",
-              fontSize: "1.2rem",
-              cursor: "pointer",
-            }}
+            className="p-1 -ml-1 rounded-lg hover:bg-white/10 transition-colors bg-none border-none cursor-pointer text-white"
           >
-            ←
+            <ChevronLeft size={20} />
           </button>
-          <div className="header-title">Location on Map</div>
+          <h1 className="font-bold text-lg">Location on Map</h1>
         </div>
       </header>
 

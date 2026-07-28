@@ -1,25 +1,23 @@
-/**
- * Purpose: Admin Orders Management Dashboard for tableDash.
- * Responsibilities: Displays categorized order tabs (New, Preparing, Out for Delivery),
- *   renders order cards with quick Accept/View triggers, listens to real-time WS order alerts,
- *   and shows meaningful in-app notifications for ORDER_CREATED, ORDER_STATUS_UPDATED,
- *   ORDER_BOUNCED events via the notification panel.
- * Dependencies: React, apiGet/apiPatch helpers, useWebSocket, NotificationsContext.
- * When to modify: When changing status tab filters or order card action buttons.
- */
-
 import React, { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { apiGet, apiPatch } from "../../lib/api";
 import { useWebSocket } from "../../lib/websocket";
 import { useNotifications } from "../../context/NotificationsContext";
 import { AdminNotificationBell, AdminNotificationPanel } from "../../components/AdminNotificationPanel";
-import { LogOut } from "lucide-react";
+import { LogOut, ShoppingBag, MapPin, Phone, ChevronRight } from "lucide-react";
+import { StatusBadge } from "../../components/ui/Badge";
 
 interface AdminOrdersPageProps {
   token: string;
   onSelectOrder: (order: any) => void;
   onLogout: () => void;
 }
+
+const TAB_CONFIG = {
+  NEW: { label: "New", color: "#DC2626", bg: "#FEE2E2" },
+  PREPARING: { label: "Preparing", color: "#D97706", bg: "#FEF3C7" },
+  OUT_FOR_DELIVERY: { label: "Out for Delivery", color: "#4F46E5", bg: "#E0E7FF" },
+};
 
 export const AdminOrdersPage: React.FC<AdminOrdersPageProps> = ({
   token,
@@ -44,7 +42,6 @@ export const AdminOrdersPage: React.FC<AdminOrdersPageProps> = ({
     fetchOrders();
   }, []);
 
-  // Connect WebSocket for live admin broadcasts
   useWebSocket("admin", undefined, (event: any) => {
     if (event.type === "ORDER_CREATED") {
       const order = event.payload as any;
@@ -52,22 +49,18 @@ export const AdminOrdersPage: React.FC<AdminOrdersPageProps> = ({
       pushNotification(
         "info",
         `🛎 New Order #${order.orderNumber}`,
-        `${order.customer?.firstName} (${order.customer?.phone}) ordered ${
-          order.orderItems?.map((it: any) => `${it.quantity}× ${it.name}`).join(", ")
-        } — KSh ${order.totalAmount}`
+        `${order.customer?.firstName} (${order.customer?.phone}) ordered ${order.orderItems?.map((it: any) => `${it.quantity}× ${it.name}`).join(", ")} — KSh ${order.totalAmount}`
       );
-
     } else if (event.type === "ORDER_STATUS_UPDATED") {
       const updated = event.payload as any;
       setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
-
       const statusLabels: Record<string, string> = {
-        ACCEPTED:           "Accepted by Kitchen",
-        PREPARING:          "Now Preparing",
+        ACCEPTED: "Accepted by Kitchen",
+        PREPARING: "Now Preparing",
         READY_FOR_DELIVERY: "Ready for Delivery",
-        OUT_FOR_DELIVERY:   "Out for Delivery",
-        DELIVERED:          "Delivered",
-        CANCELLED:          "Cancelled",
+        OUT_FOR_DELIVERY: "Out for Delivery",
+        DELIVERED: "Delivered",
+        CANCELLED: "Cancelled",
       };
       const label = statusLabels[updated.status] ?? updated.status;
       pushNotification(
@@ -75,18 +68,12 @@ export const AdminOrdersPage: React.FC<AdminOrdersPageProps> = ({
         `Order #${updated.orderNumber} — ${label}`,
         `Customer: ${updated.customer?.firstName} · KSh ${updated.totalAmount} · ${updated.marketSection || "—"}`
       );
-
     } else if (event.type === "ORDER_BOUNCED") {
       const b = (event.payload as any);
       const reason = b.reason === "out_of_stock"
         ? `Only ${b.availableQty} portion(s) available, customer requested ${b.requestedQty}`
         : "Item is currently marked unavailable";
-      pushNotification(
-        "danger",
-        `⚠️ Order Bounced — ${b.productName}`,
-        `Customer ${b.customerName} (${b.customerPhone}) could not order. Reason: ${reason}. Restock or mark item available.`,
-        { duration: 9000 }
-      );
+      pushNotification("danger", `⚠️ Order Bounced — ${b.productName}`, `Customer ${b.customerName} (${b.customerPhone}) could not order. Reason: ${reason}. Restock or mark item available.`, { duration: 9000 });
     }
   });
 
@@ -109,141 +96,134 @@ export const AdminOrdersPage: React.FC<AdminOrdersPageProps> = ({
   const countPreparing = orders.filter((o) => o.status === "PREPARING" || o.status === "READY_FOR_DELIVERY").length;
   const countOut = orders.filter((o) => o.status === "OUT_FOR_DELIVERY").length;
 
-  const STATUS_BADGE_COLORS: Record<string, { bg: string; color: string }> = {
-    NEW:                { bg: "#FEE2E2", color: "#DC2626" },
-    ACCEPTED:           { bg: "#EDE9FE", color: "#7C3AED" },
-    PREPARING:          { bg: "#FEF3C7", color: "#D97706" },
-    READY_FOR_DELIVERY: { bg: "#DBEAFE", color: "#1D4ED8" },
-    OUT_FOR_DELIVERY:   { bg: "#E0E7FF", color: "#4F46E5" },
-    DELIVERED:          { bg: "#DCFCE7", color: "#15803D" },
-    CANCELLED:          { bg: "#F3F4F6", color: "#6B7280" },
-  };
-
   return (
     <div className="admin-container">
-      {/* Admin Header */}
-      <header className="header-bar">
-        <div className="header-title" style={{ fontSize: "1.1rem" }}>Orders</div>
-        <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-          <AdminNotificationBell onClick={() => setPanelOpen(true)} />
-          <button
-            onClick={onLogout}
-            title="Logout"
-            style={{ background: "rgba(239,68,68,0.3)", border: "none", color: "white", padding: "6px 10px", borderRadius: "6px", fontSize: "0.8rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}
-          >
-            <LogOut size={15} />
-          </button>
+      {/* Header */}
+      <header className="bg-[#114B36] text-white px-4 py-3 sticky top-0 z-40 shadow-[0_2px_8px_rgba(17,75,54,0.15)]">
+        <div className="flex items-center justify-between max-w-4xl mx-auto">
+          <h1 className="font-bold text-lg flex items-center gap-2">
+            <ShoppingBag size={20} /> Orders
+          </h1>
+          <div className="flex items-center gap-2">
+            <AdminNotificationBell onClick={() => setPanelOpen(true)} />
+            <button
+              onClick={onLogout}
+              className="px-3 py-1.5 rounded-xl bg-white/15 text-xs font-semibold text-white hover:bg-white/25 transition-colors flex items-center gap-1.5 bg-none border-none cursor-pointer"
+            >
+              <LogOut size={14} /> Logout
+            </button>
+          </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <div style={{ padding: "20px" }}>
+      <div className="p-4 max-w-4xl mx-auto">
         {/* Status Tabs */}
-        <div style={{ display: "flex", gap: "8px", background: "#F3F4F6", padding: "4px", borderRadius: "12px", marginBottom: "20px" }}>
-          {[
-            { key: "NEW", label: "New", count: countNew },
-            { key: "PREPARING", label: "Preparing", count: countPreparing },
-            { key: "OUT_FOR_DELIVERY", label: "Out", count: countOut },
-          ].map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key as any)}
-              style={{
-                flex: 1, padding: "10px", borderRadius: "8px", border: "none",
-                background: activeTab === tab.key ? "#FFFFFF" : "transparent",
-                color: activeTab === tab.key ? "#1E4D36" : "#6B7280",
-                fontWeight: 700, fontSize: "0.85rem", cursor: "pointer",
-                boxShadow: activeTab === tab.key ? "0 2px 4px rgba(0,0,0,0.05)" : "none",
-                transition: "all 0.15s",
-                display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
-              }}
-            >
-              {tab.label}
-              {tab.count > 0 && (
-                <span style={{ background: activeTab === tab.key ? "#1E4D36" : "#D1D5DB", color: activeTab === tab.key ? "white" : "#6B7280", borderRadius: "999px", fontSize: "0.72rem", fontWeight: 800, padding: "1px 6px" }}>
-                  {tab.count}
+        <div className="flex gap-2 bg-[#F3F4F6] p-1 rounded-xl mb-5">
+          {(["NEW", "PREPARING", "OUT_FOR_DELIVERY"] as const).map((key) => {
+            const cfg = TAB_CONFIG[key];
+            const count = key === "NEW" ? countNew : key === "PREPARING" ? countPreparing : countOut;
+            const isActive = activeTab === key;
+            return (
+              <button
+                key={key}
+                onClick={() => setActiveTab(key)}
+                className={`
+                  flex-1 py-2.5 rounded-lg font-bold text-sm transition-all duration-200
+                  flex items-center justify-center gap-2 bg-none border-none cursor-pointer
+                  ${isActive ? "bg-white text-[#114B36] shadow-sm" : "text-[#6B7280] hover:text-[#1F2937]"}
+                `}
+              >
+                <span>{cfg.label}</span>
+                <span className={`
+                  px-2 py-0.5 rounded-full text-xs font-bold
+                  ${isActive ? "bg-[#114B36] text-white" : "bg-[#D1D5DB] text-[#6B7280]"}
+                `}>
+                  {count}
                 </span>
-              )}
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Orders Cards List */}
+        {/* Orders */}
         {loading ? (
-          <div style={{ textAlign: "center", padding: "40px 0", color: "#6B7280" }}>Loading incoming orders...</div>
+          <div className="text-center py-16">
+            <div className="w-10 h-10 border-4 border-[#E5E7EB] border-t-[#114B36] rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-sm text-[#6B7280]">Loading orders...</p>
+          </div>
         ) : filteredOrders.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "40px 0", color: "#6B7280" }}>
-            <div style={{ fontSize: "2rem", marginBottom: "8px" }}>📭</div>
-            {activeTab === "NEW"
-              ? "There are currently no new orders."
-              : activeTab === "PREPARING"
-                ? "There are currently no orders being prepared."
-                : "There are currently no orders out for delivery."}
+          <div className="text-center py-16">
+            <ShoppingBag size={48} className="text-[#D1D5DB] mx-auto mb-3" />
+            <p className="font-semibold text-[#6B7280]">No {activeTab.toLowerCase().replace(/_/g, " ")} orders</p>
+            <p className="text-sm text-[#9CA3AF] mt-1">
+              {activeTab === "NEW" ? "New orders will appear here" : "Orders will move here as they're updated"}
+            </p>
           </div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "16px" }}>
-            {filteredOrders.map((ord) => {
-              const badge = STATUS_BADGE_COLORS[ord.status] ?? STATUS_BADGE_COLORS["NEW"]!;
-              return (
-                <div
-                  key={ord.id}
-                  onClick={() => onSelectOrder(ord)}
-                  className="card"
-                  style={{ cursor: "pointer", position: "relative", transition: "all 0.18s" }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px", alignItems: "flex-start" }}>
-                    <div>
-                      <span style={{ fontWeight: 800, fontSize: "1.05rem", color: "#1E4D36" }}>#{ord.orderNumber}</span>
-                      <span style={{ fontSize: "0.75rem", color: "#6B7280", marginLeft: "8px" }}>
-                        {new Date(ord.orderedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                    </div>
-                    <span style={{ background: badge.bg, color: badge.color, borderRadius: "8px", padding: "3px 10px", fontWeight: 700, fontSize: "0.73rem" }}>
-                      {ord.status.replace(/_/g, " ")}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {filteredOrders.map((ord, idx) => (
+              <motion.div
+                key={ord.id}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.03 }}
+                whileHover={{ y: -2 }}
+                onClick={() => onSelectOrder(ord)}
+                className="bg-white rounded-2xl p-4 shadow-[0_2px_8px_rgba(17,75,54,0.06)] hover:shadow-[0_8px_24px_rgba(17,75,54,0.1)] cursor-pointer transition-all duration-200"
+              >
+                <div className="flex items-start justify-between mb-2.5">
+                  <div>
+                    <span className="font-extrabold text-lg text-[#114B36]">#{ord.orderNumber}</span>
+                    <span className="text-xs text-[#6B7280] ml-2">
+                      {new Date(ord.orderedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </span>
                   </div>
+                  <StatusBadge status={ord.status} />
+                </div>
 
-                  <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1F2937" }}>
-                    {ord.customer?.firstName} ({ord.customer?.phone})
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-8 h-8 rounded-full bg-[#EBF5F0] flex items-center justify-center text-[#114B36] font-bold text-sm shrink-0">
+                    {ord.customer?.firstName?.[0] || "?"}
                   </div>
-
-                  <div style={{ fontSize: "0.85rem", color: "#4B5563", marginTop: "4px" }}>
-                    {ord.orderItems?.map((it: any) => `${it.quantity}× ${it.name}`).join(", ")}
-                  </div>
-
-                  <div style={{ fontSize: "0.8rem", color: "#6B7280", marginTop: "6px", display: "flex", alignItems: "center", gap: "4px" }}>
-                    📍 {ord.marketSection} — {ord.locationDescription}
-                  </div>
-
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "12px", paddingTop: "8px", borderTop: "1px solid #F3F4F6" }}>
-                    <span style={{ fontWeight: 800, fontSize: "1rem", color: "#1F2937" }}>KSh {ord.totalAmount}</span>
-                    <div style={{ display: "flex", gap: "8px" }}>
-                      {ord.status === "NEW" && (
-                        <button
-                          onClick={(e) => handleAcceptOrder(ord.id, e)}
-                          className="btn btn-primary"
-                          style={{ padding: "6px 14px", fontSize: "0.85rem" }}
-                        >
-                          Accept
-                        </button>
-                      )}
-                      <button
-                        onClick={(e) => { e.stopPropagation(); onSelectOrder(ord); }}
-                        className="btn btn-secondary"
-                        style={{ padding: "6px 14px", fontSize: "0.85rem" }}
-                      >
-                        View
-                      </button>
-                    </div>
+                  <div>
+                    <p className="font-bold text-sm text-[#1F2937]">{ord.customer?.firstName}</p>
+                    <p className="text-xs text-[#6B7280] flex items-center gap-1">
+                      <Phone size={10} /> {ord.customer?.phone}
+                    </p>
                   </div>
                 </div>
-              );
-            })}
+
+                <p className="text-xs text-[#4B5563] line-clamp-2 mb-3">
+                  {ord.orderItems?.map((it: any) => `${it.quantity}× ${it.name}`).join(", ")}
+                </p>
+
+                <div className="flex items-start gap-1.5 text-xs text-[#6B7280] mb-3">
+                  <MapPin size={12} className="mt-0.5 shrink-0" />
+                  <span>{ord.marketSection}{ord.locationDescription ? ` — ${ord.locationDescription}` : ""}</span>
+                </div>
+
+                <div className="flex items-center justify-between pt-3 border-t border-[#F3F4F6]">
+                  <span className="font-extrabold text-base text-[#114B36]">KSh {ord.totalAmount}</span>
+                  <div className="flex gap-2">
+                    {ord.status === "NEW" && (
+                      <button
+                        onClick={(e) => handleAcceptOrder(ord.id, e)}
+                        className="px-4 py-1.5 rounded-xl bg-[#114B36] text-white text-xs font-bold hover:bg-[#0D3D2B] transition-colors bg-none border-none cursor-pointer"
+                      >
+                        Accept
+                      </button>
+                    )}
+                    <span className="text-[#114B36] text-xs font-semibold flex items-center gap-0.5">
+                      View <ChevronRight size={12} />
+                    </span>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
           </div>
         )}
       </div>
 
-      {/* Notification Panel */}
       <AdminNotificationPanel isOpen={panelOpen} onClose={() => setPanelOpen(false)} />
     </div>
   );

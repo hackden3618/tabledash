@@ -12,10 +12,12 @@ import { env } from "../../../../../shared/config";
 import {
   CustomerLoginSchema,
   CustomerRegisterSchema,
+  CustomerForgotPinSchema,
+  CustomerResetPinSchema,
   IdParamSchema,
 } from "../../../../../shared/schemas";
 import { getAllCustomers, getCustomerHistory } from "./service";
-import { getCustomerProfile, loginCustomer, registerCustomer, verifyCustomerToken } from "./auth.service";
+import { getCustomerProfile, loginCustomer, registerCustomer, verifyCustomerToken, generatePinResetCode, resetCustomerPin } from "./auth.service";
 import { verifyAdminToken } from "../auth/service";
 import { AUTH_LIMITER } from "../../lib/rate-limiter";
 
@@ -40,13 +42,14 @@ export const customersRoute = new Elysia({
       return { success: false, error: "Missing or invalid authorization header" };
     }
     const token = authHeader.split(" ")[1] ?? "";
+    let admin;
     try {
-      await verifyAdminToken(token, (t) => jwt.verify(t));
+      admin = await verifyAdminToken(token, (t) => jwt.verify(t));
     } catch {
       set.status = 401;
       return { success: false, error: "Invalid or expired session token" };
     }
-    const customers = await getAllCustomers();
+    const customers = await getAllCustomers(admin.hotelId ?? undefined);
     return { success: true, data: customers };
   })
 
@@ -60,19 +63,21 @@ export const customersRoute = new Elysia({
         return { success: false, error: "Missing or invalid authorization header" };
       }
       const token = authHeader.split(" ")[1] ?? "";
-      try {
-        await verifyAdminToken(token, (t) => jwt.verify(t));
-      } catch {
-        set.status = 401;
-        return { success: false, error: "Invalid or expired session token" };
-      }
-      try {
-        const history = await getCustomerHistory(params.id);
-        return { success: true, data: history };
-      } catch (err: any) {
-        set.status = 404;
-        return { success: false, error: err.message };
-      }
+    let admin;
+
+    try {
+      admin = await verifyAdminToken(token, (t) => jwt.verify(t));
+    } catch {
+      set.status = 401;
+      return { success: false, error: "Invalid or expired session token" };
+    }
+    try {
+      const history = await getCustomerHistory(params.id, admin.hotelId ?? undefined);
+      return { success: true, data: history };
+    } catch (err: any) {
+      set.status = 404;
+      return { success: false, error: err.message };
+    }
     },
     { params: IdParamSchema }
   )
@@ -147,4 +152,34 @@ export const customersRoute = new Elysia({
       // Declare headers so Elysia doesn't strip authorization
       headers: t.Object({ authorization: t.Optional(t.String()) }),
     }
+  )
+
+  // ─── Customer: Forgot PIN (request reset code) ────────────────────────────────
+  .post(
+    "/forgot-pin",
+    async ({ body, set }) => {
+      try {
+        const result = await generatePinResetCode(body.phone);
+        return { success: true, data: result };
+      } catch (err: any) {
+        set.status = 404;
+        return { success: false, error: err.message };
+      }
+    },
+    { body: CustomerForgotPinSchema }
+  )
+
+  // ─── Customer: Reset PIN (validate OTP + set new PIN) ─────────────────────────
+  .post(
+    "/reset-pin",
+    async ({ body, set }) => {
+      try {
+        const result = await resetCustomerPin(body);
+        return { success: true, data: result };
+      } catch (err: any) {
+        set.status = 400;
+        return { success: false, error: err.message };
+      }
+    },
+    { body: CustomerResetPinSchema }
   );
