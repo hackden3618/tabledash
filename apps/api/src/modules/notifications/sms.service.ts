@@ -6,6 +6,7 @@
  */
 
 import { env } from "../../../../../shared/config";
+import { formatPhone } from "../../../../../shared/phone";
 
 /**
  * Interface defining the contract for SMS dispatch drivers.
@@ -26,36 +27,15 @@ export class TextSmsDriver implements ISmsDriver {
   private readonly apiUrl = "https://sms.textsms.co.ke/api/services/sendsms/";
 
   constructor() {
-    console.log("[SMS Driver Loaded] TextSMS.co.ke credentials check:");
-    console.log(`  → Partner ID : ${env.textSmsPartnerId ? env.textSmsPartnerId : "❌ MISSING"}`);
-    console.log(`  → API Key    : ${env.textSmsApiKey ? env.textSmsApiKey.slice(0, 8) + "..." : "❌ MISSING"}`);
-    console.log(`  → Sender ID  : ${env.textSmsShortcode}`);
-  }
-
-  /**
-   * Formats Kenyan phone numbers into international format (2547XXXXXXXX).
-   * WHY: Local numbers starting with '07' or '01' must be converted to '254...' for textSMS gateway compatibility.
-   */
-  private formatPhoneNumber(phone: string): string {
-    const cleaned = phone.replace(/\D/g, "");
-    if (cleaned.startsWith("0") && cleaned.length === 10) {
-      return `254${cleaned.slice(1)}`;
-    }
-    if (cleaned.startsWith("7") || cleaned.startsWith("1")) {
-      return `254${cleaned}`;
-    }
-    return cleaned;
+    console.log(`[SMS Driver] TextSMS.co.ke configured: ${Boolean(env.textSmsApiKey && env.textSmsPartnerId)}`);
   }
 
   public async sendSms(recipientPhone: string, message: string): Promise<boolean> {
-    const formattedPhone = this.formatPhoneNumber(recipientPhone);
+    const formattedPhone = formatPhone(recipientPhone);
 
     if (!env.textSmsApiKey || !env.textSmsPartnerId) {
-      console.warn(
-        "[SMS Driver Warning] TEXTSMS_API_KEY or TEXTSMS_PARTNER_ID missing. Falling back to log print."
-      );
-      console.log(`[SMS OUTBOUND to ${formattedPhone}]: ${message}`);
-      return true;
+      console.error("[SMS Dispatch Blocked] TextSMS credentials are not configured");
+      return false;
     }
 
     try {
@@ -76,7 +56,11 @@ export class TextSmsDriver implements ISmsDriver {
 
       // Read the raw text first — TextSMS.co.ke may return plain text or JSON
       const rawText = await response.text();
-      console.log(`[SMS Gateway Response] HTTP ${response.status} to ${formattedPhone}:`, rawText);
+      console.log(`[SMS Gateway Response] HTTP ${response.status} to recipient ending ${formattedPhone.slice(-4)}`);
+
+      if (env.smsLogMessages) {
+        console.log(`[SMS Debug] To: ${formattedPhone}\n[SMS Debug Message]: ${message}\n[SMS Debug Gateway Body]: ${rawText}`);
+      }
 
       // Try parsing JSON; if it fails, treat raw text as the result payload
       let data: unknown;
@@ -87,10 +71,10 @@ export class TextSmsDriver implements ISmsDriver {
       }
 
       if (response.ok) {
-        console.log("[SMS Dispatched successfully via TextSMS.co.ke]:", data);
+        console.log("[SMS Dispatched successfully via TextSMS.co.ke]");
         return true;
       } else {
-        console.error(`[SMS Dispatch Failed] HTTP ${response.status}:`, data);
+        console.error(`[SMS Dispatch Failed] HTTP ${response.status}`);
         return false;
       }
     } catch (error) {
@@ -105,10 +89,12 @@ export class TextSmsDriver implements ISmsDriver {
  */
 export class ConsoleSmsDriver implements ISmsDriver {
   public async sendSms(recipientPhone: string, message: string): Promise<boolean> {
-    console.log(`\n========================================`);
-    console.log(`[DEV SMS SIMULATION] To: ${recipientPhone}`);
-    console.log(`[Message]: ${message}`);
-    console.log(`========================================\n`);
+    if (env.smsLogMessages) {
+      console.log(`\n========================================`);
+      console.log(`[DEV SMS SIMULATION] To: ${recipientPhone}`);
+      console.log(`[Message]: ${message}`);
+      console.log(`========================================\n`);
+    }
     return true;
   }
 }

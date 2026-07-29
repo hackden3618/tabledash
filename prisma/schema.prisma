@@ -30,16 +30,50 @@ enum OrderStatus {
     CANCELLED
 }
 
+enum PaymentStatus {
+    UNPAID
+    PARTIAL
+    PAID
+    REFUNDED
+}
+
+enum HotelRole {
+    HOTEL_ADMIN
+    HOTEL_STAFF
+}
+
 enum EventName {
     order_created
     order_status_updated
+    order_payment_updated
     menu_availability_updated
+    hotel_created
+    hotel_status_updated
+    hotel_admin_created
+    hotel_staff_created
+    platform_admin_created
 }
 
 enum EventStatus {
     initialized
     pending
     done
+    failed
+}
+
+enum ConversationType {
+    ORDER
+    TALK_TO_STAFF
+    HOTEL_NOTICE
+    PLATFORM_NOTICE
+    HOTEL_COMMUNITY
+}
+
+enum ParticipantKind {
+    CUSTOMER
+    GUEST
+    HOTEL_STAFF
+    PLATFORM_ADMIN
 }
 
 /**
@@ -48,12 +82,49 @@ enum EventStatus {
  * ========================
  */
 
-model AdminUser {
+model Hotel {
+    id           String   @id @default(uuid()) @db.Uuid
+    name         String
+    slug         String   @unique
+    imageUrl     String?  @map("image_url")
+    isOpen       Boolean  @default(true) @map("is_open")
+    autoCloseAt  DateTime? @map("auto_close_at") @db.Timestamptz()
+    createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+    deletedAt    DateTime? @map("deleted_at") @db.Timestamptz()
+
+    adminUsers    AdminUser[]
+    products      Product[]
+    orders        Order[]
+    staffUsers    StaffUser[]
+    media         Media[]
+
+    @@map("hotels")
+}
+
+model PlatformAdmin {
     id           String   @id @default(uuid()) @db.Uuid
     username     String   @unique
     passwordHash String   @map("password_hash")
     name         String
     createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+    @@map("platform_admins")
+}
+
+model AdminUser {
+    id           String    @id @default(uuid()) @db.Uuid
+    username     String    @unique
+    passwordHash String    @map("password_hash")
+    name         String
+    hotelId      String?   @map("hotel_id") @db.Uuid
+    role         HotelRole @default(HOTEL_STAFF)
+    isDiscoverable Boolean  @default(false) @map("is_discoverable")
+    resetCode    String?    @map("reset_code")
+    resetCodeExpires DateTime? @map("reset_code_expires") @db.Timestamptz()
+    createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+
+    hotel Hotel? @relation(fields: [hotelId], references: [id])
+    staffProfile StaffUser?
 
     @@map("admin_users")
 }
@@ -63,46 +134,138 @@ model Customer {
     firstName           String   @map("first_name")
     lastName            String?  @map("last_name")
     phone               String   @unique
-    pinHash             String?  @map("pin_hash") // Argon2id via Bun.password; null = guest (no account)
+    pinHash             String?  @map("pin_hash")
+    stallNumber         String?  @map("stall_number")
     locationDescription String?  @map("location_description")
     marketSection       String?  @map("market_section")
+    knownName           String?  @map("known_name")
+    isDiscoverable      Boolean  @default(false) @map("is_discoverable")
+    pinResetCode        String?  @map("pin_reset_code")
+    pinResetCodeExpires DateTime? @map("pin_reset_code_expires") @db.Timestamptz()
     createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
     orders Order[]
+    guestIdentities GuestIdentity[]
 
     @@map("customers")
 }
 
-model Product {
-    id        String   @id @default(uuid()) @db.Uuid
-    name      String
-    category  String   @default("General")
-    imageUrl  String   @map("image_url")
-    price     Decimal  @db.Decimal(10, 2)
-    available Boolean  @default(true)
-    stockQty  Int      @default(0) @map("stock_qty") // Available portions; 0 = out of stock
-    deleted   Boolean  @default(false)
-    createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+model GuestIdentity {
+    id         String    @id @db.Uuid
+    customerId String?   @map("customer_id") @db.Uuid
+    createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz()
 
+    customer Customer? @relation(fields: [customerId], references: [id])
+
+    @@index([customerId])
+    @@map("guest_identities")
+}
+
+// Messaging is intentionally separate from notifications: messages are durable
+// product data, while WS/SMS delivery remains a transport concern.
+model Conversation {
+    id            String           @id @default(uuid()) @db.Uuid
+    type          ConversationType
+    hotelId       String?          @map("hotel_id") @db.Uuid
+    orderId       String?          @map("order_id") @db.Uuid
+    channelName   String?          @map("channel_name")
+    title         String?
+    assignedStaffId String?        @map("assigned_staff_id") @db.Uuid
+    createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz()
+    lastMessageAt DateTime?        @map("last_message_at") @db.Timestamptz()
+
+    participants ConversationParticipant[]
+    messages     Message[]
+    order        Order?            @relation(fields: [orderId], references: [id])
+
+    @@index([hotelId])
+    @@index([type, hotelId])
+    @@index([orderId])
+    @@map("conversations")
+}
+
+model ConversationParticipant {
+    id               String            @id @default(uuid()) @db.Uuid
+    conversationId   String            @map("conversation_id") @db.Uuid
+    kind             ParticipantKind
+    customerId       String?           @map("customer_id") @db.Uuid
+    guestIdentityId  String?           @map("guest_identity_id") @db.Uuid
+    adminUserId      String?           @map("admin_user_id") @db.Uuid
+    platformAdminId  String?           @map("platform_admin_id") @db.Uuid
+    canReply         Boolean           @default(true) @map("can_reply")
+    lastReadAt       DateTime?         @map("last_read_at") @db.Timestamptz()
+
+    conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+    @@index([customerId])
+    @@index([guestIdentityId])
+    @@index([adminUserId])
+    @@index([platformAdminId])
+    @@unique([conversationId, customerId, guestIdentityId, adminUserId, platformAdminId])
+    @@map("conversation_participants")
+}
+
+model Message {
+    id                  String       @id @default(uuid()) @db.Uuid
+    conversationId      String       @map("conversation_id") @db.Uuid
+    senderParticipantId String       @map("sender_participant_id") @db.Uuid
+    replyToId           String?      @map("reply_to_id") @db.Uuid
+    body                String       @db.Text
+    createdAt           DateTime     @default(now()) @map("created_at") @db.Timestamptz()
+    updatedAt           DateTime?    @map("updated_at") @db.Timestamptz()
+    deletedAt           DateTime?    @map("deleted_at") @db.Timestamptz()
+
+    conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+    replyTo      Message?     @relation("MessageReply", fields: [replyToId], references: [id])
+    replies      Message[]    @relation("MessageReply")
+
+    @@index([conversationId, createdAt])
+    @@map("messages")
+}
+
+model Product {
+    id               String    @id @default(uuid()) @db.Uuid
+    name             String
+    category         String    @default("General")
+    imageUrl         String    @map("image_url")
+    price            Decimal   @db.Decimal(10, 2)
+    available        Boolean   @default(true)
+    stockQty         Int       @default(0) @map("stock_qty")
+    deleted          Boolean   @default(false)
+    lastRestockedAt  DateTime? @map("last_restocked_at") @db.Timestamptz()
+    outOfStockSince  DateTime? @map("out_of_stock_since") @db.Timestamptz()
+    hotelId          String?   @map("hotel_id") @db.Uuid
+    createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+
+    hotel      Hotel?       @relation(fields: [hotelId], references: [id])
     orderItems OrderItem[]
 
     @@map("products")
 }
 
 model Order {
-    id                  String      @id @default(uuid()) @db.Uuid
-    orderNumber         Int         @default(autoincrement()) @map("order_number")
-    customerId          String      @map("customer_id") @db.Uuid
-    status              OrderStatus @default(NEW)
-    totalAmount         Decimal     @map("total_amount") @db.Decimal(10, 2)
-    marketSection       String?     @map("market_section")
-    locationDescription String?     @map("location_description")
-    orderedAt           DateTime    @default(now()) @map("ordered_at") @db.Timestamptz()
-    completedAt         DateTime?   @map("completed_at") @db.Timestamptz()
-    cancelReason        String?     @map("cancel_reason")
+    id                  String        @id @default(uuid()) @db.Uuid
+    orderNumber         Int           @default(autoincrement()) @map("order_number")
+    customerId          String        @map("customer_id") @db.Uuid
+    status              OrderStatus   @default(NEW)
+    totalAmount         Decimal       @map("total_amount") @db.Decimal(10, 2)
+    paymentStatus       PaymentStatus @default(UNPAID) @map("payment_status")
+    amountPaid          Decimal       @default(0) @map("amount_paid") @db.Decimal(10, 2)
+    marketSection       String?       @map("market_section")
+    locationDescription String?       @map("location_description")
+    stallNumber         String?       @map("stall_number")
+    knownName           String?       @map("known_name")
+    hotelId             String?       @map("hotel_id") @db.Uuid
+    orderedAt           DateTime      @default(now()) @map("ordered_at") @db.Timestamptz()
+    completedAt         DateTime?     @map("completed_at") @db.Timestamptz()
+    cancelReason        String?       @map("cancel_reason")
+    cancelledAtStatus   String?       @map("cancelled_at_status")
+    refundedAt          DateTime?     @map("refunded_at") @db.Timestamptz()
 
     customer   Customer    @relation(fields: [customerId], references: [id])
+    hotel      Hotel?       @relation(fields: [hotelId], references: [id])
     orderItems OrderItem[]
+    conversations Conversation[]
 
     @@map("orders")
 }
@@ -127,10 +290,41 @@ model EventOutbox {
     eventName   EventName   @map("event_name")
     payload     String      @db.Text
     status      EventStatus @default(initialized)
+    attempts    Int         @default(0)
+    hotelId     String?     @map("hotel_id") @db.Uuid
+    lastError   String?     @map("last_error")
     createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz()
     completedAt DateTime?   @map("completed_at") @db.Timestamptz()
 
+    @@index([status])
     @@map("event_outbox")
+}
+
+enum MediaStatus {
+    UPLOADING
+    PROCESSING
+    READY
+    FAILED
+}
+
+model Media {
+    id          String     @id @default(uuid()) @db.Uuid
+    originalName String    @map("original_name")
+    mimeType     String    @map("mime_type")
+    sizeBytes    Int       @map("size_bytes")
+    url          String    @db.Text
+    thumbnailUrl String?   @map("thumbnail_url") @db.Text
+    width        Int?
+    height       Int?
+    status       MediaStatus @default(UPLOADING)
+    hotelId      String?   @map("hotel_id") @db.Uuid
+    createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+    updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+    deletedAt    DateTime? @map("deleted_at") @db.Timestamptz()
+
+    hotel Hotel? @relation(fields: [hotelId], references: [id])
+
+    @@map("media")
 }
 
 model Setting {
@@ -146,7 +340,13 @@ model StaffUser {
     name       String
     phone      String   @unique
     receiveSms Boolean  @default(true) @map("receive_sms")
+    isDiscoverable Boolean @default(false) @map("is_discoverable")
+    hotelId    String?  @map("hotel_id") @db.Uuid
+    adminUserId String? @unique @map("admin_user_id") @db.Uuid
     createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+    hotel Hotel? @relation(fields: [hotelId], references: [id])
+    adminUser AdminUser? @relation(fields: [adminUserId], references: [id], onDelete: SetNull)
 
     @@map("staff_users")
 }

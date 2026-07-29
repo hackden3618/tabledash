@@ -8,34 +8,56 @@
 import { prisma } from "../../../../../infrastructure/database/prisma";
 
 /**
- * Retrieves all registered customer records.
+ * Retrieves registered customer records, optionally scoped to a hotel.
+ * When hotelId is provided, only customers with orders belonging to that hotel are returned.
  */
-export const getAllCustomers = async () => {
+export const getAllCustomers = async (hotelId?: string) => {
+  if (!hotelId) {
     return await prisma.customer.findMany({
-        orderBy: { createdAt: "desc" },
-        include: {
-            _count: {
-                select: { orders: true },
-            },
+      orderBy: { createdAt: "desc" },
+      include: {
+        _count: {
+          select: { orders: true },
         },
+      },
     });
+  }
+
+  const orderIds = await prisma.order.findMany({
+    where: { hotelId },
+    select: { customerId: true },
+  });
+
+  const customerIds = [...new Set(orderIds.map((o) => o.customerId))];
+
+  return await prisma.customer.findMany({
+    where: { id: { in: customerIds } },
+    orderBy: { createdAt: "desc" },
+    include: {
+      _count: {
+        select: { orders: true },
+      },
+    },
+  });
 };
 
 /**
- * Retrieves customer details and order history by Customer ID.
+ * Retrieves customer details and order history by Customer ID,
+ * optionally scoped to a single hotel.
  */
-export const getCustomerHistory = async (customerId: string) => {
-    const customer = await prisma.customer.findUnique({
-        where: { id: customerId },
+export const getCustomerHistory = async (customerId: string, hotelId?: string) => {
+  const customer = await prisma.customer.findUnique({
+    where: { id: customerId },
+    include: {
+      orders: {
+        where: hotelId ? { hotelId } : undefined,
         include: {
-            orders: {
-                include: {
-                    orderItems: true,
-                },
-                orderBy: { orderedAt: "desc" },
-            },
+          orderItems: true,
         },
-    });
+        orderBy: { orderedAt: "desc" },
+      },
+    },
+  });
 
     if (!customer) {
         throw new Error("Customer record not found");

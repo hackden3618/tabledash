@@ -19,11 +19,11 @@ COPY shared/ ./shared/
 COPY infrastructure/ ./infrastructure/
 COPY prisma/ ./prisma/
 COPY prisma.config.ts ./
-COPY .build-id ./
+# COPY .build-id ./
 COPY --from=frontend /app/apps/web/dist ./apps/web/dist
 
 RUN bun install --frozen-lockfile --production
 RUN bunx prisma generate
 
 EXPOSE ${PORT:-3000}
-CMD ["bun", "run", "apps/api/server.ts"]
+CMD ["sh", "-c", "bunx prisma migrate deploy && bun run apps/api/server.ts"]

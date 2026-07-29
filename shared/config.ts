@@ -10,16 +10,23 @@ export class Environment {
   public readonly apiPrefix: string = process.env.API_PREFIX ?? "/api/v1";
 
   /** Database connection string for PostgreSQL */
-  public readonly databaseUrl: string = process.env.DATABASE_URL ?? "postgres://development@localhost:5432/tabledash?schema=public";
+  public readonly databaseUrl: string = process.env.DATABASE_URL ?? "postgres://development@localhost:5432/tabledash?schema=public&connection_limit=5";
 
   /** Port for the Elysia backend server */
   public readonly backendPort: number = Number(process.env.PORT ?? 3000);
 
   /** JWT Secret used for signing JWT authentication tokens via @elysiajs/jwt */
-  public readonly jwtSecret: string = process.env.JWT_SECRET ?? "tabledash_secret_key_change_in_production_2026";
+  public get jwtSecret(): string {
+    const val = process.env.JWT_SECRET;
+    if (!val) throw new Error("JWT_SECRET environment variable is required — set it in Railway or .env");
+    return val;
+  }
 
   /** SMS Provider selection: 'textsms' | 'console' */
   public readonly smsProvider: string = process.env.SMS_PROVIDER ?? "textsms";
+
+  /** Development-only SMS diagnostics; never enabled by default in production. */
+  public readonly smsLogMessages: boolean = process.env.SMS_LOG_MESSAGES === "true" || (process.env.NODE_ENV !== "production" && process.env.SMS_LOG_MESSAGES !== "false");
 
   /** TextSMS.co.ke API Key */
   public readonly textSmsApiKey: string = process.env.TEXTSMS_API_KEY ?? "";
@@ -41,6 +48,22 @@ export class Environment {
 
   /** Allowed CORS origin (set to frontend URL in production, * for development) */
   public readonly corsOrigin: string = process.env.CORS_ORIGIN ?? "*";
+
+  /** Fails fast on unsafe production defaults before accepting traffic. */
+  public assertProductionSafety(): void {
+    if (process.env.NODE_ENV !== "production") return;
+
+    const errors: string[] = [];
+    const jwtSecret = process.env.JWT_SECRET ?? "";
+    if (jwtSecret.length < 32) errors.push("JWT_SECRET must be at least 32 characters");
+    if (!this.corsOrigin || this.corsOrigin === "*") errors.push("CORS_ORIGIN must be an explicit frontend origin");
+    if (this.seedAdminUsername === "admin" || this.seedAdminPassword === "adminpass") errors.push("SEED_ADMIN_USERNAME and SEED_ADMIN_PASSWORD must not use defaults");
+    if (process.env.MEDIA_STORAGE !== "s3") errors.push("MEDIA_STORAGE must be s3-compatible in production");
+    if (this.smsProvider === "textsms" && (!this.textSmsApiKey || !this.textSmsPartnerId)) errors.push("TextSMS credentials are required when SMS_PROVIDER=textsms");
+    if (this.smsProvider === "console") errors.push("SMS_PROVIDER=console is not allowed in production");
+
+    if (errors.length > 0) throw new Error(`Unsafe production configuration: ${errors.join("; ")}`);
+  }
 }
 
 export const env = new Environment();
