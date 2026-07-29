@@ -10,6 +10,7 @@
 import { prisma } from "../../../../../infrastructure/database/prisma";
 import { wsHub } from "../websocket/hub";
 import { getDefaultHotel } from "../hotels/service";
+import { toPublicMediaUrl } from "../media/service";
 
 export interface CreateProductInput {
   name: string;
@@ -38,6 +39,7 @@ export const getAllMenuItems = async (hotelId?: string) => {
   return products.map((p) => ({
     ...p,
     price: Number(p.price),
+    imageUrl: toPublicMediaUrl(p.imageUrl) ?? p.imageUrl,
   }));
 };
 
@@ -68,6 +70,7 @@ export const createMenuItem = async (input: CreateProductInput, hotelIdFromJwt?:
   return {
     ...product,
     price: Number(product.price),
+    imageUrl: toPublicMediaUrl(product.imageUrl) ?? product.imageUrl,
   };
 };
 
@@ -90,6 +93,7 @@ export const updateProductAvailability = async (id: string, available: boolean, 
   const formattedProduct = {
     ...product,
     price: Number(product.price),
+    imageUrl: toPublicMediaUrl(product.imageUrl) ?? product.imageUrl,
   };
 
   wsHub.broadcastMenuUpdate({
@@ -136,6 +140,7 @@ export const updateProductStock = async (id: string, stockQty: number, hotelId?:
   const formattedProduct = {
     ...product,
     price: Number(product.price),
+    imageUrl: toPublicMediaUrl(product.imageUrl) ?? product.imageUrl,
   };
 
   wsHub.broadcastMenuUpdate({
@@ -168,6 +173,7 @@ export const updateProduct = async (id: string, input: { name?: string; category
   const formattedProduct = {
     ...product,
     price: Number(product.price),
+    imageUrl: toPublicMediaUrl(product.imageUrl) ?? product.imageUrl,
   };
 
   wsHub.broadcastMenuUpdate({
@@ -200,6 +206,7 @@ export const deleteMenuItem = async (id: string, hotelId?: string) => {
   const formattedProduct = {
     ...product,
     price: Number(product.price),
+    imageUrl: toPublicMediaUrl(product.imageUrl) ?? product.imageUrl,
   };
 
   wsHub.broadcastMenuUpdate({

@@ -53,7 +53,7 @@ export class S3StorageProvider implements MediaStorageProvider {
     return new URL(`${this.endpoint.toString().replace(/\/$/, "")}/${this.bucket}/${encodeObjectKey(filename)}`);
   }
 
-  private async signedFetch(method: "PUT" | "DELETE", filename: string, body?: Buffer, mimeType?: string): Promise<Response> {
+  private async signedFetch(method: "GET" | "PUT" | "DELETE", filename: string, body?: Buffer, mimeType?: string): Promise<Response> {
     const url = this.objectUrl(filename);
     const now = new Date();
     const { dateStamp, amzDate } = awsDate(now);
@@ -95,7 +95,12 @@ export class S3StorageProvider implements MediaStorageProvider {
     if (!response.ok && response.status !== 404) throw new Error(`S3 delete failed (${response.status})`);
   }
 
+  async download(filename: string): Promise<Response> {
+    return this.signedFetch("GET", filename);
+  }
+
   getUrl(filename: string): string {
-    return `${this.publicBaseUrl}/${encodeObjectKey(filename)}`;
+    const publicBaseUrl = (process.env.MEDIA_BASE_URL || process.env.PUBLIC_URL || "").replace(/\/$/, "");
+    return `${publicBaseUrl}/api/v1/media/${encodeURIComponent(filename)}`;
   }
 }

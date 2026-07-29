@@ -101,6 +101,32 @@ export async function deleteMedia(filename: string): Promise<void> {
   });
 }
 
+export async function downloadMedia(filename: string): Promise<Response | null> {
+  const provider = getProvider();
+  if (!provider.download) return null;
+  return provider.download(filename);
+}
+
+export function toPublicMediaUrl(url: string | null | undefined): string | null | undefined {
+  if (!url || MEDIA_STORAGE_CONFIG.provider !== "s3" || url.includes("/api/v1/media/")) return url;
+
+  try {
+    const source = new URL(url);
+    const endpoint = MEDIA_STORAGE_CONFIG.endpoint ? new URL(MEDIA_STORAGE_CONFIG.endpoint) : null;
+    const bucket = MEDIA_STORAGE_CONFIG.bucket;
+    if (!endpoint || !bucket || source.origin !== endpoint.origin) return url;
+
+    const bucketPrefix = `/${bucket}/`;
+    const prefixIndex = source.pathname.indexOf(bucketPrefix);
+    if (prefixIndex === -1) return url;
+    const objectKey = source.pathname.slice(prefixIndex + bucketPrefix.length);
+    const publicBaseUrl = (process.env.MEDIA_BASE_URL || process.env.PUBLIC_URL || "").replace(/\/$/, "");
+    return `${publicBaseUrl}/api/v1/media/${encodeURIComponent(decodeURIComponent(objectKey))}`;
+  } catch {
+    return url;
+  }
+}
+
 export async function cleanupOrphanedMedia() {
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
@@ -115,13 +141,24 @@ export async function cleanupOrphanedMedia() {
   let deletedCount = 0;
   for (const m of orphaned) {
     try {
-      await provider.delete(m.id);
+      const objectKey = getObjectKeyFromUrl(m.url);
+      if (objectKey) await provider.delete(objectKey);
       await prisma.media.delete({ where: { id: m.id } });
       deletedCount++;
     } catch {
     }
   }
   return deletedCount;
+}
+
+function getObjectKeyFromUrl(url: string): string | null {
+  try {
+    const pathname = new URL(url).pathname;
+    const segments = pathname.split("/").filter(Boolean);
+    return segments.length > 0 ? decodeURIComponent(segments[segments.length - 1]!) : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function getMediaByUrl(url: string) {

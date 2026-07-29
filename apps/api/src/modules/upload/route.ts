@@ -2,7 +2,7 @@ import { jwt } from "@elysiajs/jwt";
 import { Elysia, t } from "elysia";
 import { env } from "../../../../../shared/config";
 import { verifyAdminToken } from "../auth/service";
-import { uploadMedia } from "../media/service";
+import { downloadMedia, uploadMedia } from "../media/service";
 import { getLocalUploadPath } from "../media/local";
 import { MEDIA_STORAGE_CONFIG } from "../media/types";
 import { existsSync } from "node:fs";
@@ -27,6 +27,25 @@ export const uploadRoute = new Elysia({ prefix: "/api/v1" })
       return { success: false, error: "File not found" };
     }
     return new Response(Bun.file(filePath));
+  }, { params: t.Object({ filename: t.String() }) })
+  .get("/media/:filename", async ({ params, set }) => {
+    if (MEDIA_STORAGE_CONFIG.provider !== "s3" || !/^[a-zA-Z0-9._-]+$/.test(params.filename)) {
+      set.status = 404;
+      return { success: false, error: "File not found" };
+    }
+
+    const upstream = await downloadMedia(params.filename);
+    if (!upstream || !upstream.ok || !upstream.body) {
+      set.status = upstream?.status === 404 ? 404 : 502;
+      return { success: false, error: "File not found" };
+    }
+
+    return new Response(upstream.body, {
+      headers: {
+        "Content-Type": upstream.headers.get("content-type") || "application/octet-stream",
+        "Cache-Control": "public, max-age=31536000, immutable",
+      },
+    });
   }, { params: t.Object({ filename: t.String() }) })
   .post(
     "/upload",
