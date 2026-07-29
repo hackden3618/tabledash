@@ -13,7 +13,7 @@ export async function handleHotelAdminCreated(payload: Record<string, unknown>):
 
   if (!data.adminPhone) return true;
 
-  const message = `Welcome to ${data.hotelName}! You've been added as a hotel admin. Login with username "${data.adminUsername}" and temporary password: ${data.tempPassword}. Please change your password on first login. - TableDash Deliveries`;
+  const message = `Welcome to ${data.hotelName}! You've been added as a hotel admin. Login with username "${data.adminUsername}" and temporary password: ${data.tempPassword}. Please change your password on first login. - Ladha Deliveries`;
 
   const result = await smsService.sendSms(data.adminPhone, message);
   return result;

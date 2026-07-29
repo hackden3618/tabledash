@@ -3,11 +3,10 @@ import { motion } from "framer-motion";
 import { useCart } from "../../context/CartContext";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
 import { useNotifications } from "../../context/NotificationsContext";
-import { apiGet } from "../../lib/api";
-import { useWebSocket } from "../../lib/websocket";
+import { apiGet, apiPost } from "../../lib/api";
 import {
   Utensils, UserCircle2, Moon, ChevronLeft, Building2,
-  Search, Sparkles, Clock, TrendingUp
+  Search, Sparkles, Clock, TrendingUp, MessageCircle, HelpCircle, X, Send
 } from "lucide-react";
 import { CustomerNotificationPanel } from "../../components/CustomerNotificationPanel";
 import { Header } from "../../components/ui/Header";
@@ -39,14 +38,19 @@ interface HotelItem {
   productCount: number;
 }
 
+interface RootSearchItem { id: string; name: string; hotelId: string; category: string; imageUrl: string; price: number; available: boolean; stockQty: number; }
+interface RootSearchGroup { hotel: { id: string; name: string; imageUrl?: string | null; isOpen: boolean }; items: RootSearchItem[]; }
+
 interface MenuListPageProps {
   onNavigateToCart: () => void;
   onNavigateToAccount: () => void;
+  onNavigateToConversations: () => void;
 }
 
 export const MenuListPage: React.FC<MenuListPageProps> = ({
   onNavigateToCart,
   onNavigateToAccount,
+  onNavigateToConversations,
 }) => {
   const [hotels, setHotels] = useState<HotelItem[]>([]);
   const [selectedHotel, setSelectedHotel] = useState<HotelItem | null>(null);
@@ -56,8 +60,17 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [userSearchResults, setUserSearchResults] = useState<{ id: string; firstName?: string; lastName?: string; knownName?: string; presence?: { online: boolean } }[]>([]);
+  const [rootSearchGroups, setRootSearchGroups] = useState<RootSearchGroup[]>([]);
+  const [rootSearchLoading, setRootSearchLoading] = useState(false);
+  const [talkToStaffOpen, setTalkToStaffOpen] = useState(false);
+  const [talkBody, setTalkBody] = useState("");
+  const [talkSending, setTalkSending] = useState(false);
+  const [talkSent, setTalkSent] = useState(false);
+  const userSearchTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rootSearchTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const { cart, addToCart, updateQuantity, totalCount, totalAmount, setClosedHotelIds } = useCart();
-  const { isLoggedIn, customer } = useCustomerAuth();
+  const { isLoggedIn, customer, token } = useCustomerAuth();
   const { unreadCount } = useNotifications();
   const [persuasionShown, setPersuasionShown] = useState(false);
   const [closingCountdown, setClosingCountdown] = useState<number | null>(null);
@@ -104,14 +117,16 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
 
   const closingTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useWebSocket("customer", undefined, (event) => {
-    if (event.type === "MENU_AVAILABILITY_UPDATED") {
-      const updated = event.payload as ProductItem;
+  useEffect(() => {
+    const handleRealtime = (event: Event) => {
+      const detail = (event as CustomEvent<{ type: string; payload: any }>).detail;
+      if (detail.type === "MENU_AVAILABILITY_UPDATED") {
+      const updated = detail.payload as ProductItem;
       setProducts((prev) =>
         prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
       );
-    } else if (event.type === "HOTEL_CLOSING") {
-      const data = event.payload as { closingIn: number; isOpen: boolean; hotelId?: string };
+    } else if (detail.type === "HOTEL_CLOSING") {
+      const data = detail.payload as { closingIn: number; isOpen: boolean; hotelId?: string };
       if (data.hotelId) {
         setClosedHotelIds((prev) => prev.includes(data.hotelId!) ? prev : [...prev, data.hotelId!]);
         setHotels((prev) => prev.map((h) => h.id === data.hotelId ? { ...h, isOpen: false } : h));
@@ -134,8 +149,8 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
       } else {
         setSelectedHotel((prev) => prev ? { ...prev, isOpen: false } : null);
       }
-    } else if (event.type === "HOTEL_STATUS_UPDATED") {
-      const status = event.payload as { isOpen: boolean; hotelId?: string };
+    } else if (detail.type === "HOTEL_STATUS_UPDATED") {
+      const status = detail.payload as { isOpen: boolean; hotelId?: string };
       if (status.hotelId) {
         setHotels((prev) => prev.map((h) => h.id === status.hotelId ? { ...h, isOpen: status.isOpen } : h));
         setClosedHotelIds((prev) =>
@@ -152,8 +167,33 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
         closingTimerRef.current = null;
         setClosingCountdown(null);
       }
-    }
-  });
+      }
+    };
+    window.addEventListener("tabledash:realtime", handleRealtime);
+    return () => window.removeEventListener("tabledash:realtime", handleRealtime);
+  }, [selectedHotel]);
+
+  useEffect(() => {
+    if (selectedHotel || searchQuery.trim().length < 2) { setUserSearchResults([]); return; }
+    if (userSearchTimerRef.current) clearTimeout(userSearchTimerRef.current);
+    userSearchTimerRef.current = setTimeout(async () => {
+      const result = await apiGet<typeof userSearchResults>(`/messaging/directory?q=${encodeURIComponent(searchQuery.trim())}`, token);
+      setUserSearchResults(result.success && result.data ? result.data : []);
+    }, 250);
+    return () => { if (userSearchTimerRef.current) clearTimeout(userSearchTimerRef.current); };
+  }, [searchQuery, selectedHotel, token]);
+
+  useEffect(() => {
+    if (selectedHotel || searchQuery.trim().length < 2) { setRootSearchGroups([]); setRootSearchLoading(false); return; }
+    if (rootSearchTimerRef.current) clearTimeout(rootSearchTimerRef.current);
+    rootSearchTimerRef.current = setTimeout(async () => {
+      setRootSearchLoading(true);
+      const result = await apiGet<{ groups?: RootSearchGroup[] }>(`/hotels/search?q=${encodeURIComponent(searchQuery.trim())}`);
+      setRootSearchGroups(result.success && result.data?.groups ? result.data.groups : []);
+      setRootSearchLoading(false);
+    }, 250);
+    return () => { if (rootSearchTimerRef.current) clearTimeout(rootSearchTimerRef.current); };
+  }, [searchQuery, selectedHotel]);
 
   const getQuantityInCart = (productId: string) => {
     const item = cart.find((c) => c.id === productId);
@@ -164,7 +204,7 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
 
   const handleAddToCart = (item: ProductItem) => {
     if (isEffectivelyClosed) return;
-    addToCart({ id: item.id, name: item.name, price: item.price, imageUrl: item.imageUrl, hotelId: selectedHotel!.id, hotelName: selectedHotel!.name });
+    addToCart({ id: item.id, name: item.name, price: item.price, imageUrl: item.imageUrl, hotelId: selectedHotel!.id, hotelName: selectedHotel!.name, stockQty: item.stockQty });
     if (!isLoggedIn && !persuasionShown) {
       setPersuasionShown(true);
       setShowLoginModal(true);
@@ -182,18 +222,7 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
           cartBadge={totalCount}
           onNotificationClick={() => setNotificationPanelOpen(true)}
           notificationCount={unreadCount}
-          rightAction={
-            <button
-              onClick={onNavigateToAccount}
-              className="relative p-2 rounded-xl hover:bg-white/10 transition-colors bg-none border-none cursor-pointer text-white"
-              aria-label={isLoggedIn ? `Hi, ${customer?.firstName}` : "Sign in"}
-            >
-              <UserCircle2 size={20} />
-              {isLoggedIn && (
-                <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-[#22C55E] rounded-full border-[1.5px] border-[#114B36]" />
-              )}
-            </button>
-          }
+          rightAction={<div className="flex items-center gap-1"><button onClick={onNavigateToConversations} className="p-2 rounded-xl hover:bg-white/10 transition-colors bg-none border-none cursor-pointer text-white" aria-label="Conversations"><MessageCircle size={20} /></button><button onClick={onNavigateToAccount} className="relative p-2 rounded-xl hover:bg-white/10 transition-colors bg-none border-none cursor-pointer text-white" aria-label={isLoggedIn ? `Hi, ${customer?.firstName}` : "Sign in"}><UserCircle2 size={20} />{isLoggedIn && <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-[#22C55E] rounded-full border-[1.5px] border-[#114B36]" />}</button></div>}
         />
 
         <PageTransition>
@@ -222,11 +251,19 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
                     className="w-full bg-white rounded-xl py-3 pl-11 pr-4 text-sm text-[#1F2937] placeholder:text-[#9CA3AF] outline-none shadow-sm"
                   />
                 </div>
+                {!selectedHotel && searchQuery.trim().length >= 2 && (rootSearchLoading || rootSearchGroups.length > 0 || userSearchResults.length > 0) && <div className="mt-2 rounded-2xl bg-white p-2 shadow-xl text-left max-h-[min(28rem,65vh)] overflow-y-auto overscroll-contain">
+                  {rootSearchLoading && <p className="px-3 py-3 text-xs text-[#6B7280]">Searching across all hotels...</p>}
+                  {!rootSearchLoading && rootSearchGroups.map((group) => <section key={group.hotel.id} className="mb-3 last:mb-0">
+                    <button onClick={() => { const hotel = hotels.find((item) => item.id === group.hotel.id); if (hotel) selectHotel(hotel); }} className="w-full flex items-center gap-2 px-3 py-2 border-none bg-transparent cursor-pointer text-left"><div className="w-7 h-7 rounded-lg overflow-hidden bg-[#EBF5F0] flex items-center justify-center shrink-0">{group.hotel.imageUrl ? <img src={group.hotel.imageUrl} alt="" className="w-full h-full object-cover" /> : <Building2 size={13} className="text-[#114B36]" />}</div><span className="font-bold text-xs text-[#1F2937] truncate flex-1">{group.hotel.name}</span><span className={`text-[0.6rem] font-bold ${group.hotel.isOpen ? "text-[#15803D]" : "text-[#B45309]"}`}>{group.hotel.isOpen ? "Open" : "Closed"}</span></button>
+                    {group.items.slice(0, 4).map((item) => <button key={item.id} onClick={() => { const hotel = hotels.find((entry) => entry.id === item.hotelId); if (hotel) selectHotel(hotel); }} className="w-full flex items-center gap-2 rounded-xl px-3 py-2 text-left border-none bg-transparent hover:bg-[#EBF5F0] cursor-pointer"><div className="w-8 h-8 rounded-lg overflow-hidden bg-[#F3F4F6] shrink-0">{item.imageUrl ? <img src={item.imageUrl} alt="" className="w-full h-full object-cover" /> : <span className="flex h-full items-center justify-center text-xs">🍽</span>}</div><span className="min-w-0 flex-1"><span className="block text-xs font-semibold text-[#1F2937] truncate">{item.name}</span><span className="block text-[0.6rem] text-[#6B7280] truncate">{item.category} · KSh {item.price}</span></span><span className="text-[0.6rem] font-bold text-[#114B36]">View</span></button>)}
+                  </section>)}
+                  {!rootSearchLoading && userSearchResults.length > 0 && <section className="border-t border-[#F3F4F6] pt-2 mt-2"><p className="px-3 py-1 text-[0.6rem] font-bold uppercase tracking-wider text-[#6B7280]">Discoverable people</p>{userSearchResults.map((person) => <button key={person.id} onClick={onNavigateToConversations} className="w-full flex items-center gap-3 rounded-xl px-3 py-2 text-left border-none bg-transparent hover:bg-[#EBF5F0] cursor-pointer"><span className={`w-2.5 h-2.5 rounded-full ${person.presence?.online ? "bg-[#22C55E]" : "bg-[#D1D5DB]"}`} /><span className="text-sm font-semibold text-[#1F2937] truncate">{person.knownName || `${person.firstName || ""} ${person.lastName || ""}`.trim()}</span><span className="ml-auto text-xs font-bold text-[#114B36]">Message</span></button>)}</section>}
+                </div>}
               </div>
             </div>
 
             {/* Quick Filters */}
-            <div className="flex gap-3 overflow-x-auto scrollbar-hide mb-6 pb-1">
+            <div className="flex flex-wrap gap-3 mb-6 pb-1">
               {[
                 { icon: <Sparkles size={18} />, label: "Popular" },
                 { icon: <Clock size={18} />, label: "Fast Delivery" },
@@ -364,18 +401,7 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
         cartBadge={totalCount}
         onNotificationClick={() => setNotificationPanelOpen(true)}
         notificationCount={unreadCount}
-        rightAction={
-          <button
-            onClick={onNavigateToAccount}
-            className="relative p-2 rounded-xl hover:bg-white/10 transition-colors bg-none border-none cursor-pointer text-white"
-            aria-label={isLoggedIn ? `Hi, ${customer?.firstName}` : "Sign in"}
-          >
-            <UserCircle2 size={20} />
-            {isLoggedIn && (
-              <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-[#22C55E] rounded-full border-[1.5px] border-[#114B36]" />
-            )}
-          </button>
-        }
+        rightAction={<div className="flex items-center gap-1"><button onClick={onNavigateToConversations} className="p-2 rounded-xl hover:bg-white/10 transition-colors bg-none border-none cursor-pointer text-white" aria-label="Conversations"><MessageCircle size={20} /></button><button onClick={onNavigateToAccount} className="relative p-2 rounded-xl hover:bg-white/10 transition-colors bg-none border-none cursor-pointer text-white" aria-label={isLoggedIn ? `Hi, ${customer?.firstName}` : "Sign in"}><UserCircle2 size={20} />{isLoggedIn && <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-[#22C55E] rounded-full border-[1.5px] border-[#114B36]" />}</button></div>}
       />
 
       <PageTransition>
@@ -463,6 +489,7 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
                         if (qty < item.stockQty) updateQuantity(item.id, qty + 1);
                       }}
                       onDecrement={() => updateQuantity(item.id, getQuantityInCart(item.id) - 1)}
+                      onQuantityChange={(quantity) => updateQuantity(item.id, quantity)}
                       disabled={isEffectivelyClosed}
                     />
                   ))}
@@ -500,6 +527,7 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
                         onAdd={() => {}}
                         onIncrement={() => {}}
                         onDecrement={() => {}}
+                        onQuantityChange={() => {}}
                         disabled={true}
                       />
                     ))}
@@ -557,6 +585,46 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
           onClick: () => setShowLoginModal(false),
         }}
       />
+
+      {/* Talk to Staff floating button */}
+      {selectedHotel && !(totalCount > 0) && (
+        <button onClick={() => { setTalkToStaffOpen(true); setTalkSent(false); setTalkBody(""); }} className="fixed bottom-20 right-4 w-12 h-12 rounded-full bg-[#114B36] text-white shadow-lg flex items-center justify-center border-none cursor-pointer hover:bg-[#0D3D2B] transition-colors z-40" aria-label="Talk to staff">
+          <HelpCircle size={22} />
+        </button>
+      )}
+
+      {/* Talk to Staff overlay */}
+      {talkToStaffOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl bg-[#FFF8F0] p-5 shadow-2xl max-h-[60vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-[#114B36]">Talk to Staff</p>
+                <h3 className="text-lg font-black text-[#1F2937]">{selectedHotel?.name}</h3>
+              </div>
+              <button onClick={() => setTalkToStaffOpen(false)} className="w-9 h-9 rounded-full border-none bg-white text-[#6B7280] flex items-center justify-center cursor-pointer"><X size={18} /></button>
+            </div>
+            {talkSent ? (
+              <div className="text-center py-8">
+                <div className="w-16 h-16 rounded-full bg-[#D1FAE5] flex items-center justify-center mx-auto mb-4"><Send size={28} className="text-[#065F46]" /></div>
+                <p className="font-bold text-[#1F2937]">Message sent!</p>
+                <p className="text-sm text-[#6B7280] mt-1">A staff member will respond shortly.</p>
+                <button onClick={() => setTalkToStaffOpen(false)} className="mt-4 w-full rounded-xl bg-[#114B36] text-white py-3 font-bold border-none cursor-pointer">Done</button>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm text-[#6B7280] mb-4">Send a message to the {selectedHotel?.name} team. The first available staff member will respond.</p>
+                <textarea value={talkBody} onChange={(e) => setTalkBody(e.target.value)} placeholder="Type your message…" rows={4} className="w-full resize-none rounded-2xl border-2 border-[#E5E7EB] bg-white px-4 py-3 text-sm outline-none focus:border-[#114B36]" />
+                {talkSending && <p className="text-xs text-[#6B7280] mt-2">Sending…</p>}
+                <div className="flex gap-2 mt-4">
+                  <button onClick={() => setTalkToStaffOpen(false)} className="flex-1 rounded-xl bg-white border-2 border-[#E5E7EB] text-[#6B7280] py-3 font-bold text-sm border-none cursor-pointer">Cancel</button>
+                  <button onClick={async () => { if (!talkBody.trim() || talkSending) return; setTalkSending(true); const res = await apiPost("/messaging/talk-to-staff", { hotelId: selectedHotel!.id, body: talkBody.trim() }, token || undefined); setTalkSending(false); if (res.success) setTalkSent(true); }} disabled={!talkBody.trim()} className="flex-1 rounded-xl bg-[#114B36] text-white py-3 font-bold text-sm border-none cursor-pointer disabled:opacity-50">Send message</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

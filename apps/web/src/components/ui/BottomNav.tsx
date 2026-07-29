@@ -2,9 +2,10 @@ import React from "react";
 import { motion } from "framer-motion";
 import { useCart } from "../../context/CartContext";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
-import { MapPin, ShoppingBag, Utensils, UserCircle2 } from "lucide-react";
+import { MapPin, ShoppingBag, Utensils, UserCircle2, Inbox } from "lucide-react";
+import { apiGet } from "../../lib/api";
 
-export type CustomerTab = "menu" | "cart" | "tracking" | "account";
+export type CustomerTab = "menu" | "cart" | "tracking" | "conversations" | "account";
 
 interface BottomNavProps {
   activeTab: CustomerTab;
@@ -16,6 +17,7 @@ const tabs: { key: CustomerTab; label: string; icon: React.ElementType }[] = [
   { key: "menu", label: "Menu", icon: Utensils },
   { key: "cart", label: "Cart", icon: ShoppingBag },
   { key: "tracking", label: "Tracker", icon: MapPin },
+  { key: "conversations", label: "Inbox", icon: Inbox },
   { key: "account", label: "Account", icon: UserCircle2 },
 ];
 
@@ -25,7 +27,27 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   hasActiveOrder,
 }) => {
   const { totalCount } = useCart();
-  const { isLoggedIn } = useCustomerAuth();
+  const { isLoggedIn, token, customer } = useCustomerAuth();
+  const [unreadCount, setUnreadCount] = React.useState(0);
+
+  const refreshUnread = React.useCallback(async () => {
+    if (!token) { setUnreadCount(0); return; }
+    const result = await apiGet<{ unreadCount: number }>("/messaging/unread-count", token);
+    if (result.success) setUnreadCount(result.data?.unreadCount || 0);
+  }, [token]);
+
+  React.useEffect(() => { void refreshUnread(); }, [refreshUnread]);
+  React.useEffect(() => {
+    const handleRealtime = (event: Event) => {
+      const detail = (event as CustomEvent<{ type: string; payload?: { senderIdentityKey?: string } }>).detail;
+      const payload = detail.payload;
+      const currentIdentityKey = customer?.id ? `customer:${customer.id}` : `guest:${localStorage.getItem("tableDash_guest_id") || ""}`;
+      if ((detail.type === "MESSAGE_CREATED" || detail.type === "ANNOUNCEMENT_PUBLISHED") && payload?.senderIdentityKey !== currentIdentityKey && activeTab !== "conversations") setUnreadCount((count) => count + 1);
+      if (detail.type === "CONVERSATION_READ") void refreshUnread();
+    };
+    window.addEventListener("tabledash:realtime", handleRealtime);
+    return () => window.removeEventListener("tabledash:realtime", handleRealtime);
+  }, [activeTab, refreshUnread, customer?.id]);
 
   return (
     <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white/95 backdrop-blur-lg border-t border-[#E5E7EB] z-40 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] safe-area-bottom">
@@ -68,6 +90,9 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                 )}
                 {isAccount && isLoggedIn && (
                   <span className="absolute -top-0.5 -right-1 w-2 h-2 bg-[#22C55E] rounded-full border-[1.5px] border-white" />
+                )}
+                {key === "conversations" && unreadCount > 0 && (
+                  <motion.span key={unreadCount} initial={{ scale: 0 }} animate={{ scale: 1 }} className="absolute -top-2 -right-2.5 min-w-4 h-4 px-1 bg-[#22C55E] text-white text-[0.55rem] font-bold rounded-full flex items-center justify-center shadow-md">{unreadCount > 99 ? "99+" : unreadCount}</motion.span>
                 )}
               </div>
               <span className={`text-[0.6rem] font-semibold ${isActive ? "font-bold" : ""}`}>

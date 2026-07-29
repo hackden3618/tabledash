@@ -17,9 +17,14 @@ import {
   IdParamSchema,
 } from "../../../../../shared/schemas";
 import { getAllCustomers, getCustomerHistory } from "./service";
-import { getCustomerProfile, loginCustomer, registerCustomer, verifyCustomerToken, generatePinResetCode, resetCustomerPin } from "./auth.service";
+import { getCustomerProfile, loginCustomer, registerCustomer, verifyCustomerToken, generatePinResetCode, resetCustomerPin, updateCustomerProfile } from "./auth.service";
 import { verifyAdminToken } from "../auth/service";
 import { AUTH_LIMITER } from "../../lib/rate-limiter";
+
+function requireHotelAccount(admin: { hotelId: string | null }): string {
+  if (!admin.hotelId) throw new Error("This account is not assigned to a hotel");
+  return admin.hotelId;
+}
 
 export const customersRoute = new Elysia({
   prefix: `${env.apiPrefix}/customers`,
@@ -49,7 +54,9 @@ export const customersRoute = new Elysia({
       set.status = 401;
       return { success: false, error: "Invalid or expired session token" };
     }
-    const customers = await getAllCustomers(admin.hotelId ?? undefined);
+    let hotelId: string;
+    try { hotelId = requireHotelAccount(admin); } catch (err: any) { set.status = 403; return { success: false, error: err.message }; }
+    const customers = await getAllCustomers(hotelId);
     return { success: true, data: customers };
   })
 
@@ -72,7 +79,7 @@ export const customersRoute = new Elysia({
       return { success: false, error: "Invalid or expired session token" };
     }
     try {
-      const history = await getCustomerHistory(params.id, admin.hotelId ?? undefined);
+      const history = await getCustomerHistory(params.id, requireHotelAccount(admin));
       return { success: true, data: history };
     } catch (err: any) {
       set.status = 404;
@@ -85,7 +92,7 @@ export const customersRoute = new Elysia({
   // ─── Customer: Register (phone + PIN) ────────────────────────────────────────
   .post(
     "/register",
-    async ({ body, jwt, set, request }) => {
+    async ({ body, jwt, set, request, headers }) => {
       const ip = request.headers.get("x-forwarded-for") ?? "unknown";
       const { allowed, resetIn } = AUTH_LIMITER(`customer-register:${ip}`);
       if (!allowed) {
@@ -94,7 +101,7 @@ export const customersRoute = new Elysia({
         return { success: false, error: `Too many attempts. Try again in ${Math.ceil(resetIn / 1000)}s.` };
       }
       try {
-        const result = await registerCustomer(body, (payload) => jwt.sign(payload));
+        const result = await registerCustomer(body, (payload) => jwt.sign(payload), headers["x-guest-id"]);
         set.status = 201;
         return { success: true, data: result };
       } catch (err: any) {
@@ -153,6 +160,17 @@ export const customersRoute = new Elysia({
       headers: t.Object({ authorization: t.Optional(t.String()) }),
     }
   )
+  .patch("/me", async ({ headers, jwt, body, set }) => {
+    const auth = headers["authorization"] ?? "";
+    const customerId = await verifyCustomerToken(auth.replace("Bearer ", "").trim(), (t) => jwt.verify(t));
+    if (!customerId) { set.status = 401; return { success: false, error: "Invalid or missing token" }; }
+    try {
+      return { success: true, data: await updateCustomerProfile(customerId, body) };
+    } catch (err: any) {
+      set.status = err.code === "P2002" ? 409 : 400;
+      return { success: false, error: err.code === "P2002" ? "That phone number is already in use." : err.message || "Unable to update profile" };
+    }
+  }, { body: t.Object({ firstName: t.Optional(t.String({ minLength: 1, maxLength: 80 })), lastName: t.Optional(t.String({ maxLength: 80 })), phone: t.Optional(t.String({ minLength: 9, maxLength: 13 })), knownName: t.Optional(t.Union([t.String({ maxLength: 80 }), t.Null()])) }) })
 
   // ─── Customer: Forgot PIN (request reset code) ────────────────────────────────
   .post(

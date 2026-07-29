@@ -21,7 +21,7 @@ interface CustomerAuthContextValue {
   register: (firstName: string, phone: string, pin: string, lastName?: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   refreshProfile: () => Promise<void>;
-  updateProfile: (data: { firstName?: string; lastName?: string; phone?: string }) => Promise<{ success: boolean; error?: string }>;
+  updateProfile: (data: { firstName?: string; lastName?: string; phone?: string; knownName?: string | null }) => Promise<{ success: boolean; error?: string }>;
   deleteAccount: () => Promise<{ success: boolean; error?: string }>;
   forgotPin: (phone: string) => Promise<{ success: boolean; error?: string }>;
   resetPin: (phone: string, otp: string, newPin: string) => Promise<{ success: boolean; error?: string }>;

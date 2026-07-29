@@ -1,14 +1,14 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useCart } from "../../context/CartContext";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
 import { apiPost } from "../../lib/api";
-import { useWebSocket } from "../../lib/websocket";
 import { Header } from "../../components/ui/Header";
 import { Button } from "../../components/ui/Button";
 import { Input, Textarea } from "../../components/ui/Input";
 import { PageTransition } from "../../components/ui/PageTransition";
 import { Lock, CheckCircle2 } from "lucide-react";
+import { SecureCodeInput } from "../../components/ui/SecureCodeInput";
 
 const formatPhone = (raw: string): string => {
   const cleaned = raw.replace(/\D/g, "");
@@ -23,63 +23,6 @@ interface LocationPageProps {
   onBackToCart: () => void;
   onOrderPlaced: (orderData: any) => void;
 }
-
-const PinInput: React.FC<{ value: string; onChange: (v: string) => void; error?: string }> = ({ value, onChange, error }) => {
-  const refs = [useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null)];
-  const digits = value.padEnd(4, "").split("").slice(0, 4);
-
-  const handleChange = (idx: number, raw: string) => {
-    const digit = raw.replace(/\D/g, "").slice(-1);
-    const arr = digits.map((d) => d.trim());
-    arr[idx] = digit;
-    const next = arr.join("").slice(0, 4);
-    onChange(next);
-    if (digit && idx < 3) refs[idx + 1]!.current?.focus();
-  };
-
-  const handleKeyDown = (idx: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Backspace") {
-      if (digits[idx]?.trim()) {
-        const arr = digits.map((d) => d.trim());
-        arr[idx] = "";
-        onChange(arr.join(""));
-      } else if (idx > 0) {
-        const arr = digits.map((d) => d.trim());
-        arr[idx - 1] = "";
-        onChange(arr.join(""));
-        refs[idx - 1]!.current?.focus();
-      }
-      e.preventDefault();
-    } else if (e.key === "ArrowLeft" && idx > 0) refs[idx - 1]!.current?.focus();
-    else if (e.key === "ArrowRight" && idx < 3) refs[idx + 1]!.current?.focus();
-  };
-
-  return (
-    <div className="flex flex-col items-center gap-2">
-      <div className="flex gap-3 justify-center">
-        {[0, 1, 2, 3].map((idx) => {
-          const isFilled = Boolean(digits[idx]?.trim());
-          return (
-            <input
-              key={idx} ref={refs[idx]} type="password" inputMode="numeric" pattern="[0-9]*" maxLength={1}
-              value={digits[idx]?.trim() || ""}
-              onChange={(e) => handleChange(idx, e.target.value)}
-              onKeyDown={(e) => handleKeyDown(idx, e)}
-              onFocus={(e) => e.target.select()}
-              autoComplete="off"
-              className={`
-                w-14 h-16 rounded-xl text-center text-2xl font-bold outline-none transition-all duration-150
-                ${error ? "border-2 border-[#EF4444] bg-[#FEF2F2]" : isFilled ? "border-2 border-[#114B36] bg-[#EBF5F0]" : "border-2 border-[#D1D5DB] bg-white"}
-                text-[#1F2937] focus:border-[#114B36] focus:ring-3 focus:ring-[rgba(17,75,54,0.1)]
-              `}
-            />
-          );
-        })}
-      </div>
-      {error && <p className="text-xs font-semibold text-[#DC2626]">{error}</p>}
-    </div>
-  );
-};
 
 export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrderPlaced }) => {
   const { cart, totalAmount, clearCart, closedHotelIds, setClosedHotelIds } = useCart();
@@ -113,15 +56,20 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
     }
   }, [isLoggedIn, customer]);
 
-  useWebSocket("customer", undefined, (event) => {
-    if (event.type === "HOTEL_CLOSING") {
-      const data = event.payload as { hotelId?: string };
-      if (data.hotelId) setClosedHotelIds((prev) => prev.includes(data.hotelId!) ? prev : [...prev, data.hotelId!]);
-    } else if (event.type === "HOTEL_STATUS_UPDATED") {
-      const status = event.payload as { isOpen: boolean; hotelId?: string };
-      if (status.hotelId) setClosedHotelIds((prev) => status.isOpen ? prev.filter((id) => id !== status.hotelId) : prev.includes(status.hotelId!) ? prev : [...prev, status.hotelId!]);
-    }
-  });
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail.type === "HOTEL_CLOSING") {
+        const data = detail.payload as { hotelId?: string };
+        if (data.hotelId) setClosedHotelIds((prev) => prev.includes(data.hotelId!) ? prev : [...prev, data.hotelId!]);
+      } else if (detail.type === "HOTEL_STATUS_UPDATED") {
+        const status = detail.payload as { isOpen: boolean; hotelId?: string };
+        if (status.hotelId) setClosedHotelIds((prev) => status.isOpen ? prev.filter((id) => id !== status.hotelId) : prev.includes(status.hotelId!) ? prev : [...prev, status.hotelId!]);
+      }
+    };
+    window.addEventListener("tabledash:realtime", handler);
+    return () => window.removeEventListener("tabledash:realtime", handler);
+  }, [setClosedHotelIds]);
 
   useEffect(() => {
     if (!isLoggedIn && (firstName || phone || stallNumber || locationDescription || marketSection)) {
@@ -169,11 +117,11 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
     }
   };
 
-  const handlePinSubmit = async () => {
-    if (pin.length < 4) { setPinError("Please enter your full 4-digit PIN."); return; }
+  const handlePinSubmit = async (pinOverride = pin) => {
+    if (pinOverride.length < 4) { setPinError("Please enter your full 4-digit PIN."); return; }
     setPinLoading(true);
     setPinError("");
-    const res = await apiPost<{ token: string }>("/customers/login", { phone: customer?.phone, pin });
+    const res = await apiPost<{ token: string }>("/customers/login", { phone: customer?.phone, pin: pinOverride });
     setPinLoading(false);
     if (res.success) {
       setShowPinModal(false);
@@ -323,10 +271,10 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
               <p className="text-sm text-[#6B7280] text-center mb-5">
                 Enter your 4-digit PIN to confirm this order.
               </p>
-              <PinInput value={pin} onChange={(v) => { setPin(v); setPinError(""); }} error={pinError} />
+              <SecureCodeInput value={pin} onChange={(v) => { setPin(v); setPinError(""); }} onComplete={(pinValue) => void handlePinSubmit(pinValue)} error={Boolean(pinError)} autoFocus label="Order confirmation PIN" />
               <div className="flex gap-3 mt-5">
                 <Button variant="secondary" fullWidth onClick={() => { setShowPinModal(false); setPin(""); setPinError(""); }}>Cancel</Button>
-                <Button fullWidth onClick={handlePinSubmit} disabled={pin.length < 4 || pinLoading} loading={pinLoading}>
+              <Button fullWidth onClick={() => void handlePinSubmit()} disabled={pin.length < 4 || pinLoading} loading={pinLoading}>
                   Confirm
                 </Button>
               </div>

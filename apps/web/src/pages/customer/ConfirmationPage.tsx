@@ -1,7 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { CheckCircle2, MapPin, RefreshCw } from "lucide-react";
-import { useWebSocket } from "../../lib/websocket";
 import { Button } from "../../components/ui/Button";
 import { Badge } from "../../components/ui/Badge";
 import { PageTransition } from "../../components/ui/PageTransition";
@@ -12,12 +11,6 @@ interface ConfirmationPageProps {
   onBackToHome: () => void;
 }
 
-interface OrderStatusUpdate {
-  id: string;
-  status: string;
-  completedAt?: string;
-}
-
 export const ConfirmationPage: React.FC<ConfirmationPageProps> = ({
   order,
   onTrackOrder,
@@ -26,15 +19,20 @@ export const ConfirmationPage: React.FC<ConfirmationPageProps> = ({
   const [liveStatus, setLiveStatus] = useState<string>(order?.status ?? "NEW");
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
-  useWebSocket("customer", undefined, (event) => {
-    if (event.type === "ORDER_STATUS_UPDATED") {
-      const updated = event.payload as OrderStatusUpdate;
-      if (updated.id === order?.id) {
-        setLiveStatus(updated.status);
-        setLastUpdated(new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }));
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail.type === "ORDER_STATUS_UPDATED") {
+        const updated = detail.payload as { id: string; status: string };
+        if (updated.id === order?.id) {
+          setLiveStatus(updated.status);
+          setLastUpdated(new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }));
+        }
       }
-    }
-  });
+    };
+    window.addEventListener("tabledash:realtime", handler);
+    return () => window.removeEventListener("tabledash:realtime", handler);
+  }, [order?.id]);
 
   const formattedDate = order?.orderedAt
     ? new Date(order.orderedAt).toLocaleString("en-GB", {
