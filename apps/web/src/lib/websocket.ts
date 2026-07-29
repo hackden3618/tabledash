@@ -5,7 +5,8 @@
  * When to modify: When adding heartbeat pings, custom channel parameters, or changing reconnection timers.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { API_BASE, getGuestId } from "./api";
 
 export interface WsEventPayload<T = unknown> {
   type: string;
@@ -21,42 +22,68 @@ export interface WsEventPayload<T = unknown> {
 export function useWebSocket<T = unknown>(
   role: "admin" | "customer" = "customer",
   orderId?: string,
-  onMessage?: (event: WsEventPayload<T>) => void
+  onMessage?: (event: WsEventPayload<T>) => void,
+  conversationId?: string,
+  authToken?: string
 ) {
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const pendingMessagesRef = useRef<string[]>([]);
   const onMessageRef = useRef(onMessage);
   onMessageRef.current = onMessage;
 
   useEffect(() => {
     let timerId: ReturnType<typeof setTimeout> | null = null;
+    let heartbeatId: ReturnType<typeof setInterval> | null = null;
     let isDisposed = false;
 
     function connect() {
       if (isDisposed) return;
 
-      let query = `role=${role}`;
-      if (orderId) {
-        query += `&orderId=${orderId}`;
-      }
+      void (async () => {
+        try {
+          const headers: Record<string, string> = { "X-Guest-Id": getGuestId() };
+          if (authToken) headers.Authorization = `Bearer ${authToken}`;
+          const ticketResponse = await fetch(`${API_BASE}/auth/ws-ticket`, { method: "POST", headers });
+          if (!ticketResponse.ok) throw new Error("Realtime authorization failed");
+          const ticketData = await ticketResponse.json() as { data?: { ticket?: string } };
+          const ticket = ticketData.data?.ticket;
+          if (!ticket || isDisposed) return;
 
-      // Automatically append admin JWT token if role is admin to enforce tenant isolation
-      if (role === "admin") {
-        const adminToken = localStorage.getItem("ladha_token");
-        if (adminToken) {
-          query += `&token=${encodeURIComponent(adminToken)}`;
+          let query = `role=${role}&ticket=${encodeURIComponent(ticket)}`;
+          if (orderId) query += `&orderId=${encodeURIComponent(orderId)}`;
+          if (conversationId) query += `&conversationId=${encodeURIComponent(conversationId)}`;
+          const proto = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:";
+          const base = typeof window !== "undefined" ? `${proto}//${window.location.host}` : "ws://localhost:3000";
+          const socket = new WebSocket(`${base}/ws?${query}`);
+          attachSocket(socket);
+        } catch {
+          if (!isDisposed) timerId = setTimeout(connect, 3000);
         }
-      }
+      })();
+    }
 
-      const proto = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:";
-      const base = typeof window !== "undefined" ? `${proto}//${window.location.host}` : "ws://localhost:3000";
-      const wsUrl = `${base}/ws?${query}`;
-      const socket = new WebSocket(wsUrl);
+    function attachSocket(socket: WebSocket) {
+      if (isDisposed) {
+        socket.close();
+        return;
+      }
 
       socket.onopen = () => {
+        if (isDisposed) {
+          socket.close();
+          return;
+        }
         if (!isDisposed) {
-          console.log(`[WS Client] Connected to ${wsUrl}`);
+          // Never log wsUrl: it contains the bearer token used by the legacy
+          // WebSocket handshake and must not appear in browser logs.
+          console.log(`[WS Client] Connected (${role})`);
           setIsConnected(true);
+          heartbeatId = setInterval(() => {
+            if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "PING" }));
+          }, 20_000);
+          const pending = pendingMessagesRef.current.splice(0);
+          pending.forEach((payload) => socket.send(payload));
         }
       };
 
@@ -73,6 +100,8 @@ export function useWebSocket<T = unknown>(
 
       socket.onclose = () => {
         if (!isDisposed) {
+          if (heartbeatId) clearInterval(heartbeatId);
+          heartbeatId = null;
           console.log("[WS Client] Connection closed. Retrying in 3 seconds...");
           setIsConnected(false);
           timerId = setTimeout(connect, 3000);
@@ -90,10 +119,18 @@ export function useWebSocket<T = unknown>(
 
     return () => {
       isDisposed = true;
+      pendingMessagesRef.current = [];
       if (timerId) clearTimeout(timerId);
-      if (wsRef.current) wsRef.current.close();
+      if (heartbeatId) clearInterval(heartbeatId);
+      if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.close();
     };
-  }, [role, orderId]);
+  }, [role, orderId, conversationId, authToken]);
 
-  return { isConnected };
+  const send = useCallback((payload: unknown) => {
+    const serialized = JSON.stringify(payload);
+    if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(serialized);
+    else if (wsRef.current?.readyState === WebSocket.CONNECTING) pendingMessagesRef.current.push(serialized);
+  }, []);
+
+  return { isConnected, send };
 }

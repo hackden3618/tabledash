@@ -29,6 +29,7 @@ export const CreateOrderSchema = t.Object({
   marketSection: t.Optional(t.String()),
   locationDescription: t.Optional(t.String()),
   items: t.Array(OrderItemSchema, { minItems: 1, error: "Order must contain at least one item" }),
+  guestId: t.Optional(t.String({ format: "uuid" })),
 });
 
 export const UpdateOrderStatusSchema = t.Object({
@@ -51,6 +52,14 @@ export const CreateProductSchema = t.Object({
   price: t.Number({ minimum: 0, error: "Price must be non-negative" }),
   available: t.Optional(t.Boolean({ default: true })),
   stockQty: t.Optional(t.Integer({ minimum: 0, default: 0 })),
+});
+
+export const UpdateProductSchema = t.Object({
+  name: t.Optional(t.String({ minLength: 2, error: "Product name must be at least 2 characters" })),
+  category: t.Optional(t.String()),
+  imageUrl: t.Optional(t.String({ minLength: 5, error: "Image URL must be at least 5 characters" })),
+  price: t.Optional(t.Number({ minimum: 0, error: "Price must be non-negative" })),
+  available: t.Optional(t.Boolean()),
 });
 
 export const UpdateProductStockSchema = t.Object({
@@ -101,6 +110,7 @@ export const UpdateOrderPaymentSchema = t.Object({
     t.Literal("UNPAID"),
     t.Literal("PARTIAL"),
     t.Literal("PAID"),
+    t.Literal("REFUNDED"),
   ])),
   amountPaid: t.Optional(t.Number({ minimum: 0 })),
 });

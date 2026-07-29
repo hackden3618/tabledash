@@ -6,6 +6,7 @@ import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { Modal } from "../../components/ui/Modal";
 import { PageTransition } from "../../components/ui/PageTransition";
+import { SecureCodeInput } from "../../components/ui/SecureCodeInput";
 import { User, Phone, Tag, Lock, LogOut, Trash2, ChevronRight, CheckCircle2 } from "lucide-react";
 
 const formatPhone = (raw: string): string => {
@@ -28,6 +29,7 @@ export const CustomerProfilePage: React.FC<CustomerProfilePageProps> = ({ onBack
   const [firstName, setFirstName] = useState(customer?.firstName ?? "");
   const [lastName, setLastName] = useState(customer?.lastName ?? "");
   const [phone, setPhone] = useState(customer?.phone ?? "");
+  const [knownName, setKnownName] = useState(customer?.knownName ?? "");
   const [saveLoading, setSaveLoading] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState("");
@@ -57,6 +59,7 @@ export const CustomerProfilePage: React.FC<CustomerProfilePageProps> = ({ onBack
       firstName: firstName.trim(),
       lastName: lastName.trim() || undefined,
       phone,
+      knownName: knownName.trim() || null,
     });
     setSaveLoading(false);
     if (res.success) {
@@ -93,17 +96,17 @@ export const CustomerProfilePage: React.FC<CustomerProfilePageProps> = ({ onBack
     }
   };
 
-  const handleChangePinVerify = () => {
-    if (pinOtp.length < 4) { setPinError("Enter the full code."); return; }
+  const handleChangePinVerify = (otpOverride = pinOtp) => {
+    if (otpOverride.length < 4) { setPinError("Enter the full code."); return; }
     setPinStep("newPin");
     setPinError("");
   };
 
-  const handleChangePinSet = async () => {
+  const handleChangePinSet = async (newPinOverride = pinNew, confirmOverride = pinConfirm) => {
     setPinError("");
-    if (pinNew.length < 4 || pinNew !== pinConfirm) { setPinError("PINs must match and be 4 digits."); return; }
+    if (newPinOverride.length < 4 || newPinOverride !== confirmOverride) { setPinError("PINs must match and be 4 digits."); return; }
     setPinLoading(true);
-    const res = await resetPin(customer!.phone, pinOtp, pinNew);
+    const res = await resetPin(customer!.phone, pinOtp, newPinOverride);
     setPinLoading(false);
     if (res.success) {
       setPinStep("done");
@@ -171,6 +174,7 @@ export const CustomerProfilePage: React.FC<CustomerProfilePageProps> = ({ onBack
                   <Input label="First Name" value={firstName} onChange={(e) => setFirstName(e.target.value)} icon={<User size={16} />} />
                   <Input label="Last Name (optional)" value={lastName} onChange={(e) => setLastName(e.target.value)} icon={<User size={16} />} />
                   <Input label="Phone Number" value={phone} onChange={(e) => setPhone(formatPhone(e.target.value))} icon={<Phone size={16} />} />
+                  <Input label="Known Name (public display name)" placeholder="e.g. Mama Jane" value={knownName} onChange={(e) => setKnownName(e.target.value)} icon={<Tag size={16} />} hint="This is the name discoverable users and conversation participants will see." />
                   <Button onClick={handleSave} loading={saveLoading} fullWidth size="sm">Save Changes</Button>
                 </>
               ) : (
@@ -178,6 +182,7 @@ export const CustomerProfilePage: React.FC<CustomerProfilePageProps> = ({ onBack
                   <ProfileRow icon={<User size={16} />} label="First Name" value={customer.firstName} />
                   {customer.lastName && <ProfileRow icon={<User size={16} />} label="Last Name" value={customer.lastName} />}
                   <ProfileRow icon={<Phone size={16} />} label="Phone" value={customer.phone} />
+                  <ProfileRow icon={<Tag size={16} />} label="Visible As" value={customer.knownName || `${customer.firstName}${customer.lastName ? ` ${customer.lastName}` : ""}`} />
                 </div>
               )}
             </div>
@@ -240,14 +245,11 @@ export const CustomerProfilePage: React.FC<CustomerProfilePageProps> = ({ onBack
           <div className="space-y-3">
             <p className="text-sm text-[#6B7280]">Enter the 4-digit code sent to your phone.</p>
             {pinSuccess && <p className="text-sm font-semibold text-[#15803D] bg-[#DCFCE7] rounded-xl px-3 py-2 flex items-center gap-2"><CheckCircle2 size={14} />{pinSuccess}</p>}
-            <input type="text" inputMode="numeric" maxLength={4} placeholder="0000" value={pinOtp}
-              onChange={(e) => setPinOtp(e.target.value.replace(/\D/g, "").slice(0, 4))}
-              className="w-full text-center text-2xl font-bold tracking-[0.5em] px-4 py-3 rounded-xl border-2 border-[#D1D5DB] outline-none focus:border-[#114B36] focus:ring-3 focus:ring-[rgba(17,75,54,0.1)]"
-            />
+            <SecureCodeInput value={pinOtp} onChange={setPinOtp} onComplete={(code) => handleChangePinVerify(code)} masked={false} autoFocus autoComplete="one-time-code" label="PIN reset code" />
             {pinError && <p className="text-sm font-semibold text-[#DC2626] bg-[#FEE2E2] rounded-xl px-3 py-2">{pinError}</p>}
             <div className="flex gap-3">
               <Button variant="secondary" onClick={() => setPinStep("phone")} fullWidth>Back</Button>
-              <Button onClick={handleChangePinVerify} disabled={pinOtp.length < 4} fullWidth>Verify</Button>
+              <Button onClick={() => handleChangePinVerify()} disabled={pinOtp.length < 4} fullWidth>Verify</Button>
             </div>
           </div>
         )}
@@ -256,20 +258,14 @@ export const CustomerProfilePage: React.FC<CustomerProfilePageProps> = ({ onBack
             <p className="text-sm text-[#6B7280]">Choose a new 4-digit PIN.</p>
             <div>
               <label className="block text-sm font-semibold text-[#374151] mb-1">New PIN</label>
-              <input type="password" inputMode="numeric" maxLength={4} placeholder="••••" value={pinNew}
-                onChange={(e) => setPinNew(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                className="w-full text-center text-2xl font-bold tracking-[0.5em] px-4 py-3 rounded-xl border-2 border-[#D1D5DB] outline-none focus:border-[#114B36] focus:ring-3 focus:ring-[rgba(17,75,54,0.1)]"
-              />
+              <SecureCodeInput value={pinNew} onChange={setPinNew} label="New PIN" />
             </div>
             <div>
               <label className="block text-sm font-semibold text-[#374151] mb-1">Confirm PIN</label>
-              <input type="password" inputMode="numeric" maxLength={4} placeholder="••••" value={pinConfirm}
-                onChange={(e) => setPinConfirm(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                className="w-full text-center text-2xl font-bold tracking-[0.5em] px-4 py-3 rounded-xl border-2 border-[#D1D5DB] outline-none focus:border-[#114B36] focus:ring-3 focus:ring-[rgba(17,75,54,0.1)]"
-              />
+              <SecureCodeInput value={pinConfirm} onChange={setPinConfirm} onComplete={(code) => handleChangePinSet(pinNew, code)} label="Confirm PIN" />
             </div>
             {pinError && <p className="text-sm font-semibold text-[#DC2626] bg-[#FEE2E2] rounded-xl px-3 py-2">{pinError}</p>}
-            <Button onClick={handleChangePinSet} loading={pinLoading} disabled={pinNew.length < 4 || pinNew !== pinConfirm} fullWidth>
+            <Button onClick={() => void handleChangePinSet()} loading={pinLoading} disabled={pinNew.length < 4 || pinNew !== pinConfirm} fullWidth>
               Change PIN
             </Button>
           </div>

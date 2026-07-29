@@ -12,16 +12,23 @@ import {
   CreateProductSchema,
   IdParamSchema,
   UpdateProductAvailabilitySchema,
+  UpdateProductSchema,
   UpdateProductStockSchema,
 } from "../../../../../shared/schemas";
 import {
   createMenuItem,
   deleteMenuItem,
   getAllMenuItems,
+  updateProduct,
   updateProductAvailability,
   updateProductStock,
 } from "./service";
 import { verifyAdminToken } from "../auth/service";
+
+function requireHotelAccount(admin: { hotelId: string | null }): string {
+  if (!admin.hotelId) throw new Error("This account is not assigned to a hotel");
+  return admin.hotelId;
+}
 
 export const menuRoute = new Elysia({
   prefix: `${env.apiPrefix}/menu`,
@@ -76,7 +83,7 @@ export const menuRoute = new Elysia({
       catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
 
       try {
-        const product = await createMenuItem(body, admin.hotelId ?? undefined);
+        const product = await createMenuItem(body, requireHotelAccount(admin));
         set.status = 201;
         return { success: true, data: product };
       } catch (err: any) {
@@ -100,7 +107,7 @@ export const menuRoute = new Elysia({
       catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
 
       try {
-        const updated = await updateProductAvailability(params.id, body.available, admin.hotelId ?? undefined);
+        const updated = await updateProductAvailability(params.id, body.available, requireHotelAccount(admin));
         return { success: true, data: updated };
       } catch (err: any) {
         set.status = 400;
@@ -123,7 +130,7 @@ export const menuRoute = new Elysia({
       catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
 
       try {
-        const updated = await updateProductStock(params.id, body.stockQty, admin.hotelId ?? undefined);
+        const updated = await updateProductStock(params.id, body.stockQty, requireHotelAccount(admin));
         return { success: true, data: updated };
       } catch (err: any) {
         set.status = 400;
@@ -131,6 +138,29 @@ export const menuRoute = new Elysia({
       }
     },
     { params: IdParamSchema, body: UpdateProductStockSchema }
+  )
+  .patch(
+    "/:id",
+    async ({ params, body, set, headers, jwt }) => {
+      const authHeader = headers["authorization"];
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        set.status = 401;
+        return { success: false, error: "Missing or invalid authorization header" };
+      }
+      const token = authHeader.split(" ")[1] ?? "";
+      let admin;
+      try { admin = await verifyAdminToken(token, (t) => jwt.verify(t)); }
+      catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
+
+      try {
+        const updated = await updateProduct(params.id, body, requireHotelAccount(admin));
+        return { success: true, data: updated };
+      } catch (err: any) {
+        set.status = 400;
+        return { success: false, error: err.message };
+      }
+    },
+    { params: IdParamSchema, body: UpdateProductSchema }
   )
   .delete(
     "/:id",
@@ -146,7 +176,7 @@ export const menuRoute = new Elysia({
       catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
 
       try {
-        await deleteMenuItem(params.id, admin.hotelId ?? undefined);
+        await deleteMenuItem(params.id, requireHotelAccount(admin));
         return { success: true, message: "Product deleted successfully" };
       } catch (err: any) {
         set.status = 400;

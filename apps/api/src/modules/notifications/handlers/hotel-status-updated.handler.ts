@@ -20,11 +20,13 @@ export async function handleHotelStatusUpdated(payload: Record<string, unknown>)
 
   if (staff.length === 0) return true;
 
-  const msg = `[TableDash Platform] ${data.hotelName} has been ${action} by ${data.changedBy}. Please check the kitchen dashboard.`;
+  const msg = `[Ladha Deliveries] ${data.hotelName} has been ${action} by ${data.changedBy}. Please check the kitchen dashboard.`;
 
-  await Promise.allSettled(
+  const results = await Promise.allSettled(
     staff.map((s) => smsService.sendSms(s.phone, msg))
   );
 
-  return true;
+  // Keep the outbox row retryable when the gateway rejects every delivery.
+  // If at least one recipient succeeds, the event has still been delivered.
+  return results.some((result) => result.status === "fulfilled" && result.value);
 }

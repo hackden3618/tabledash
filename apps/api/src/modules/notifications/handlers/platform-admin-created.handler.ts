@@ -14,7 +14,7 @@ export async function handlePlatformAdminCreated(payload: Record<string, unknown
 
   if (!data.phone) return true;
 
-  const message = `Welcome to TableDash Deliveries! You've been assigned as a Platform Administrator by ${data.createdBy}. Your temporary password is ${data.tempPassword}. Please log in at https://tabledash.up.railway.app/platform and change it immediately.`;
+  const message = `Welcome to Ladha Deliveries! You've been assigned as a Platform Administrator by ${data.createdBy}. Your temporary password is ${data.tempPassword}. Please log in at https://tabledash.up.railway.app/platform and change it immediately.`;
 
   const result = await smsService.sendSms(data.phone, message);
   return result;

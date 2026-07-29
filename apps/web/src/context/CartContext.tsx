@@ -15,16 +15,18 @@ export interface CartItem {
   quantity: number;
   hotelId?: string;
   hotelName?: string;
+  stockQty?: number;
   available: boolean; // false if item went out of stock while in cart
 }
 
 interface CartContextType {
   cart: CartItem[];
-  addToCart: (product: { id: string; name: string; price: number; imageUrl: string; hotelId?: string; hotelName?: string }) => void;
+  addToCart: (product: { id: string; name: string; price: number; imageUrl: string; hotelId?: string; hotelName?: string; stockQty?: number }) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   removeFromCart: (productId: string) => void;
   clearCart: () => void;
   markItemAvailability: (productId: string, available: boolean) => void;
+  updateItemSnapshot: (productId: string, snapshot: { available?: boolean; stockQty?: number; price?: number; name?: string; imageUrl?: string }) => void;
   totalCount: number;
   totalAmount: number;
   unavailableCount: number;
@@ -50,7 +52,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem("ladha_cart", JSON.stringify(cart));
   }, [cart]);
 
-  const addToCart = (product: { id: string; name: string; price: number; imageUrl: string; hotelId?: string; hotelName?: string }) => {
+  const addToCart = (product: { id: string; name: string; price: number; imageUrl: string; hotelId?: string; hotelName?: string; stockQty?: number }) => {
     setCart((prev) => {
       const existingIndex = prev.findIndex((item) => item.id === product.id);
       if (existingIndex > -1) {
@@ -58,7 +60,8 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const existing = updated[existingIndex]!;
         updated[existingIndex] = {
           ...existing,
-          quantity: existing.quantity + 1,
+          quantity: Math.min(existing.quantity + 1, product.stockQty ?? Number.MAX_SAFE_INTEGER),
+          stockQty: product.stockQty,
         };
         return updated;
       }
@@ -72,7 +75,9 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
     setCart((prev) =>
-      prev.map((item) => (item.id === productId ? { ...item, quantity } : item))
+      prev.map((item) => item.id === productId
+        ? { ...item, quantity: Math.min(Math.max(1, Math.floor(quantity)), item.stockQty ?? Number.MAX_SAFE_INTEGER) }
+        : item)
     );
   };
 
@@ -85,14 +90,16 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const markItemAvailability = (productId: string, available: boolean) => {
-    setCart((prev) =>
-      prev.map((item) => (item.id === productId ? { ...item, available } : item))
-    );
+    updateItemSnapshot(productId, { available });
+  };
+
+  const updateItemSnapshot = (productId: string, snapshot: { available?: boolean; stockQty?: number; price?: number; name?: string; imageUrl?: string }) => {
+    setCart((prev) => prev.map((item) => (item.id === productId ? { ...item, ...snapshot } : item)));
   };
 
   const totalCount = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const unavailableCount = cart.filter((item) => !item.available).length;
+  const totalAmount = cart.reduce((sum, item) => sum + (item.available && !closedHotelIds.includes(item.hotelId ?? "") ? item.price * item.quantity : 0), 0);
+  const unavailableCount = cart.filter((item) => !item.available || (item.stockQty !== undefined && item.quantity > item.stockQty)).length;
 
   return (
     <CartContext.Provider
@@ -103,6 +110,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         removeFromCart,
         clearCart,
         markItemAvailability,
+        updateItemSnapshot,
         totalCount,
         totalAmount,
         unavailableCount,

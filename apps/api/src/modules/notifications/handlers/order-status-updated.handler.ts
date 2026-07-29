@@ -21,7 +21,7 @@ const CUSTOMER_NOTIFIED_STATUSES = ["ACCEPTED", "OUT_FOR_DELIVERY", "CANCELLED"]
 
 export async function handleOrderStatusUpdated(payload: Record<string, unknown>): Promise<boolean> {
   const data = payload as unknown as OrderStatusPayload;
-  const hotelName = data.hotelName || "TableDash Deliveries";
+  const hotelName = data.hotelName || "Ladha Deliveries";
 
   if (!CUSTOMER_NOTIFIED_STATUSES.includes(data.newStatus)) return true;
 
@@ -36,7 +36,7 @@ export async function handleOrderStatusUpdated(payload: Record<string, unknown>)
   } else if (data.newStatus === "CANCELLED") {
     const isCustomerCancel = (data.cancelReason || "").toLowerCase().includes("customer");
     if (isCustomerCancel) {
-      message = `Hello ${displayName}, order #${data.orderNumber} from ${data.hotelName || "TableDash Deliveries"} has been CANCELLED as you requested. Track your orders: ${APP_LINK}`;
+      message = `Hello ${displayName}, order #${data.orderNumber} from ${data.hotelName || "Ladha Deliveries"} has been CANCELLED as you requested. Track your orders: ${APP_LINK}`;
     } else {
       const reason = data.cancelReason || "we are unable to deliver your order at this time";
       message = `Hello ${displayName}, we are sorry to inform you that order #${data.orderNumber} has been cancelled. Reason: ${reason}. We appreciate your understanding. Reach us: ${APP_LINK}`;
