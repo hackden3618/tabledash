@@ -37,7 +37,7 @@ export class S3StorageProvider implements MediaStorageProvider {
 
   constructor() {
     if (!MEDIA_STORAGE_CONFIG.endpoint || !MEDIA_STORAGE_CONFIG.bucket || !MEDIA_STORAGE_CONFIG.accessKeyId || !MEDIA_STORAGE_CONFIG.secretAccessKey) {
-      throw new Error("S3 storage is not configured. Set MEDIA_ENDPOINT, MEDIA_BUCKET, MEDIA_ACCESS_KEY_ID, and MEDIA_SECRET_ACCESS_KEY.");
+      throw new Error("S3 storage is not configured. Set MEDIA_ENDPOINT/ S3_ENDPOINT, MEDIA_BUCKET/ S3_BUCKET, MEDIA_ACCESS_KEY_ID/ S3_ACCESS_KEY_ID, and MEDIA_SECRET_ACCESS_KEY/ S3_SECRET_ACCESS_KEY.");
     }
     this.endpoint = new URL(MEDIA_STORAGE_CONFIG.endpoint);
     this.bucket = MEDIA_STORAGE_CONFIG.bucket;

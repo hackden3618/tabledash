@@ -37,11 +37,11 @@ export interface MediaStorageConfig {
 export const MEDIA_STORAGE_CONFIG: MediaStorageConfig = {
   provider: (process.env.MEDIA_STORAGE || "local") as MediaStorageConfig["provider"],
   baseUrl: process.env.MEDIA_BASE_URL || process.env.PUBLIC_URL || "http://localhost:3000",
-  bucket: process.env.MEDIA_BUCKET || process.env.R2_BUCKET_NAME || "",
-  region: process.env.MEDIA_REGION || "auto",
-  accessKeyId: process.env.MEDIA_ACCESS_KEY_ID || process.env.R2_ACCESS_KEY_ID || "",
-  secretAccessKey: process.env.MEDIA_SECRET_ACCESS_KEY || process.env.R2_SECRET_ACCESS_KEY || "",
-  endpoint: process.env.MEDIA_ENDPOINT || process.env.R2_ENDPOINT || "",
-  publicBaseUrl: process.env.MEDIA_PUBLIC_BASE_URL || "",
+  bucket: process.env.MEDIA_BUCKET || process.env.S3_BUCKET || process.env.R2_BUCKET_NAME || "",
+  region: process.env.MEDIA_REGION || process.env.S3_REGION || "auto",
+  accessKeyId: process.env.MEDIA_ACCESS_KEY_ID || process.env.S3_ACCESS_KEY_ID || process.env.R2_ACCESS_KEY_ID || "",
+  secretAccessKey: process.env.MEDIA_SECRET_ACCESS_KEY || process.env.S3_SECRET_ACCESS_KEY || process.env.R2_SECRET_ACCESS_KEY || "",
+  endpoint: process.env.MEDIA_ENDPOINT || process.env.S3_ENDPOINT || process.env.R2_ENDPOINT || "",
+  publicBaseUrl: process.env.MEDIA_PUBLIC_BASE_URL || process.env.S3_PUBLIC_BASE_URL || "",
   r2AccountId: process.env.MEDIA_R2_ACCOUNT_ID || process.env.R2_ACCOUNT_ID || "",
 };
