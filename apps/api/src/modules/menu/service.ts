@@ -78,7 +78,7 @@ export const createMenuItem = async (input: CreateProductInput, hotelIdFromJwt?:
 export const updateProductAvailability = async (id: string, available: boolean, hotelId?: string) => {
   const existing = await prisma.product.findUnique({ where: { id } });
   if (!existing) throw new Error("Product not found");
-  if (hotelId && existing.hotelId && existing.hotelId !== hotelId) {
+  if (hotelId && existing.hotelId !== hotelId) {
     throw new Error("Product does not belong to your hotel");
   }
 
@@ -95,7 +95,7 @@ export const updateProductAvailability = async (id: string, available: boolean, 
   wsHub.broadcastMenuUpdate({
     type: "MENU_AVAILABILITY_UPDATED",
     payload: formattedProduct,
-  });
+  }, product.hotelId ?? undefined);
 
   return formattedProduct;
 };
@@ -110,7 +110,7 @@ export const updateProductAvailability = async (id: string, available: boolean, 
 export const updateProductStock = async (id: string, stockQty: number, hotelId?: string) => {
   const existing = await prisma.product.findUnique({ where: { id } });
   if (!existing) throw new Error("Product not found");
-  if (hotelId && existing.hotelId && existing.hotelId !== hotelId) {
+  if (hotelId && existing.hotelId !== hotelId) {
     throw new Error("Product does not belong to your hotel");
   }
   const wasOutOfStock = existing ? existing.stockQty <= 0 : false;
@@ -141,7 +141,7 @@ export const updateProductStock = async (id: string, stockQty: number, hotelId?:
   wsHub.broadcastMenuUpdate({
     type: "MENU_AVAILABILITY_UPDATED",
     payload: formattedProduct,
-  });
+  }, product.hotelId ?? undefined);
 
   return formattedProduct;
 };
@@ -149,7 +149,7 @@ export const updateProductStock = async (id: string, stockQty: number, hotelId?:
 export const updateProduct = async (id: string, input: { name?: string; category?: string; imageUrl?: string; price?: number; available?: boolean }, hotelId?: string) => {
   const existing = await prisma.product.findUnique({ where: { id } });
   if (!existing) throw new Error("Product not found");
-  if (hotelId && existing.hotelId && existing.hotelId !== hotelId) {
+  if (hotelId && existing.hotelId !== hotelId) {
     throw new Error("Product does not belong to your hotel");
   }
 
@@ -173,7 +173,7 @@ export const updateProduct = async (id: string, input: { name?: string; category
   wsHub.broadcastMenuUpdate({
     type: "MENU_AVAILABILITY_UPDATED",
     payload: formattedProduct,
-  });
+  }, product.hotelId ?? undefined);
 
   return formattedProduct;
 };
@@ -185,7 +185,7 @@ export const updateProduct = async (id: string, input: { name?: string; category
 export const deleteMenuItem = async (id: string, hotelId?: string) => {
   const existing = await prisma.product.findUnique({ where: { id } });
   if (!existing) throw new Error("Product not found");
-  if (hotelId && existing.hotelId && existing.hotelId !== hotelId) {
+  if (hotelId && existing.hotelId !== hotelId) {
     throw new Error("Product does not belong to your hotel");
   }
 
@@ -205,7 +205,7 @@ export const deleteMenuItem = async (id: string, hotelId?: string) => {
   wsHub.broadcastMenuUpdate({
     type: "MENU_AVAILABILITY_UPDATED",
     payload: formattedProduct,
-  });
+  }, product.hotelId ?? undefined);
 
   return formattedProduct;
 };

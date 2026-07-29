@@ -17,8 +17,26 @@ interface CartPageProps {
 let cachedWhatsAppPhone = "+254757030743";
 
 export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDelivery }) => {
-  const { cart, updateQuantity, clearCart, totalAmount, markItemAvailability, closedHotelIds, setClosedHotelIds } = useCart();
+  const { cart, updateQuantity, clearCart, totalAmount, updateItemSnapshot, closedHotelIds, setClosedHotelIds } = useCart();
   const [whatsappPhone, setWhatsappPhone] = useState(cachedWhatsAppPhone);
+
+  useEffect(() => {
+    const hotelIds = [...new Set(cart.map((item) => item.hotelId).filter((id): id is string => Boolean(id)))];
+    if (hotelIds.length === 0) return;
+
+    void Promise.all([
+      apiGet<{ id: string; isOpen: boolean }[]>("/hotels"),
+      ...hotelIds.map((hotelId) => apiGet<Array<{ id: string; available: boolean; stockQty: number; price: number; name: string; imageUrl: string }>>(`/menu?hotelId=${encodeURIComponent(hotelId)}`)),
+    ]).then(([hotelResponse, ...menuResponses]) => {
+      if (hotelResponse.success && hotelResponse.data) {
+        setClosedHotelIds(hotelResponse.data.filter((hotel) => !hotel.isOpen).map((hotel) => hotel.id));
+      }
+      menuResponses.forEach((response) => {
+        if (!response.success || !response.data) return;
+        response.data.forEach((product) => updateItemSnapshot(product.id, product));
+      });
+    }).catch(() => {});
+  }, [cart.length]);
 
   useEffect(() => {
     apiGet<{ staffPhone?: string }>("/settings").then((res) => {
@@ -35,10 +53,8 @@ export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDe
     const handler = (event: Event) => {
       const detail = (event as CustomEvent).detail;
       if (detail.type === "MENU_AVAILABILITY_UPDATED") {
-        const updated = detail.payload as { id: string; available: boolean; stockQty: number };
-        if (!updated.available || updated.stockQty <= 0) {
-          markItemAvailability(updated.id, false);
-        }
+        const updated = detail.payload as { id: string; available: boolean; stockQty: number; price?: number; name?: string; imageUrl?: string };
+        updateItemSnapshot(updated.id, updated);
       } else if (detail.type === "HOTEL_CLOSING") {
         const data = detail.payload as { hotelId?: string };
         if (data.hotelId) {
@@ -57,7 +73,7 @@ export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDe
     };
     window.addEventListener("tabledash:realtime", handler);
     return () => window.removeEventListener("tabledash:realtime", handler);
-  }, [markItemAvailability, setClosedHotelIds]);
+  }, []);
 
   const groupedCart = useMemo(() => {
     const groups = new Map<string, { hotelName: string; availableItems: typeof cart; unavailableItems: typeof cart }>();
@@ -67,17 +83,20 @@ export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDe
         groups.set(key, { hotelName: item.hotelName || "Ladha", availableItems: [], unavailableItems: [] });
       }
       const group = groups.get(key)!;
-      if (item.available) {
+      if (item.available && !(item.stockQty !== undefined && item.stockQty < item.quantity) && !(item.hotelId && closedHotelIds.includes(item.hotelId))) {
         group.availableItems.push(item);
       } else {
         group.unavailableItems.push(item);
       }
     }
     return Array.from(groups.entries());
-  }, [cart]);
+  }, [cart, closedHotelIds]);
+
+  const isOrderable = (item: typeof cart[number]) =>
+    item.available && !(item.stockQty !== undefined && item.stockQty < item.quantity) && !(item.hotelId && closedHotelIds.includes(item.hotelId));
 
   const handleWhatsAppOrder = () => {
-    const availableOnly = cart.filter((i) => i.available);
+    const availableOnly = cart.filter(isOrderable);
     const text = availableOnly
       .map((item) => `${item.quantity}x ${item.name} (KSh ${item.price * item.quantity})`)
       .join("\n");
@@ -89,6 +108,7 @@ export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDe
     window.open(`https://wa.me/${whatsappPhone}?text=${message}`, "_blank");
   };
 
+  const unavailableItems = cart.filter((item) => !isOrderable(item));
   const anyHotelClosed = cart.some((item) => item.hotelId && closedHotelIds.includes(item.hotelId));
 
   return (
@@ -148,7 +168,7 @@ export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDe
                           />
                           <div className="flex-1 min-w-0">
                             <h4 className="font-semibold text-sm text-[#1F2937]">{item.name}</h4>
-                            <p className="text-xs text-[#6B7280]">KSh {item.price} each</p>
+                            <p className="text-xs text-[#6B7280]">KSh {item.price} each · {item.stockQty ?? "—"} available</p>
                             <p className="font-bold text-sm text-[#114B36] mt-0.5">
                               KSh {item.price * item.quantity}
                             </p>
@@ -161,9 +181,16 @@ export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDe
                             >
                               −
                             </button>
-                            <span className="w-8 text-center font-bold text-xs text-[#114B36]">
-                              {item.quantity}
-                            </span>
+                            <input
+                              type="number"
+                              inputMode="numeric"
+                              min={1}
+                              max={item.stockQty}
+                              value={item.quantity}
+                              onChange={(event) => updateQuantity(item.id, Number(event.target.value))}
+                              className="w-12 h-8 text-center font-bold text-xs text-[#114B36] bg-transparent border-x border-[#C2E2D3] outline-none"
+                              aria-label={`Quantity for ${item.name}`}
+                            />
                             <button
                               onClick={() => updateQuantity(item.id, item.quantity + 1)}
                               className="flex items-center justify-center w-8 h-8 text-[#114B36] font-bold bg-none border-none cursor-pointer hover:bg-[#C2E2D3] transition-colors rounded-r-lg"
@@ -195,7 +222,7 @@ export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDe
                           />
                           <div className="flex-1 min-w-0">
                             <h4 className="font-semibold text-sm text-[#6B7280]">{item.name}</h4>
-                            <Badge variant="danger" size="sm">Sold Out</Badge>
+                            <Badge variant="danger" size="sm">{item.stockQty && item.stockQty > 0 ? `Only ${item.stockQty} left` : "Sold Out"}</Badge>
                           </div>
                           <button
                             onClick={() => updateQuantity(item.id, 0)}
@@ -238,14 +265,21 @@ export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDe
                   </div>
                 )}
 
+                {unavailableItems.length > 0 && (
+                  <div className="bg-[#FFF7ED] border border-[#FED7AA] rounded-2xl p-4 text-center">
+                    <p className="font-bold text-sm text-[#C2410C] mb-1">Review your cart</p>
+                    <p className="text-xs text-[#9A3412]">Some items are unavailable or have less stock than requested. Adjust or remove them to continue.</p>
+                  </div>
+                )}
+
                 <Button
                   onClick={onContinueToDelivery}
-                  disabled={anyHotelClosed}
+                  disabled={anyHotelClosed || unavailableItems.length > 0}
                   fullWidth
                   size="lg"
                   variant="primary"
                 >
-                  {anyHotelClosed ? "Hotel Closed" : "Continue to Delivery"}
+                  {anyHotelClosed ? "Hotel Closed" : unavailableItems.length > 0 ? "Resolve Cart Items" : "Continue to Delivery"}
                 </Button>
 
                 <Button

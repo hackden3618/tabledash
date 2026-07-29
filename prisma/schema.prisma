@@ -119,6 +119,8 @@ model AdminUser {
     hotelId      String?   @map("hotel_id") @db.Uuid
     role         HotelRole @default(HOTEL_STAFF)
     isDiscoverable Boolean  @default(false) @map("is_discoverable")
+    resetCode    String?    @map("reset_code")
+    resetCodeExpires DateTime? @map("reset_code_expires") @db.Timestamptz()
     createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz()
 
     hotel Hotel? @relation(fields: [hotelId], references: [id])

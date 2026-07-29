@@ -21,7 +21,7 @@ import { platformRoute } from "./src/modules/platform/routes";
 import { settingsRoute } from "./src/modules/settings/route";
 import { uploadRoute } from "./src/modules/upload/route";
 import { messagingRoute } from "./src/modules/messaging/routes";
-import { resolveMessagingActor } from "./src/modules/messaging/controller";
+import { resolveMessagingActorFromWebSocketTicket } from "./src/modules/messaging/controller";
 import { assertConversationAccess, getConversationIdentityKeys, getInbox } from "./src/modules/messaging/service";
 import { wsHub } from "./src/modules/websocket/hub";
 import { env } from "../../shared/config";
@@ -73,40 +73,24 @@ export const app = new Elysia()
     query: t.Object({
       role: t.Optional(t.String({ default: "customer" })),
       orderId: t.Optional(t.String()),
-      token: t.Optional(t.String()),
+      ticket: t.Optional(t.String()),
       guestId: t.Optional(t.String()),
       conversationId: t.Optional(t.String()),
     }),
     async open(ws) {
-      const requestedRole = ws.data.query.role === "admin" ? "admin" : "customer";
       let role: "admin" | "customer" = "customer";
       const orderId = ws.data.query.orderId;
 
       let hotelId: string | undefined;
       let identityKey: string | undefined;
       const conversationIds = new Set<string>();
-      if (requestedRole === "admin" && ws.data.query.token) {
-        try {
-          const payload = await ws.data.jwt.verify(ws.data.query.token);
-          if (payload && typeof payload === "object" && (payload as any).hotelId) {
-            hotelId = (payload as any).hotelId;
-          }
-          // Derive identity key directly from JWT sub as fallback
-          if (payload && typeof payload === "object" && (payload as any).sub) {
-            identityKey = `admin:${(payload as any).sub}`;
-          }
-          // Never trust the URL role alone. The messaging actor below confirms
-          // whether this is hotel staff or a platform administrator.
-        } catch {
-          console.warn(`[WS] Rejected admin privileges for invalid socket token: ${ws.id}`);
-        }
-      }
-
+      let authenticatedActor: Awaited<ReturnType<typeof resolveMessagingActorFromWebSocketTicket>>;
       try {
-        const actor = await resolveMessagingActor(
-          { authorization: ws.data.query.token ? `Bearer ${ws.data.query.token}` : undefined, "x-guest-id": ws.data.query.guestId },
-          (token) => ws.data.jwt.verify(token)
-        );
+        if (!ws.data.query.ticket) throw new Error("Missing WebSocket ticket");
+        const ticket = await ws.data.jwt.verify(ws.data.query.ticket);
+        if (!ticket || typeof ticket !== "object") throw new Error("Invalid WebSocket ticket");
+        const actor = await resolveMessagingActorFromWebSocketTicket(ticket);
+        authenticatedActor = actor;
         identityKey = actor.kind === "CUSTOMER" ? `customer:${actor.customerId}` : actor.kind === "GUEST" ? `guest:${actor.guestIdentityId}` : actor.kind === "HOTEL_STAFF" ? `admin:${actor.adminUserId}` : `platform:${actor.platformAdminId}`;
         if (actor.kind === "HOTEL_STAFF") {
           role = "admin";
@@ -120,18 +104,14 @@ export const app = new Elysia()
         const accessible = await getInbox(actor);
         const allConversations = [...accessible.orderConversations, ...accessible.hotelNotices, ...accessible.platformNotices, ...accessible.talkToStaff, ...accessible.communityChannels];
         allConversations.forEach((conversation) => conversationIds.add(conversation.id));
-      } catch {}
+      } catch {
+        ws.close(1008, "Realtime authorization required");
+        return;
+      }
 
       if (ws.data.query.conversationId) {
         try {
-          const actor = await resolveMessagingActor(
-            {
-              authorization: ws.data.query.token ? `Bearer ${ws.data.query.token}` : undefined,
-              "x-guest-id": ws.data.query.guestId,
-            },
-            (token) => ws.data.jwt.verify(token)
-          );
-          await assertConversationAccess(actor, ws.data.query.conversationId);
+          await assertConversationAccess(authenticatedActor, ws.data.query.conversationId);
           conversationIds.add(ws.data.query.conversationId);
         } catch {
           console.warn(`[WS] Rejected unauthorized conversation subscription for ${ws.id}`);
@@ -155,6 +135,7 @@ export const app = new Elysia()
       wsHub.touch(ws.id);
       try {
         const event = JSON.parse(String(message)) as { type?: string; conversationId?: string };
+        if (event.type === "PING") return;
         if (event.type === "JOIN_CONVERSATION") {
           if (!event.conversationId) return;
           const senderIdentity = wsHub.getIdentityKey(ws.id);

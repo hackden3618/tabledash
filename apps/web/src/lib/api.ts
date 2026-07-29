@@ -5,7 +5,7 @@
  * When to modify: When changing API base URLs or adding custom headers.
  */
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? "/api/v1";
+export const API_BASE = import.meta.env.VITE_API_BASE ?? "/api/v1";
 const GUEST_ID_KEY = "tableDash_guest_id";
 
 /** Device-local identity for guest conversations; never treated as auth. */

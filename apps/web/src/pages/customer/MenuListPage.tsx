@@ -204,7 +204,7 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
 
   const handleAddToCart = (item: ProductItem) => {
     if (isEffectivelyClosed) return;
-    addToCart({ id: item.id, name: item.name, price: item.price, imageUrl: item.imageUrl, hotelId: selectedHotel!.id, hotelName: selectedHotel!.name });
+    addToCart({ id: item.id, name: item.name, price: item.price, imageUrl: item.imageUrl, hotelId: selectedHotel!.id, hotelName: selectedHotel!.name, stockQty: item.stockQty });
     if (!isLoggedIn && !persuasionShown) {
       setPersuasionShown(true);
       setShowLoginModal(true);
@@ -489,6 +489,7 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
                         if (qty < item.stockQty) updateQuantity(item.id, qty + 1);
                       }}
                       onDecrement={() => updateQuantity(item.id, getQuantityInCart(item.id) - 1)}
+                      onQuantityChange={(quantity) => updateQuantity(item.id, quantity)}
                       disabled={isEffectivelyClosed}
                     />
                   ))}
@@ -526,6 +527,7 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
                         onAdd={() => {}}
                         onIncrement={() => {}}
                         onDecrement={() => {}}
+                        onQuantityChange={() => {}}
                         disabled={true}
                       />
                     ))}

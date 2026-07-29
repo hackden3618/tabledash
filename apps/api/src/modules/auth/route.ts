@@ -10,7 +10,10 @@ import { Elysia, t } from "elysia";
 import { env } from "../../../../../shared/config";
 import { PHONE_PATTERN, PHONE_MIN, PHONE_MAX } from "../../../../../shared/phone";
 import { AdminLoginSchema } from "../../../../../shared/schemas";
-import { loginAdmin, verifyAdminToken, requestPasswordResetOtp, resetPasswordWithOtp, updateAdminProfile, changeAdminPassword } from "./service";
+import { loginAdmin, verifyAdminToken, requestPasswordResetOtp, resetPasswordWithOtp, updateAdminProfile, changeAdminPassword, createWebSocketTicket } from "./service";
+import { verifyCustomerToken } from "../customers/auth.service";
+import { verifyPlatformAdminToken } from "./service";
+import { ensureGuestIdentity, isGuestId } from "../customers/guest-identity";
 import { AUTH_LIMITER } from "../../lib/rate-limiter";
 
 export const authRoute = new Elysia({
@@ -76,6 +79,34 @@ export const authRoute = new Elysia({
       body: t.Object({ phone: t.String({ minLength: 10, maxLength: 13 }) }),
     }
   )
+  .post("/ws-ticket", async ({ headers, jwt, set }) => {
+    try {
+      const authorization = headers["authorization"];
+      if (authorization?.startsWith("Bearer ")) {
+        const token = authorization.slice(7).trim();
+        const customerId = await verifyCustomerToken(token, (value) => jwt.verify(value));
+        if (customerId) {
+          return { success: true, data: { ticket: await createWebSocketTicket({ actorType: "customer", sub: customerId }, (payload) => jwt.sign(payload)) } };
+        }
+        try {
+          const admin = await verifyAdminToken(token, (value) => jwt.verify(value));
+          if (admin.hotelId) {
+            return { success: true, data: { ticket: await createWebSocketTicket({ actorType: "hotel_staff", sub: admin.id, hotelId: admin.hotelId }, (payload) => jwt.sign(payload)) } };
+          }
+        } catch {}
+        const platform = await verifyPlatformAdminToken(token, (value) => jwt.verify(value));
+        return { success: true, data: { ticket: await createWebSocketTicket({ actorType: "platform_admin", sub: platform.id }, (payload) => jwt.sign(payload)) } };
+      }
+
+      const guestId = headers["x-guest-id"];
+      if (!isGuestId(guestId)) throw new Error("Authentication required");
+      await ensureGuestIdentity(guestId);
+      return { success: true, data: { ticket: await createWebSocketTicket({ actorType: "guest", sub: guestId }, (payload) => jwt.sign(payload)) } };
+    } catch {
+      set.status = 401;
+      return { success: false, error: "Unable to authorize realtime session" };
+    }
+  })
   .post(
     "/reset-password",
     async ({ body, set, request }) => {

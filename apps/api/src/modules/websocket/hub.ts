@@ -181,11 +181,15 @@ export class WebSocketHub {
   /**
    * Broadcasts menu availability changes to all connected clients (customers & admins).
    */
-  public broadcastMenuUpdate<T>(message: WsMessage<T>): void {
+  public broadcastMenuUpdate<T>(message: WsMessage<T>, hotelId?: string): void {
     const payloadStr = JSON.stringify(message);
     const staleIds: string[] = [];
 
     for (const client of this.clients.values()) {
+      const isCustomer = client.role === "customer";
+      const isHotelAdmin = client.role === "admin" && Boolean(hotelId) && client.hotelId === hotelId;
+      const isPlatformAdmin = client.role === "admin" && !client.hotelId;
+      if (!isCustomer && !isHotelAdmin && !isPlatformAdmin) continue;
       try {
         client.send(payloadStr);
       } catch (err) {

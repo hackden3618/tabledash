@@ -6,6 +6,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { API_BASE, getGuestId } from "./api";
 
 export interface WsEventPayload<T = unknown> {
   type: string;
@@ -33,36 +34,40 @@ export function useWebSocket<T = unknown>(
 
   useEffect(() => {
     let timerId: ReturnType<typeof setTimeout> | null = null;
+    let heartbeatId: ReturnType<typeof setInterval> | null = null;
     let isDisposed = false;
 
     function connect() {
       if (isDisposed) return;
 
-      let query = `role=${role}`;
-      if (orderId) {
-        query += `&orderId=${orderId}`;
-      }
+      void (async () => {
+        try {
+          const headers: Record<string, string> = { "X-Guest-Id": getGuestId() };
+          if (authToken) headers.Authorization = `Bearer ${authToken}`;
+          const ticketResponse = await fetch(`${API_BASE}/auth/ws-ticket`, { method: "POST", headers });
+          if (!ticketResponse.ok) throw new Error("Realtime authorization failed");
+          const ticketData = await ticketResponse.json() as { data?: { ticket?: string } };
+          const ticket = ticketData.data?.ticket;
+          if (!ticket || isDisposed) return;
 
-      const guestId = localStorage.getItem("tableDash_guest_id");
-      const customerToken = localStorage.getItem("ladha_customer_token");
-      if (guestId) query += `&guestId=${encodeURIComponent(guestId)}`;
-      if (conversationId) query += `&conversationId=${encodeURIComponent(conversationId)}`;
-
-      // Automatically append admin JWT token if role is admin to enforce tenant isolation
-      if (role === "admin") {
-        const adminToken = authToken ?? localStorage.getItem("ladha_token");
-        if (adminToken) {
-          query += `&token=${encodeURIComponent(adminToken)}`;
+          let query = `role=${role}&ticket=${encodeURIComponent(ticket)}`;
+          if (orderId) query += `&orderId=${encodeURIComponent(orderId)}`;
+          if (conversationId) query += `&conversationId=${encodeURIComponent(conversationId)}`;
+          const proto = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:";
+          const base = typeof window !== "undefined" ? `${proto}//${window.location.host}` : "ws://localhost:3000";
+          const socket = new WebSocket(`${base}/ws?${query}`);
+          attachSocket(socket);
+        } catch {
+          if (!isDisposed) timerId = setTimeout(connect, 3000);
         }
-      }
-      if (role === "customer" && (authToken ?? customerToken)) {
-        query += `&token=${encodeURIComponent(authToken ?? customerToken!)}`;
-      }
+      })();
+    }
 
-      const proto = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:";
-      const base = typeof window !== "undefined" ? `${proto}//${window.location.host}` : "ws://localhost:3000";
-      const wsUrl = `${base}/ws?${query}`;
-      const socket = new WebSocket(wsUrl);
+    function attachSocket(socket: WebSocket) {
+      if (isDisposed) {
+        socket.close();
+        return;
+      }
 
       socket.onopen = () => {
         if (isDisposed) {
@@ -74,6 +79,9 @@ export function useWebSocket<T = unknown>(
           // WebSocket handshake and must not appear in browser logs.
           console.log(`[WS Client] Connected (${role})`);
           setIsConnected(true);
+          heartbeatId = setInterval(() => {
+            if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "PING" }));
+          }, 20_000);
           const pending = pendingMessagesRef.current.splice(0);
           pending.forEach((payload) => socket.send(payload));
         }
@@ -92,6 +100,8 @@ export function useWebSocket<T = unknown>(
 
       socket.onclose = () => {
         if (!isDisposed) {
+          if (heartbeatId) clearInterval(heartbeatId);
+          heartbeatId = null;
           console.log("[WS Client] Connection closed. Retrying in 3 seconds...");
           setIsConnected(false);
           timerId = setTimeout(connect, 3000);
@@ -111,6 +121,7 @@ export function useWebSocket<T = unknown>(
       isDisposed = true;
       pendingMessagesRef.current = [];
       if (timerId) clearTimeout(timerId);
+      if (heartbeatId) clearInterval(heartbeatId);
       if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.close();
     };
   }, [role, orderId, conversationId, authToken]);

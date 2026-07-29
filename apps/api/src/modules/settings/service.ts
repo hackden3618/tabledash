@@ -58,7 +58,7 @@ export const getHotelIsOpen = async (hotelId?: string): Promise<HotelStatusResul
       wsHub.broadcastMenuUpdate({
         type: "HOTEL_CLOSING",
         payload: { closingIn: 0, isOpen: false, hotelId: hotel.id },
-      });
+      }, hotel.id);
       await prisma.hotel.update({
         where: { id: hotel.id },
         data: { isOpen: false, autoCloseAt: null },
@@ -66,7 +66,7 @@ export const getHotelIsOpen = async (hotelId?: string): Promise<HotelStatusResul
       wsHub.broadcastMenuUpdate({
         type: "HOTEL_STATUS_UPDATED",
         payload: { isOpen: false, autoCloseAt: null, hotelId: hotel.id },
-      });
+      }, hotel.id);
       return { isOpen: false, autoCloseAt: null };
     }
   }
@@ -95,7 +95,7 @@ export const updateHotelIsOpen = async (
       data: { isOpen: true, autoCloseAt: autoCloseAt ? new Date(autoCloseAt) : null },
     });
     const result = { isOpen: true, autoCloseAt: autoCloseAt ?? null, hotelId: hotel.id };
-    wsHub.broadcastMenuUpdate({ type: "HOTEL_STATUS_UPDATED", payload: result });
+    wsHub.broadcastMenuUpdate({ type: "HOTEL_STATUS_UPDATED", payload: result }, hotel.id);
     return result;
   }
 
@@ -109,7 +109,7 @@ export const updateHotelIsOpen = async (
   wsHub.broadcastMenuUpdate({
     type: "HOTEL_CLOSING",
     payload: { closingIn: 5, isOpen: false, hotelId: hotelUuid },
-  });
+  }, hotelUuid);
 
   // After the countdown, broadcast final status update (DB is already closed)
   pendingCloseTimeout = setTimeout(async () => {
@@ -118,7 +118,7 @@ export const updateHotelIsOpen = async (
       wsHub.broadcastMenuUpdate({
         type: "HOTEL_STATUS_UPDATED",
         payload: { isOpen: false, autoCloseAt: null, hotelId: hotelUuid },
-      });
+      }, hotelUuid);
     } catch (err) {
       console.error("[Hotel Close Timer Error]:", err);
     }
@@ -256,6 +256,13 @@ export const getSmsRecipients = async (hotelId?: string): Promise<string[]> => {
 
   if (staff.length > 0) {
     return staff.map((s) => s.phone);
+  }
+
+  // The legacy setting is only safe for the original single-tenant/default flow.
+  // Never route a tenant-scoped event to a process-wide fallback recipient.
+  if (hotelId) {
+    const defaultHotel = await getDefaultHotel();
+    if (!defaultHotel || defaultHotel.id !== hotelId) return [];
   }
 
   // Fallback to legacy single setting if no specific staff users are configured

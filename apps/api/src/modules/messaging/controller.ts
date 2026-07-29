@@ -1,8 +1,9 @@
 import { verifyAdminToken } from "../auth/service";
 import { verifyPlatformAdminToken } from "../auth/service";
 import { verifyCustomerToken } from "../customers/auth.service";
-import { ensureGuestIdentity, isGuestId } from "../customers/guest-identity";
 import type { MessagingActor } from "./service";
+import { prisma } from "../../../../../infrastructure/database/prisma";
+import { ensureGuestIdentity, isGuestId } from "../customers/guest-identity";
 
 export async function resolveMessagingActor(
   headers: Record<string, string | undefined>,
@@ -29,4 +30,35 @@ export async function resolveMessagingActor(
   if (!isGuestId(guestId)) throw new Error("Sign in or provide a valid guest identity");
   const identity = await ensureGuestIdentity(guestId);
   return { kind: "GUEST", guestIdentityId: identity.id, customerId: identity.customerId ?? undefined };
+}
+
+export async function resolveMessagingActorFromWebSocketTicket(payload: Record<string, any>): Promise<MessagingActor> {
+  if (payload.type !== "ws_ticket" || typeof payload.sub !== "string") {
+    throw new Error("Invalid WebSocket ticket");
+  }
+
+  if (payload.actorType === "customer") {
+    const customer = await prisma.customer.findUnique({ where: { id: payload.sub }, select: { id: true } });
+    if (!customer) throw new Error("Customer no longer exists");
+    return { kind: "CUSTOMER", customerId: customer.id };
+  }
+
+  if (payload.actorType === "hotel_staff") {
+    const admin = await prisma.adminUser.findUnique({ where: { id: payload.sub }, select: { id: true, hotelId: true } });
+    if (!admin?.hotelId) throw new Error("Hotel staff account is no longer active");
+    return { kind: "HOTEL_STAFF", adminUserId: admin.id, hotelId: admin.hotelId };
+  }
+
+  if (payload.actorType === "platform_admin") {
+    const admin = await prisma.platformAdmin.findUnique({ where: { id: payload.sub }, select: { id: true } });
+    if (!admin) throw new Error("Platform account is no longer active");
+    return { kind: "PLATFORM_ADMIN", platformAdminId: admin.id };
+  }
+
+  if (payload.actorType === "guest" && isGuestId(payload.sub)) {
+    const identity = await ensureGuestIdentity(payload.sub);
+    return { kind: "GUEST", guestIdentityId: identity.id, customerId: identity.customerId ?? undefined };
+  }
+
+  throw new Error("Invalid WebSocket ticket actor");
 }

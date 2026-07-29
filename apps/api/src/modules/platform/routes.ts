@@ -176,6 +176,16 @@ export const platformRoute = new Elysia({
             },
           });
 
+          await tx.staffUser.create({
+            data: {
+              name: body.adminName,
+              phone: formattedAdminPhone!,
+              receiveSms: true,
+              hotelId: hotel.id,
+              adminUserId: adminUser.id,
+            },
+          });
+
           await tx.eventOutbox.create({
             data: {
               eventName: "hotel_created",
