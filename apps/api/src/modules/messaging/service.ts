@@ -79,8 +79,13 @@ export async function getUnreadCount(actor: MessagingActor) {
 // ── Conversation access ──
 
 export async function getConversationIdentityKeys(conversationId: string) {
+  const conversation = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { type: true, hotelId: true } });
+  if (!conversation) return [];
   const participants = await prisma.conversationParticipant.findMany({ where: { conversationId }, select: { kind: true, customerId: true, guestIdentityId: true, adminUserId: true, platformAdminId: true } });
-  return participants.map(identityKeyForParticipant).filter((key): key is string => Boolean(key));
+  const participantKeys = participants.map(identityKeyForParticipant).filter((key): key is string => Boolean(key));
+  if (conversation.type !== "TALK_TO_STAFF" || conversation.hotelId !== null) return participantKeys;
+  const platformAdmins = await prisma.platformAdmin.findMany({ select: { id: true } });
+  return [...new Set([...participantKeys, ...platformAdmins.map((admin) => `platform:${admin.id}`)])];
 }
 
 export async function getAnnouncementRecipientIdentityKeys(conversationId: string) {
@@ -119,8 +124,9 @@ export async function assertConversationAccess(actor: MessagingActor, conversati
     Object.entries(actorWhere(actor)).every(([key, value]) => (participant as Record<string, unknown>)[key] === value)
   );
   if (isParticipant) return conversation;
-  const accessible = (await accessibleConversationWhere(actor)) as { OR: any[] };
-  const canAccess = accessible.OR.some((clause: any) => {
+  const accessible = await accessibleConversationWhere(actor);
+  const clauses = "OR" in accessible ? accessible.OR ?? [] : [accessible];
+  const canAccess = clauses.some((clause: any) => {
     if (clause.type === "HOTEL_NOTICE" || clause.type === "PLATFORM_NOTICE") {
       return clause.type === conversation.type && (clause.hotelId === null || clause.hotelId === conversation.hotelId || clause.hotelId?.in?.includes(conversation.hotelId));
     }
@@ -133,8 +139,12 @@ export async function assertConversationAccess(actor: MessagingActor, conversati
     return false;
   });
   if (!canAccess) throw new Error("You do not have access to this conversation");
-  // Auto-join if community channel or staff opening a talk-to-staff conversation
-  if (conversation.type === "HOTEL_COMMUNITY" || (conversation.type === "TALK_TO_STAFF" && actor.kind === "HOTEL_STAFF")) {
+  // Auto-join shared channels and support queues after the broad access rule has passed.
+  if (
+    conversation.type === "HOTEL_COMMUNITY" ||
+    (conversation.type === "TALK_TO_STAFF" && actor.kind === "HOTEL_STAFF") ||
+    (conversation.type === "TALK_TO_STAFF" && actor.kind === "PLATFORM_ADMIN" && conversation.hotelId === null)
+  ) {
     const newParticipant = await prisma.conversationParticipant.create({ data: { conversationId, ...participantData(actor) } });
     return { ...conversation, participants: [...conversation.participants, newParticipant] };
   }
@@ -462,7 +472,13 @@ async function accessibleConversationWhere(actor: MessagingActor) {
     };
   }
   if (actor.kind === "PLATFORM_ADMIN") {
-    return { OR: [{ participants: { some: actorWhere(actor) } }, { type: "PLATFORM_NOTICE" as const, hotelId: null }] };
+    return {
+      OR: [
+        { participants: { some: actorWhere(actor) } },
+        { type: "PLATFORM_NOTICE" as const, hotelId: null },
+        { type: "TALK_TO_STAFF" as const, hotelId: null },
+      ],
+    };
   }
   // GUEST actors must not see any communication or hotel notices — only platform announcements.
   if (actor.kind === "GUEST") {
