@@ -21,6 +21,7 @@ import {
   addStaffUser,
   updateStaffUser,
   deleteStaffUser,
+  provisionStaffLogin,
 } from "./service";
 import { verifyAdminToken } from "../auth/service";
 
@@ -188,6 +189,15 @@ export const settingsRoute = new Elysia({
       }),
     }
   )
+  .post("/staff/:id/credentials", async ({ params, set, headers, jwt }) => {
+    const authHeader = headers["authorization"];
+    if (!authHeader?.startsWith("Bearer ")) { set.status = 401; return { success: false, error: "Missing or invalid authorization header" }; }
+    try {
+      const admin = await verifyAdminToken(authHeader.slice(7), (t) => jwt.verify(t));
+      const staff = await provisionStaffLogin(params.id, admin.hotelId ?? undefined);
+      return { success: true, data: staff };
+    } catch (err: any) { set.status = 400; return { success: false, error: err.message || "Unable to provision staff login" }; }
+  }, { params: t.Object({ id: t.String({ format: "uuid" }) }) })
   .delete("/staff/:id", async ({ params, set, headers, jwt }) => {
     const authHeader = headers["authorization"];
     if (!authHeader || !authHeader.startsWith("Bearer ")) {

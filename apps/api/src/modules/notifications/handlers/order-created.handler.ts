@@ -20,7 +20,7 @@ interface OrderCreatedPayload {
 
 export async function handleOrderCreated(payload: Record<string, unknown>): Promise<boolean> {
   const data = payload as unknown as OrderCreatedPayload;
-  const hotelName = data.hotelName || "TableDash Deliveries";
+  const hotelName = data.hotelName || "Ladha Deliveries";
 
   const staffPhones = await getSmsRecipients(data.hotelId);
   if (staffPhones.length === 0) return true;

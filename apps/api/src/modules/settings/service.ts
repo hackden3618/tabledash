@@ -129,7 +129,7 @@ export const updateHotelIsOpen = async (
 
 export const getHotelName = async (hotelId?: string): Promise<string> => {
   const hotel = hotelId ? await prisma.hotel.findUnique({ where: { id: hotelId } }) : await getDefaultHotel();
-  return hotel?.name ?? "TableDash Deliveries";
+  return hotel?.name ?? "Ladha Deliveries";
 };
 
 export interface StaffUserPayload {
@@ -155,13 +155,26 @@ export const addStaffUser = async (data: StaffUserPayload, hotelId?: string) => 
     throw new Error("A staff member with this phone number already exists.");
   }
 
-  return await prisma.staffUser.create({
-    data: {
-      name: data.name,
-      phone: formattedPhone,
-      receiveSms: data.receiveSms,
-      hotelId: hotelId || null,
-    },
+  if (!hotelId) throw new Error("A hotel is required before adding staff");
+  const existingLogin = await prisma.adminUser.findUnique({ where: { username: formattedPhone } });
+  if (existingLogin) throw new Error("A login already exists for this phone number.");
+  const hotel = await prisma.hotel.findUnique({ where: { id: hotelId }, select: { name: true } });
+  if (!hotel) throw new Error("Hotel not found");
+  const tempPassword = crypto.randomUUID().split("-")[0]!;
+  const passwordHash = await Bun.password.hash(tempPassword);
+
+  return prisma.$transaction(async (tx) => {
+    const adminUser = await tx.adminUser.create({ data: { username: formattedPhone, passwordHash, name: data.name, role: "HOTEL_STAFF", hotelId } });
+    const staff = await tx.staffUser.create({ data: { name: data.name, phone: formattedPhone, receiveSms: data.receiveSms, hotelId, adminUserId: adminUser.id } });
+    await tx.eventOutbox.create({
+      data: {
+        eventName: "hotel_staff_created",
+        hotelId,
+        payload: JSON.stringify({ staffName: data.name, staffPhone: formattedPhone, hotelName: hotel.name, username: formattedPhone, tempPassword, role: "HOTEL_STAFF", appLink: "https://tabledash.up.railway.app/kitchen" }),
+        status: "initialized",
+      },
+    });
+    return staff;
   });
 };
 
@@ -183,9 +196,34 @@ export const updateStaffUser = async (id: string, data: Partial<StaffUserPayload
     }
   }
 
-  return await prisma.staffUser.update({
-    where: { id },
-    data: { ...data, phone: formatted ?? data.phone },
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.staffUser.update({
+      where: { id },
+      data: { ...data, phone: formatted ?? data.phone },
+    });
+    if (formatted && existing.adminUserId) {
+      await tx.adminUser.update({ where: { id: existing.adminUserId }, data: { username: formatted } });
+    }
+    return updated;
+  });
+};
+
+export const provisionStaffLogin = async (id: string, hotelId?: string) => {
+  const existing = await prisma.staffUser.findUnique({ where: { id } });
+  if (!existing) throw new Error("Staff member not found");
+  if (hotelId && existing.hotelId !== hotelId) throw new Error("Staff member does not belong to your hotel");
+  if (existing.adminUserId) throw new Error("This staff member already has a login");
+  if (!existing.hotelId) throw new Error("Staff member is not assigned to a hotel");
+  if (await prisma.adminUser.findUnique({ where: { username: existing.phone } })) throw new Error("A login already exists for this phone number");
+  const hotel = await prisma.hotel.findUnique({ where: { id: existing.hotelId }, select: { name: true } });
+  if (!hotel) throw new Error("Hotel not found");
+  const tempPassword = crypto.randomUUID().split("-")[0]!;
+  const passwordHash = await Bun.password.hash(tempPassword);
+  return prisma.$transaction(async (tx) => {
+    const adminUser = await tx.adminUser.create({ data: { username: existing.phone, passwordHash, name: existing.name, role: "HOTEL_STAFF", hotelId: existing.hotelId! } });
+    const staff = await tx.staffUser.update({ where: { id }, data: { adminUserId: adminUser.id } });
+    await tx.eventOutbox.create({ data: { eventName: "hotel_staff_created", hotelId: existing.hotelId, payload: JSON.stringify({ staffName: existing.name, staffPhone: existing.phone, hotelName: hotel.name, username: existing.phone, tempPassword, role: "HOTEL_STAFF", appLink: "https://tabledash.up.railway.app/kitchen" }), status: "initialized" } });
+    return staff;
   });
 };
 
@@ -196,8 +234,9 @@ export const deleteStaffUser = async (id: string, hotelId?: string) => {
     throw new Error("Staff member does not belong to your hotel");
   }
 
-  return await prisma.staffUser.delete({
-    where: { id },
+  return prisma.$transaction(async (tx) => {
+    if (existing.adminUserId) await tx.adminUser.delete({ where: { id: existing.adminUserId } });
+    return tx.staffUser.delete({ where: { id } });
   });
 };
 

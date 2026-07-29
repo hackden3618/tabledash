@@ -14,7 +14,7 @@ export async function handleHotelCreated(payload: Record<string, unknown>): Prom
 
   if (!data.adminPhone) return true;
 
-  const message = `Welcome to TableDash Deliveries! You've been registered as admin for ${data.hotelName}. Login at the kitchen dashboard with username "${data.adminUsername}" and temporary password: ${data.tempPassword}. Please change your password on first login. - TableDash Deliveries`;
+  const message = `Welcome to Ladha Deliveries! You've been registered as admin for ${data.hotelName}. Login at the kitchen dashboard with username "${data.adminUsername}" and temporary password: ${data.tempPassword}. Please change your password on first login. - Ladha Deliveries`;
 
   const result = await smsService.sendSms(data.adminPhone, message);
   return result;

@@ -10,6 +10,12 @@ import { formatPhone } from "../../../../../shared/phone";
 import { smsService } from "../notifications/sms.service";
 import type { HotelRole } from "../../../../../generated/prisma/client";
 
+const MIN_ADMIN_PASSWORD_LENGTH = 8;
+
+function assertAdminPassword(password: string) {
+  if (password.length < MIN_ADMIN_PASSWORD_LENGTH) throw new Error("Admin passwords must be at least 8 characters");
+}
+
 export interface AdminAuthResult {
   token: string;
   user: {
@@ -99,6 +105,18 @@ export const verifyAdminToken = async (
   }
 };
 
+export const updateAdminProfile = async (adminId: string, input: { name?: string; username?: string }) => {
+  const user = await prisma.adminUser.update({ where: { id: adminId }, data: { ...(input.name !== undefined ? { name: input.name.trim() } : {}), ...(input.username !== undefined ? { username: input.username.trim() } : {}) }, select: { id: true, username: true, name: true, role: true, hotelId: true } });
+  return user;
+};
+
+export const changeAdminPassword = async (adminId: string, currentPassword: string, newPassword: string) => {
+  assertAdminPassword(newPassword);
+  const user = await prisma.adminUser.findUnique({ where: { id: adminId }, select: { passwordHash: true } });
+  if (!user || !(await Bun.password.verify(currentPassword, user.passwordHash))) throw new Error("Current password is incorrect");
+  await prisma.adminUser.update({ where: { id: adminId }, data: { passwordHash: await Bun.password.hash(newPassword) } });
+};
+
 export const loginPlatformAdmin = async (
   username: string,
   password: string,
@@ -164,6 +182,17 @@ export const verifyPlatformAdminToken = async (
   }
 };
 
+export const updatePlatformAdminProfile = async (adminId: string, input: { name?: string; username?: string }) => {
+  return prisma.platformAdmin.update({ where: { id: adminId }, data: { ...(input.name !== undefined ? { name: input.name.trim() } : {}), ...(input.username !== undefined ? { username: input.username.trim() } : {}) }, select: { id: true, username: true, name: true } });
+};
+
+export const changePlatformAdminPassword = async (adminId: string, currentPassword: string, newPassword: string) => {
+  assertAdminPassword(newPassword);
+  const user = await prisma.platformAdmin.findUnique({ where: { id: adminId }, select: { passwordHash: true } });
+  if (!user || !(await Bun.password.verify(currentPassword, user.passwordHash))) throw new Error("Current password is incorrect");
+  await prisma.platformAdmin.update({ where: { id: adminId }, data: { passwordHash: await Bun.password.hash(newPassword) } });
+};
+
 const otpStore = new Map<string, { code: string; expiresAt: number }>();
 
 export const requestPasswordResetOtp = async (phone: string): Promise<boolean> => {
@@ -220,6 +249,7 @@ export const resetPasswordWithOtp = async (phone: string, otpCode: string, newPa
   // Admin usernames are phone numbers — exact match
   const admin = await prisma.adminUser.findFirst({ where: { username: formattedPhone } });
   if (admin) {
+    assertAdminPassword(newPassword);
     await prisma.adminUser.update({ where: { id: admin.id }, data: { passwordHash } });
     otpStore.delete(formattedPhone);
     return true;
@@ -227,4 +257,3 @@ export const resetPasswordWithOtp = async (phone: string, otpCode: string, newPa
 
   throw new Error("User with given phone number not found");
 };
-

@@ -6,6 +6,17 @@
  */
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "/api/v1";
+const GUEST_ID_KEY = "tableDash_guest_id";
+
+/** Device-local identity for guest conversations; never treated as auth. */
+export function getGuestId(): string {
+  if (typeof window === "undefined") return "";
+  const existing = window.localStorage.getItem(GUEST_ID_KEY);
+  if (existing) return existing;
+  const created = crypto.randomUUID();
+  window.localStorage.setItem(GUEST_ID_KEY, created);
+  return created;
+}
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -23,10 +34,15 @@ function makeError(res: Response, text: string): string {
   return parsed?.error || parsed?.message || text || `HTTP ${res.status}: ${res.statusText}`;
 }
 
+function makeHeaders(token?: string): Record<string, string> {
+  const headers: Record<string, string> = { "X-Guest-Id": getGuestId() };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  return headers;
+}
+
 export async function apiGet<T>(endpoint: string, token?: string): Promise<ApiResponse<T>> {
   try {
-    const headers: Record<string, string> = {};
-    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const headers = makeHeaders(token);
     const res = await fetch(`${API_BASE}${endpoint}`, { headers });
     const text = await res.text();
     const data = text ? safeParse(text) : {};
@@ -39,8 +55,7 @@ export async function apiGet<T>(endpoint: string, token?: string): Promise<ApiRe
 
 export async function apiPost<T, B = unknown>(endpoint: string, body: B, token?: string): Promise<ApiResponse<T>> {
   try {
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const headers = { ...makeHeaders(token), "Content-Type": "application/json" };
     const res = await fetch(`${API_BASE}${endpoint}`, { method: "POST", headers, body: JSON.stringify(body) });
     const text = await res.text();
     const data = text ? safeParse(text) : {};
@@ -53,8 +68,7 @@ export async function apiPost<T, B = unknown>(endpoint: string, body: B, token?:
 
 export async function apiPatch<T, B = unknown>(endpoint: string, body: B, token?: string): Promise<ApiResponse<T>> {
   try {
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const headers = { ...makeHeaders(token), "Content-Type": "application/json" };
     const res = await fetch(`${API_BASE}${endpoint}`, { method: "PATCH", headers, body: JSON.stringify(body) });
     const text = await res.text();
     const data = text ? safeParse(text) : {};
@@ -67,8 +81,7 @@ export async function apiPatch<T, B = unknown>(endpoint: string, body: B, token?
 
 export async function apiDelete<T>(endpoint: string, token?: string): Promise<ApiResponse<T>> {
   try {
-    const headers: Record<string, string> = {};
-    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const headers = makeHeaders(token);
     const res = await fetch(`${API_BASE}${endpoint}`, { method: "DELETE", headers });
     const text = await res.text();
     const data = text ? safeParse(text) : {};

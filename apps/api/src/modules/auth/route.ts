@@ -10,7 +10,7 @@ import { Elysia, t } from "elysia";
 import { env } from "../../../../../shared/config";
 import { PHONE_PATTERN, PHONE_MIN, PHONE_MAX } from "../../../../../shared/phone";
 import { AdminLoginSchema } from "../../../../../shared/schemas";
-import { loginAdmin, verifyAdminToken, requestPasswordResetOtp, resetPasswordWithOtp } from "./service";
+import { loginAdmin, verifyAdminToken, requestPasswordResetOtp, resetPasswordWithOtp, updateAdminProfile, changeAdminPassword } from "./service";
 import { AUTH_LIMITER } from "../../lib/rate-limiter";
 
 export const authRoute = new Elysia({
@@ -98,7 +98,9 @@ export const authRoute = new Elysia({
       body: t.Object({
         phone: t.String({ minLength: 10, maxLength: 13 }),
         otp: t.String({ minLength: 6, maxLength: 6 }),
-        newPassword: t.String({ minLength: 6 }),
+        // Customer PIN resets are still validated by the customer flow; admin
+        // resets are additionally enforced at the service layer at 8 chars.
+        newPassword: t.String({ minLength: 4 }),
       }),
     }
   )
@@ -117,4 +119,17 @@ export const authRoute = new Elysia({
       set.status = 401;
       return { success: false, error: error.message || "Invalid token" };
     }
-  });
+  })
+  .patch("/me", async ({ headers, jwt, body, set }) => {
+    const authHeader = headers["authorization"];
+    if (!authHeader?.startsWith("Bearer ")) { set.status = 401; return { success: false, error: "Missing or invalid authorization header" }; }
+    try {
+      const admin = await verifyAdminToken(authHeader.slice(7), (t) => jwt.verify(t));
+      if (body.currentPassword || body.newPassword) {
+        if (!body.currentPassword || !body.newPassword) throw new Error("Current and new passwords are required");
+        await changeAdminPassword(admin.id, body.currentPassword, body.newPassword);
+      }
+      const profile = body.name !== undefined || body.username !== undefined ? await updateAdminProfile(admin.id, body) : admin;
+      return { success: true, data: profile };
+    } catch (err: any) { set.status = err.code === "P2002" ? 409 : 400; return { success: false, error: err.code === "P2002" ? "That username is already in use." : err.message || "Unable to update profile" }; }
+  }, { body: t.Object({ name: t.Optional(t.String({ minLength: 1, maxLength: 100 })), username: t.Optional(t.String({ minLength: 3, maxLength: 80 })), currentPassword: t.Optional(t.String({ minLength: 1 })), newPassword: t.Optional(t.String({ minLength: 8, maxLength: 120 })) }) });

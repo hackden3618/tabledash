@@ -248,7 +248,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }
                 )}
               </AnimatePresence>
 
-              <Button onClick={handleResetPassword} disabled={loading || otp.length !== 6 || newPassword.length < 6} loading={loading} fullWidth>
+            <Button onClick={handleResetPassword} disabled={loading || otp.length !== 6 || newPassword.length < 8} loading={loading} fullWidth>
                 Reset Password
               </Button>
 

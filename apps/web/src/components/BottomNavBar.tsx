@@ -9,9 +9,9 @@
 import React from "react";
 import { useCart } from "../context/CartContext";
 import { useCustomerAuth } from "../context/CustomerAuthContext";
-import { MapPin, ShoppingBag, Utensils, UserCircle2 } from "lucide-react";
+import { MapPin, ShoppingBag, Utensils, UserCircle2, MessageCircle } from "lucide-react";
 
-export type CustomerTab = "menu" | "cart" | "tracking" | "account";
+export type CustomerTab = "menu" | "cart" | "tracking" | "conversations" | "account";
 
 interface BottomNavBarProps {
   activeTab: CustomerTab;
@@ -59,6 +59,14 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
           {hasActiveOrder && <span className="bottom-nav-pulse-dot" />}
         </div>
         <span className="bottom-nav-label">Tracker</span>
+      </button>
+
+      <button
+        className={`bottom-nav-item ${activeTab === "conversations" ? "active" : ""}`}
+        onClick={() => onSelectTab("conversations")}
+      >
+        <MessageCircle size={20} />
+        <span className="bottom-nav-label">Chats</span>
       </button>
 
       <button

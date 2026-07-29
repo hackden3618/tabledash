@@ -5,7 +5,7 @@
  * When to modify: When adding heartbeat pings, custom channel parameters, or changing reconnection timers.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export interface WsEventPayload<T = unknown> {
   type: string;
@@ -21,10 +21,13 @@ export interface WsEventPayload<T = unknown> {
 export function useWebSocket<T = unknown>(
   role: "admin" | "customer" = "customer",
   orderId?: string,
-  onMessage?: (event: WsEventPayload<T>) => void
+  onMessage?: (event: WsEventPayload<T>) => void,
+  conversationId?: string,
+  authToken?: string
 ) {
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const pendingMessagesRef = useRef<string[]>([]);
   const onMessageRef = useRef(onMessage);
   onMessageRef.current = onMessage;
 
@@ -40,12 +43,20 @@ export function useWebSocket<T = unknown>(
         query += `&orderId=${orderId}`;
       }
 
+      const guestId = localStorage.getItem("tableDash_guest_id");
+      const customerToken = localStorage.getItem("ladha_customer_token");
+      if (guestId) query += `&guestId=${encodeURIComponent(guestId)}`;
+      if (conversationId) query += `&conversationId=${encodeURIComponent(conversationId)}`;
+
       // Automatically append admin JWT token if role is admin to enforce tenant isolation
       if (role === "admin") {
-        const adminToken = localStorage.getItem("ladha_token");
+        const adminToken = authToken ?? localStorage.getItem("ladha_token");
         if (adminToken) {
           query += `&token=${encodeURIComponent(adminToken)}`;
         }
+      }
+      if (role === "customer" && (authToken ?? customerToken)) {
+        query += `&token=${encodeURIComponent(authToken ?? customerToken!)}`;
       }
 
       const proto = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -54,9 +65,17 @@ export function useWebSocket<T = unknown>(
       const socket = new WebSocket(wsUrl);
 
       socket.onopen = () => {
+        if (isDisposed) {
+          socket.close();
+          return;
+        }
         if (!isDisposed) {
-          console.log(`[WS Client] Connected to ${wsUrl}`);
+          // Never log wsUrl: it contains the bearer token used by the legacy
+          // WebSocket handshake and must not appear in browser logs.
+          console.log(`[WS Client] Connected (${role})`);
           setIsConnected(true);
+          const pending = pendingMessagesRef.current.splice(0);
+          pending.forEach((payload) => socket.send(payload));
         }
       };
 
@@ -90,10 +109,17 @@ export function useWebSocket<T = unknown>(
 
     return () => {
       isDisposed = true;
+      pendingMessagesRef.current = [];
       if (timerId) clearTimeout(timerId);
-      if (wsRef.current) wsRef.current.close();
+      if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.close();
     };
-  }, [role, orderId]);
+  }, [role, orderId, conversationId, authToken]);
 
-  return { isConnected };
+  const send = useCallback((payload: unknown) => {
+    const serialized = JSON.stringify(payload);
+    if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(serialized);
+    else if (wsRef.current?.readyState === WebSocket.CONNECTING) pendingMessagesRef.current.push(serialized);
+  }, []);
+
+  return { isConnected, send };
 }

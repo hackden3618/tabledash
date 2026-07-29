@@ -3,8 +3,10 @@ import { apiGet, apiPost, apiPatch, apiDelete } from "../../lib/api";
 import { useNotifications } from "../../context/NotificationsContext";
 import { usePlatformAdminAuth } from "../../context/PlatformAdminAuthContext";
 import { Modal } from "../../components/Modal";
+import { ConversationsPage } from "../ConversationsPage";
+import { Activity, Building2, ChevronRight, ClipboardList, LayoutDashboard, LogOut, Menu, MessageCircle, Plus, RefreshCw, Send, UserPlus, Users, UserCircle, X } from "lucide-react";
 
-type PlatformView = "login" | "overview" | "hotels" | "hotel_detail" | "create_hotel" | "admins" | "create_admin" | "audit" | "outbox";
+type PlatformView = "login" | "overview" | "hotels" | "hotel_detail" | "create_hotel" | "admins" | "create_admin" | "audit" | "outbox" | "communications" | "profile";
 
 interface PlatformMe {
     id: string; username: string; name: string;
@@ -14,10 +16,7 @@ interface PlatformDashboard {
     totalOrders: number; failedOutboxCount: number; platformBrand: string;
 }
 
-// TODO - split this mega code into modules for the platform admin page...
-// Ensure that the hambuger menu is subtle but visible and does not obstruct from the data being presented...
-// Also ensure that auto redirecting to the auth page if the token expires and the user refreshes the page
-// NOTE - all actions here are highly impactful to the software business operations, ensure no room for accidental operations or ambiguous directives
+// NOTE - all actions here are highly impactful to business operations; destructive actions stay behind confirmation.
 interface Hotel {
     id: string; name: string; slug: string; isOpen: boolean;
     autoCloseAt: string | null; createdAt: string; deletedAt: string | null;
@@ -28,23 +27,23 @@ interface Hotel {
 interface AdminUser { id: string; name: string; username: string; createdAt: string; }
 
 const T = {
-    bg: "#F8FAFC",
+    bg: "#FFF8F0",
     surface: "#FFFFFF",
-    border: "#E2E8F0",
-    primary: "#4338CA",
-    primaryMuted: "#EEF2FF",
-    primaryLight: "#E0E7FF",
-    text: "#0F172A",
-    textMuted: "#64748B",
-    textDim: "#94A3B8",
+    border: "#EADFD3",
+    primary: "#114B36",
+    primaryMuted: "#EBF5F0",
+    primaryLight: "#C2E2D3",
+    text: "#1F2937",
+    textMuted: "#6B7280",
+    textDim: "#9CA3AF",
     danger: "#DC2626",
     dangerMuted: "#FEF2F2",
-    success: "#059669",
-    successMuted: "#ECFDF5",
-    warning: "#D97706",
-    warningMuted: "#FFFBEB",
-    radius: "10px",
-    font: "system-ui, -apple-system, sans-serif",
+    success: "#15803D",
+    successMuted: "#DCFCE7",
+    warning: "#A16207",
+    warningMuted: "#FFF7D6",
+    radius: "14px",
+    font: "Inter, system-ui, -apple-system, sans-serif",
 };
 
 function s(num: number) { return `${num * 4}px`; }
@@ -63,8 +62,19 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
     const [outboxRows, setOutboxRows] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQ, setSearchQ] = useState("");
-    const [sidebarOpen, setSidebarOpen] = useState(true);
+    const [sidebarOpen, setSidebarOpen] = useState(() => typeof window !== "undefined" && window.innerWidth >= 900);
+    const [loginSubmitting, setLoginSubmitting] = useState(false);
+    const [profileForm, setProfileForm] = useState({ name: "", username: "", currentPassword: "", newPassword: "", confirmPassword: "" });
+    const [profileSaving, setProfileSaving] = useState(false);
     const { pushNotification } = useNotifications();
+
+    useEffect(() => { if (user) setProfileForm((current) => ({ ...current, name: user.name, username: user.username })); }, [user]);
+
+    useEffect(() => {
+        const handleResize = () => setSidebarOpen(window.innerWidth >= 900);
+        window.addEventListener("resize", handleResize);
+        return () => window.removeEventListener("resize", handleResize);
+    }, []);
 
     // ── Login ──
     const [loginForm, setLoginForm] = useState({ username: "", password: "" });
@@ -95,6 +105,15 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
             apiGet<any[]>("/platform/audit", token),
             apiGet<any[]>("/platform/outbox", token),
         ]);
+        const authFailed = [dashRes, hotelsRes, adminsRes, auditRes, outboxRes].some((res) =>
+            !res.success && /invalid|expired|session/i.test(res.error ?? "")
+        );
+        if (authFailed) {
+            authLogout();
+            setView("login");
+            setLoading(false);
+            return;
+        }
         if (dashRes.success && dashRes.data) setDashboard(dashRes.data);
         if (hotelsRes.success && hotelsRes.data) setHotels(hotelsRes.data);
         if (adminsRes.success && adminsRes.data) setAdmins(adminsRes.data);
@@ -110,13 +129,19 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
 
     // ── Login ──
     const handleLogin = async () => {
+        if (loginSubmitting || !loginForm.username.trim() || !loginForm.password) return;
         setLoginError("");
-        const res = await apiPost<{ token: string; user: PlatformMe }>("/platform/login", loginForm);
-        if (res.success && res.data) {
-            authLogin(res.data.token, res.data.user);
-            setView("overview");
-        } else {
-            setLoginError(res.error || "Login failed");
+        setLoginSubmitting(true);
+        try {
+            const res = await apiPost<{ token: string; user: PlatformMe }>("/platform/login", loginForm);
+            if (res.success && res.data) {
+                authLogin(res.data.token, res.data.user);
+                setView("overview");
+            } else {
+                setLoginError(res.error || "Login failed");
+            }
+        } finally {
+            setLoginSubmitting(false);
         }
     };
 
@@ -172,17 +197,40 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
         }
     };
 
+    const handleRetryOutbox = async (id: string) => {
+        const res = await apiPatch<{ retried: string }>(`/platform/outbox/${id}/retry`, {}, token);
+        if (res.success) {
+            pushNotification("success", "Retry queued", "The event has been returned to the dispatcher.", { scope: "platform" });
+            await fetch();
+        } else {
+            pushNotification("danger", "Retry failed", res.error || "Could not retry this event.", { scope: "platform" });
+        }
+    };
+
+    const handleSaveProfile = async () => {
+        if (profileForm.newPassword && (profileForm.newPassword !== profileForm.confirmPassword || !profileForm.currentPassword || profileForm.newPassword.length < 8)) {
+            pushNotification("danger", "Password not saved", "Enter the current password and matching new password of at least 8 characters.", { scope: "platform" }); return;
+        }
+        setProfileSaving(true);
+        const res = await apiPatch<PlatformMe>("/platform/me", { name: profileForm.name.trim(), username: profileForm.username.trim(), ...(profileForm.newPassword ? { currentPassword: profileForm.currentPassword, newPassword: profileForm.newPassword } : {}) }, token);
+        setProfileSaving(false);
+        if (res.success && res.data) { authLogin(token, res.data); setProfileForm((current) => ({ ...current, currentPassword: "", newPassword: "", confirmPassword: "" })); pushNotification("success", "Profile saved", "Your profile settings have been updated.", { scope: "platform" }); }
+        else pushNotification("danger", "Profile update failed", res.error || "Unable to update your profile.", { scope: "platform" });
+    };
+
     // ── Nav icon mapping ──
-    const navIcon = (v: PlatformView): string => {
+    const navIcon = (v: PlatformView): React.ReactNode => {
         switch (v) {
-            case "overview": return "📊";
-            case "hotels": return "🏨";
-            case "create_hotel": return "➕";
-            case "admins": return "👤";
-            case "create_admin": return "➕";
-            case "audit": return "📋";
-            case "outbox": return "📤";
-            default: return "•";
+            case "overview": return <LayoutDashboard size={17} />;
+            case "hotels": return <Building2 size={17} />;
+            case "create_hotel": return <Plus size={17} />;
+            case "admins": return <Users size={17} />;
+            case "create_admin": return <UserPlus size={17} />;
+            case "audit": return <ClipboardList size={17} />;
+            case "outbox": return <Send size={17} />;
+            case "communications": return <MessageCircle size={17} />;
+            case "profile": return <UserCircle size={17} />;
+            default: return <Activity size={17} />;
         }
     };
 
@@ -198,7 +246,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                 display: "flex", alignItems: "center", gap: s(3),
             }}
         >
-            <span style={{ fontSize: "1rem", width: "20px", textAlign: "center", opacity: view === v ? 1 : 0.5 }}>{navIcon(v)}</span>
+            <span style={{ width: "20px", display: "inline-flex", justifyContent: "center", opacity: view === v ? 1 : 0.5 }}>{navIcon(v)}</span>
             {label}
         </button>
     );
@@ -206,11 +254,11 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
     // ── Login View ──
     if (view === "login") {
         return (
-            <div style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: T.font, padding: s(4) }}>
+            <div className="platform-shell" style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: T.font, padding: s(4) }}>
                 <div style={{ width: "100%", maxWidth: "400px", background: T.surface, borderRadius: "16px", padding: s(8), border: `1px solid ${T.border}` }}>
                     <div style={{ textAlign: "center", marginBottom: s(6) }}>
                         <div style={{ width: "48px", height: "48px", borderRadius: "12px", background: T.primary, color: "white", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px", fontWeight: 800, fontSize: "1.2rem" }}>TD</div>
-                        <h1 style={{ fontSize: "1.3rem", fontWeight: 700, color: T.text, margin: 0 }}>TableDash Platform</h1>
+                        <h1 style={{ fontSize: "1.3rem", fontWeight: 700, color: T.text, margin: 0 }}>Ladha Deliveries</h1>
                         <p style={{ fontSize: "0.85rem", color: T.textMuted, marginTop: s(2) }}>Sign in to manage tenants and platform access</p>
                     </div>
                     {loginError && <div style={{ background: T.dangerMuted, color: T.danger, padding: s(3), borderRadius: T.radius, fontSize: "0.85rem", marginBottom: s(4), fontWeight: 600 }}>{loginError}</div>}
@@ -219,9 +267,9 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                             className="input-field" style={{ fontFamily: T.font }} autoComplete="username" />
                         <input type="password" placeholder="Password" value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
                             className="input-field" style={{ fontFamily: T.font }} autoComplete="current-password" onKeyDown={(e) => e.key === "Enter" && handleLogin()} />
-                        <button onClick={handleLogin} disabled={!loginForm.username || !loginForm.password}
-                            style={{ background: T.primary, color: "white", border: "none", padding: s(4), borderRadius: T.radius, fontWeight: 700, fontSize: "0.95rem", cursor: "pointer", opacity: !loginForm.username || !loginForm.password ? 0.6 : 1 }}>
-                            Sign In
+                        <button onClick={handleLogin} disabled={loginSubmitting || !loginForm.username.trim() || !loginForm.password}
+                            style={{ background: T.primary, color: "white", border: "none", padding: s(4), borderRadius: T.radius, fontWeight: 700, fontSize: "0.95rem", cursor: loginSubmitting ? "wait" : "pointer", opacity: loginSubmitting || !loginForm.username.trim() || !loginForm.password ? 0.6 : 1 }}>
+                            {loginSubmitting ? "Signing in…" : "Sign In"}
                         </button>
                     </div>
                     <button onClick={onBack} style={{ display: "block", margin: `${s(4)} auto 0`, background: "none", border: "none", color: T.textMuted, fontSize: "0.85rem", cursor: "pointer", textAlign: "center" }}>← Back to main site</button>
@@ -237,7 +285,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
     // ── Layout ──
     const sidebarWidth = 240;
     return (
-        <div style={{ minHeight: "100vh", background: T.bg, fontFamily: T.font, display: "flex" }}>
+        <div className="platform-shell" style={{ minHeight: "100vh", background: T.bg, fontFamily: T.font, display: "flex" }}>
             {/* Subtle menu toggle — thin line icon, no background blob */}
             <button onClick={() => setSidebarOpen(true)}
                 style={{
@@ -253,14 +301,14 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                 }}
                 aria-label="Open menu"
             >
-                <span style={{ display: "block", width: "16px", height: "2px", background: T.textMuted, borderRadius: "2px" }} />
-                <span style={{ display: "block", width: "16px", height: "2px", background: T.textMuted, borderRadius: "2px" }} />
-                <span style={{ display: "block", width: "16px", height: "2px", background: T.textMuted, borderRadius: "2px" }} />
+                <Menu size={18} color={T.textMuted} aria-hidden="true" />
             </button>
 
             {/* Overlay backdrop */}
             {sidebarOpen && (
                 <div onClick={() => setSidebarOpen(false)}
+                    onKeyDown={(e) => { if (e.key === "Escape") setSidebarOpen(false); }}
+                    role="button" tabIndex={-1} aria-label="Close navigation menu"
                     style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.4)", zIndex: 49 }}
                     className="platform-sidebar-overlay"
                 />
@@ -283,7 +331,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                     <div style={{ display: "flex", alignItems: "center", gap: s(3) }}>
                         <div style={{ width: "34px", height: "34px", borderRadius: "10px", background: T.primary, color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.9rem" }}>TD</div>
                         <div>
-                            <div style={{ fontWeight: 700, color: T.text, fontSize: "0.95rem", lineHeight: 1.3 }}>TableDash</div>
+                            <div style={{ fontWeight: 700, color: T.text, fontSize: "0.95rem", lineHeight: 1.3 }}>Ladha Deliveries</div>
                             <div style={{ fontSize: "0.75rem", color: T.textMuted }}>Platform Admin</div>
                         </div>
                     </div>
@@ -296,7 +344,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                         }}
                         aria-label="Close menu"
                     >
-                        ✕
+                        <X size={17} />
                     </button>
                 </div>
 
@@ -307,10 +355,12 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                 {navItem("create_admin", "Add Admin")}
                 {navItem("audit", "Audit Log")}
                 {navItem("outbox", "Outbox")}
+                {navItem("communications", "Communications")}
+                {navItem("profile", "My Profile")}
 
                 <div style={{ marginTop: "auto", paddingTop: s(5), borderTop: `1px solid ${T.border}` }}>
                     {user && <div style={{ fontSize: "0.8rem", color: T.textMuted, marginBottom: s(2), fontWeight: 500 }}>{user.name}</div>}
-                    <button onClick={handleLogout} style={{ background: "none", border: "none", color: T.textDim, fontSize: "0.85rem", cursor: "pointer", padding: 0, fontWeight: 500 }}>Sign Out</button>
+                    <button onClick={handleLogout} style={{ background: "none", border: "none", color: T.textDim, fontSize: "0.85rem", cursor: "pointer", padding: 0, fontWeight: 500, display: "inline-flex", alignItems: "center", gap: s(2) }}><LogOut size={15} /> Sign Out</button>
                 </div>
             </nav>
 
@@ -321,23 +371,44 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "40vh", color: T.textDim }}>Loading…</div>
                 ) : view === "overview" ? (
                     <>
-                        <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: T.text, marginBottom: s(6) }}>Overview</h1>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: s(4), marginBottom: s(6), flexWrap: "wrap" }}>
+                            <div>
+                                <p style={{ color: T.primary, fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: s(1) }}>Ladha Deliveries</p>
+                                <h1 style={{ fontSize: "clamp(1.6rem, 4vw, 2.2rem)", fontWeight: 800, color: T.text, margin: 0 }}>Platform overview</h1>
+                                <p style={{ color: T.textMuted, fontSize: "0.9rem", marginTop: s(1) }}>A clear view of your marketplace, tenants, and delivery operations.</p>
+                            </div>
+                            <span style={{ background: T.primaryMuted, color: T.primary, borderRadius: "999px", padding: `${s(2)} ${s(3)}`, fontSize: "0.75rem", fontWeight: 800 }}>Live operations</span>
+                        </div>
                         {/* ── Stats grid ── */}
                         {dashboard && (
-                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: s(4), marginBottom: s(6) }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 180px), 1fr))", gap: s(3), marginBottom: s(5) }}>
                                 {[
                                     { label: "Total Hotels", value: dashboard.hotelCount, color: T.text },
                                     { label: "Active", value: dashboard.activeHotelCount, color: T.success },
                                     { label: "Platform Admins", value: dashboard.platformAdminCount, color: T.primary },
                                     { label: "Platform Orders", value: dashboard.totalOrders, color: T.text },
                                 ].map((stat) => (
-                                    <div key={stat.label} style={{ background: T.surface, borderRadius: "12px", padding: s(5), border: `1px solid ${T.border}` }}>
-                                        <div style={{ fontSize: "1.8rem", fontWeight: 700, color: stat.color }}>{stat.value}</div>
+                                    <div key={stat.label} style={{ background: T.surface, borderRadius: "18px", padding: s(5), border: `1px solid ${T.border}`, boxShadow: "0 8px 24px rgba(17,75,54,0.06)" }}>
+                                        <div style={{ fontSize: "2rem", fontWeight: 800, color: stat.color, lineHeight: 1 }}>{stat.value}</div>
                                         <div style={{ fontSize: "0.8rem", color: T.textMuted, marginTop: s(1) }}>{stat.label}</div>
                                     </div>
                                 ))}
                             </div>
                         )}
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))", gap: s(4), marginBottom: s(5) }}>
+                            <div style={{ background: T.primary, color: "white", borderRadius: "20px", padding: s(5), boxShadow: "0 12px 28px rgba(17,75,54,0.18)" }}>
+                                <div style={{ fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", opacity: 0.7 }}>Tenant operations</div>
+                                <div style={{ fontSize: "1.25rem", fontWeight: 800, marginTop: s(2) }}>{dashboard?.activeHotelCount ?? 0} hotels accepting orders</div>
+                                <p style={{ margin: `${s(2)} 0 0`, fontSize: "0.82rem", lineHeight: 1.5, opacity: 0.78 }}>Manage availability, onboarding, and hotel-level teams from one workspace.</p>
+                            </div>
+                            <div style={{ background: T.surface, borderRadius: "20px", padding: s(5), border: `1px solid ${T.border}`, boxShadow: "0 8px 24px rgba(17,75,54,0.05)" }}>
+                                <div style={{ fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.textDim }}>Recent tenants</div>
+                                <div style={{ display: "flex", flexDirection: "column", gap: s(2), marginTop: s(3) }}>
+                                    {hotels.slice(0, 3).map((hotel) => <div key={hotel.id} style={{ display: "flex", justifyContent: "space-between", gap: s(2), fontSize: "0.85rem" }}><span style={{ color: T.text, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hotel.name}</span><span style={{ color: hotel.isOpen ? T.success : T.textDim, fontWeight: 800, fontSize: "0.72rem" }}>{hotel.isOpen ? "OPEN" : "CLOSED"}</span></div>)}
+                                    {hotels.length === 0 && <span style={{ color: T.textMuted, fontSize: "0.82rem" }}>No tenants onboarded yet.</span>}
+                                </div>
+                            </div>
+                        </div>
                         {dashboard && dashboard.failedOutboxCount > 0 && (
                             <div style={{ background: T.dangerMuted, border: `1px solid #FECACA`, borderRadius: T.radius, padding: s(4), marginBottom: s(6), fontSize: "0.85rem", color: T.danger, fontWeight: 600, cursor: "pointer" }}
                                 onClick={() => setView("outbox")}>
@@ -362,7 +433,8 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                         ) : (
                             <div style={{ display: "flex", flexDirection: "column", gap: s(3) }}>
                                 {filteredHotels.map((h) => (
-                                    <div key={h.id} onClick={() => { setSelectedHotel(h); setView("hotel_detail"); }}
+                                    <button key={h.id} onClick={() => { setSelectedHotel(h); setView("hotel_detail"); }}
+                                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedHotel(h); setView("hotel_detail"); } }}
                                         style={{ background: T.surface, borderRadius: "12px", border: `1px solid ${T.border}`, borderLeft: `4px solid ${h.isOpen ? T.primary : T.textDim}`, padding: `${s(4)} ${s(5)}`, cursor: "pointer", transition: "box-shadow 0.15s" }}
                                         onMouseEnter={(e) => e.currentTarget.style.boxShadow = `0 2px 8px rgba(0,0,0,0.06)`}
                                         onMouseLeave={(e) => e.currentTarget.style.boxShadow = "none"}>
@@ -373,14 +445,14 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                                     {h.slug} · {h.isOpen ? "Open" : "Closed"} · Onboarded {new Date(h.createdAt).toLocaleDateString()}
                                                 </div>
                                             </div>
-                                            <span style={{ fontSize: "1.2rem", color: T.textDim }}>→</span>
+                                            <ChevronRight size={18} color={T.textDim} />
                                         </div>
                                         {h.adminUsers && h.adminUsers.length > 0 && (
                                             <div style={{ fontSize: "0.8rem", color: T.textMuted, marginTop: s(2), borderTop: `1px solid ${T.border}`, paddingTop: s(2) }}>
                                                 Admin: {h.adminUsers.map((a) => a.name).join(", ")}
                                             </div>
                                         )}
-                                    </div>
+                                    </button>
                                 ))}
                             </div>
                         )}
@@ -413,7 +485,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                         <div>
                                             <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: T.textMuted, marginBottom: s(1) }}>Hotel Name</label>
                                             <input value={hotelForm.name} onChange={(e) => setHotelForm({ ...hotelForm, name: e.target.value, slug: e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") })}
-                                                className="input-field" style={{ fontFamily: T.font }} placeholder="e.g. Wambu's Corner Hotel" />
+                                                className="input-field" style={{ fontFamily: T.font }} placeholder="e.g. Riverside Food Court" />
                                         </div>
                                         <div>
                                             <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: T.textMuted, marginBottom: s(1) }}>Slug (URL identifier)</label>
@@ -470,7 +542,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                             <div style={{ fontWeight: 700, color: T.text }}>{a.name}</div>
                                             <div style={{ fontSize: "0.8rem", color: T.textMuted }}>@{a.username} · Added {new Date(a.createdAt).toLocaleDateString()}</div>
                                         </div>
-                                        <button onClick={() => {
+                                        {user?.username?.toLowerCase() === "hackden" && user.id !== a.id && <button onClick={() => {
                                             setConfirm({
                                                 title: `Remove ${a.name}?`,
                                                 message: `${a.name} will lose all platform-level access immediately. This cannot be undone. Are you sure?`,
@@ -479,7 +551,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                         }}
                                             style={{ background: "none", border: `1px solid #FCA5A5`, color: T.danger, padding: `${s(1)} ${s(3)}`, borderRadius: T.radius, fontSize: "0.8rem", fontWeight: 600, cursor: "pointer" }}>
                                             Remove
-                                        </button>
+                                        </button>}
                                     </div>
                                 ))}
                             </div>
@@ -555,6 +627,19 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                             </div>
                         )}
                     </>
+                ) : view === "profile" ? (
+                    <div style={{ maxWidth: "640px" }}>
+                        <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: T.text, marginBottom: s(2) }}>My Profile</h1>
+                        <p style={{ color: T.textMuted, fontSize: "0.9rem", marginBottom: s(6) }}>Manage your platform administrator identity and password.</p>
+                        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radius, padding: s(5), display: "flex", flexDirection: "column", gap: s(3) }}>
+                            <input value={profileForm.name} onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })} placeholder="Display name" className="input-field" />
+                            <input value={profileForm.username} onChange={(e) => setProfileForm({ ...profileForm, username: e.target.value })} placeholder="Username" className="input-field" />
+                            <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: s(3), display: "grid", gap: s(3) }}><input type="password" value={profileForm.currentPassword} onChange={(e) => setProfileForm({ ...profileForm, currentPassword: e.target.value })} placeholder="Current password" className="input-field" /><input type="password" value={profileForm.newPassword} onChange={(e) => setProfileForm({ ...profileForm, newPassword: e.target.value })} placeholder="New password (optional)" className="input-field" /><input type="password" value={profileForm.confirmPassword} onChange={(e) => setProfileForm({ ...profileForm, confirmPassword: e.target.value })} placeholder="Confirm new password" className="input-field" /></div>
+                            <button onClick={() => void handleSaveProfile()} disabled={profileSaving || !profileForm.name.trim() || !profileForm.username.trim()} style={{ background: T.primary, color: "white", border: "none", padding: s(3), borderRadius: T.radius, fontWeight: 700, cursor: profileSaving ? "wait" : "pointer", opacity: profileSaving ? 0.65 : 1 }}>{profileSaving ? "Saving…" : "Save Profile"}</button>
+                        </div>
+                    </div>
+                ) : view === "communications" ? (
+                    <ConversationsPage token={token} mode="global" title="Communications" onBack={() => setView("overview")} />
                 ) : view === "outbox" ? (
                     <>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: s(6) }}>
@@ -573,6 +658,11 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                         </div>
                                         <div style={{ color: T.textMuted, marginTop: s(1) }}>{new Date(r.createdAt).toLocaleString()}</div>
                                         {r.lastError && <div style={{ color: T.danger, marginTop: s(1) }}>Error: {r.lastError}</div>}
+                                        {r.status === "failed" && (
+                                            <button onClick={() => handleRetryOutbox(r.id)} style={{ marginTop: s(2), background: T.surface, color: T.danger, border: `1px solid #FECACA`, padding: `${s(1)} ${s(3)}`, borderRadius: T.radius, fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: s(1) }}>
+                                                <RefreshCw size={13} /> Retry delivery
+                                            </button>
+                                        )}
                                     </div>
                                 ))}
                             </div>

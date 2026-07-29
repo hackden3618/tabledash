@@ -27,6 +27,7 @@ export interface CreateOrderInput {
   marketSection?: string;
   locationDescription?: string;
   items: CreateOrderInputItem[];
+  guestId?: string;
 }
 
 interface OrderItemDraft {
@@ -122,7 +123,7 @@ export const placeOrder = async (input: CreateOrderInput) => {
     const product = productMap.get(item.productId)!;
     const hId = product.hotelId || "default";
     if (!hotelGroups.has(hId)) {
-      hotelGroups.set(hId, { hotelId: hId, hotelName: product.hotel?.name || "TableDash Deliveries", items: [], orderItemData: [], totalAmount: 0 });
+      hotelGroups.set(hId, { hotelId: hId, hotelName: product.hotel?.name || "Ladha Deliveries", items: [], orderItemData: [], totalAmount: 0 });
     }
     const group = hotelGroups.get(hId)!;
     group.items.push(item);
@@ -169,6 +170,14 @@ export const placeOrder = async (input: CreateOrderInput) => {
           marketSection: input.marketSection ?? customer.marketSection,
           locationDescription: input.locationDescription ?? customer.locationDescription,
         },
+      });
+    }
+
+    if (input.guestId) {
+      await tx.guestIdentity.upsert({
+        where: { id: input.guestId },
+        create: { id: input.guestId, customerId: customer.id },
+        update: { customerId: customer.id },
       });
     }
 
@@ -409,7 +418,7 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus, canc
   }
 
   const hotel = hotelId ? await prisma.hotel.findUnique({ where: { id: hotelId } }) : await getDefaultHotel();
-  const hotelName = hotel?.name ?? "TableDash Deliveries";
+  const hotelName = hotel?.name ?? "Ladha Deliveries";
 
   const currentRank = STATUS_RANK[existing.status] ?? 0;
   const newRank     = STATUS_RANK[newStatus]       ?? 0;
@@ -652,7 +661,7 @@ export const updateOrderPayment = async (id: string, data: { paymentStatus?: Pay
   });
 
   const hotel = await getDefaultHotel();
-  const hotelName = hotel?.name ?? "TableDash Deliveries";
+  const hotelName = hotel?.name ?? "Ladha Deliveries";
 
     (async () => {
     try {

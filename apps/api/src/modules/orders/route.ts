@@ -45,9 +45,10 @@ export const ordersRoute = new Elysia({
   )
   .post(
     "/",
-    async ({ body, set }) => {
+    async ({ body, set, headers }) => {
       try {
-        const order = await placeOrder(body);
+        const guestId = headers["x-guest-id"];
+        const order = await placeOrder({ ...body, guestId });
         set.status = 201;
         return { success: true, data: order };
       } catch (err: any) {

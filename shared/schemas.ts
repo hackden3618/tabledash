@@ -29,6 +29,7 @@ export const CreateOrderSchema = t.Object({
   marketSection: t.Optional(t.String()),
   locationDescription: t.Optional(t.String()),
   items: t.Array(OrderItemSchema, { minItems: 1, error: "Order must contain at least one item" }),
+  guestId: t.Optional(t.String({ format: "uuid" })),
 });
 
 export const UpdateOrderStatusSchema = t.Object({

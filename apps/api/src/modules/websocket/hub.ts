@@ -15,6 +15,9 @@ interface ClientSocket {
   role: "admin" | "customer";
   hotelId?: string;
   orderId?: string;
+  conversationIds?: Set<string>;
+  identityKey?: string;
+  lastActiveAt?: number;
   send: (data: string) => void;
 }
 
@@ -25,6 +28,7 @@ export class WebSocketHub {
    * Registers a connected socket client.
    */
   public registerClient(socket: ClientSocket): void {
+    socket.lastActiveAt = Date.now();
     this.clients.set(socket.id, socket);
     console.log(`[WS Hub] Client registered: ${socket.id} (Role: ${socket.role})`);
   }
@@ -35,6 +39,24 @@ export class WebSocketHub {
   public unregisterClient(socketId: string): void {
     this.clients.delete(socketId);
     console.log(`[WS Hub] Client disconnected: ${socketId}`);
+  }
+
+  public touch(socketId: string): void {
+    const client = this.clients.get(socketId);
+    if (client) client.lastActiveAt = Date.now();
+  }
+
+  public getPresence(identityKey: string) {
+    const client = [...this.clients.values()].find((item) => item.identityKey === identityKey);
+    return { online: Boolean(client), lastActiveAt: client?.lastActiveAt ?? null };
+  }
+
+  public isJoined(socketId: string, conversationId: string): boolean {
+    return this.clients.get(socketId)?.conversationIds?.has(conversationId) ?? false;
+  }
+
+  public getIdentityKey(socketId: string): string | null {
+    return this.clients.get(socketId)?.identityKey ?? null;
   }
 
   /**
@@ -158,6 +180,37 @@ export class WebSocketHub {
     }
 
     staleIds.forEach((id) => this.clients.delete(id));
+  }
+
+  private sendToClients<T>(clients: ClientSocket[], type: string, payload: T): void {
+    const payloadStr = JSON.stringify({ version: 1, type, payload });
+    for (const client of clients) {
+      try { client.send(payloadStr); } catch { this.clients.delete(client.id); }
+    }
+  }
+
+  /** Messaging channel broadcast. Only explicitly joined conversation channels receive it. */
+  public broadcastToConversation<T>(conversationId: string, message: { type: string; payload: T }): void {
+    this.sendToClients([...this.clients.values()].filter((client) => client.conversationIds?.has(conversationId)), message.type, message.payload);
+  }
+
+  public broadcastToConversationExcept<T>(conversationId: string, exceptSocketId: string, message: { type: string; payload: T }): void {
+    this.sendToClients([...this.clients.values()].filter((client) => client.id !== exceptSocketId && client.conversationIds?.has(conversationId)), message.type, message.payload);
+  }
+
+  /** Delivers an event to every active session for one authenticated identity. */
+  public broadcastToIdentity<T>(identityKey: string, message: { type: string; payload: T }): void {
+    this.sendToClients([...this.clients.values()].filter((client) => client.identityKey === identityKey), message.type, message.payload);
+  }
+
+  public broadcastToIdentities<T>(identityKeys: string[], message: { type: string; payload: T }): void {
+    const targets = new Set(identityKeys);
+    this.sendToClients([...this.clients.values()].filter((client) => client.identityKey && targets.has(client.identityKey)), message.type, message.payload);
+  }
+
+  public broadcastToIdentitiesExcept<T>(identityKeys: string[], excludedIdentityKey: string | null, message: { type: string; payload: T }): void {
+    const targets = new Set(identityKeys);
+    this.sendToClients([...this.clients.values()].filter((client) => client.identityKey && targets.has(client.identityKey) && client.identityKey !== excludedIdentityKey), message.type, message.payload);
   }
 }
 
