@@ -3,10 +3,10 @@ import { motion } from "framer-motion";
 import { useCart } from "../../context/CartContext";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
 import { useNotifications } from "../../context/NotificationsContext";
-import { apiGet } from "../../lib/api";
+import { apiGet, apiPost } from "../../lib/api";
 import {
   Utensils, UserCircle2, Moon, ChevronLeft, Building2,
-  Search, Sparkles, Clock, TrendingUp, MessageCircle
+  Search, Sparkles, Clock, TrendingUp, MessageCircle, HelpCircle, X, Send
 } from "lucide-react";
 import { CustomerNotificationPanel } from "../../components/CustomerNotificationPanel";
 import { Header } from "../../components/ui/Header";
@@ -63,6 +63,10 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
   const [userSearchResults, setUserSearchResults] = useState<{ id: string; firstName?: string; lastName?: string; knownName?: string; presence?: { online: boolean } }[]>([]);
   const [rootSearchGroups, setRootSearchGroups] = useState<RootSearchGroup[]>([]);
   const [rootSearchLoading, setRootSearchLoading] = useState(false);
+  const [talkToStaffOpen, setTalkToStaffOpen] = useState(false);
+  const [talkBody, setTalkBody] = useState("");
+  const [talkSending, setTalkSending] = useState(false);
+  const [talkSent, setTalkSent] = useState(false);
   const userSearchTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const rootSearchTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const { cart, addToCart, updateQuantity, totalCount, totalAmount, setClosedHotelIds } = useCart();
@@ -579,6 +583,46 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
           onClick: () => setShowLoginModal(false),
         }}
       />
+
+      {/* Talk to Staff floating button */}
+      {selectedHotel && !(totalCount > 0) && (
+        <button onClick={() => { setTalkToStaffOpen(true); setTalkSent(false); setTalkBody(""); }} className="fixed bottom-20 right-4 w-12 h-12 rounded-full bg-[#114B36] text-white shadow-lg flex items-center justify-center border-none cursor-pointer hover:bg-[#0D3D2B] transition-colors z-40" aria-label="Talk to staff">
+          <HelpCircle size={22} />
+        </button>
+      )}
+
+      {/* Talk to Staff overlay */}
+      {talkToStaffOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl bg-[#FFF8F0] p-5 shadow-2xl max-h-[60vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-[#114B36]">Talk to Staff</p>
+                <h3 className="text-lg font-black text-[#1F2937]">{selectedHotel?.name}</h3>
+              </div>
+              <button onClick={() => setTalkToStaffOpen(false)} className="w-9 h-9 rounded-full border-none bg-white text-[#6B7280] flex items-center justify-center cursor-pointer"><X size={18} /></button>
+            </div>
+            {talkSent ? (
+              <div className="text-center py-8">
+                <div className="w-16 h-16 rounded-full bg-[#D1FAE5] flex items-center justify-center mx-auto mb-4"><Send size={28} className="text-[#065F46]" /></div>
+                <p className="font-bold text-[#1F2937]">Message sent!</p>
+                <p className="text-sm text-[#6B7280] mt-1">A staff member will respond shortly.</p>
+                <button onClick={() => setTalkToStaffOpen(false)} className="mt-4 w-full rounded-xl bg-[#114B36] text-white py-3 font-bold border-none cursor-pointer">Done</button>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm text-[#6B7280] mb-4">Send a message to the {selectedHotel?.name} team. The first available staff member will respond.</p>
+                <textarea value={talkBody} onChange={(e) => setTalkBody(e.target.value)} placeholder="Type your message…" rows={4} className="w-full resize-none rounded-2xl border-2 border-[#E5E7EB] bg-white px-4 py-3 text-sm outline-none focus:border-[#114B36]" />
+                {talkSending && <p className="text-xs text-[#6B7280] mt-2">Sending…</p>}
+                <div className="flex gap-2 mt-4">
+                  <button onClick={() => setTalkToStaffOpen(false)} className="flex-1 rounded-xl bg-white border-2 border-[#E5E7EB] text-[#6B7280] py-3 font-bold text-sm border-none cursor-pointer">Cancel</button>
+                  <button onClick={async () => { if (!talkBody.trim() || talkSending) return; setTalkSending(true); const res = await apiPost("/messaging/talk-to-staff", { hotelId: selectedHotel!.id, body: talkBody.trim() }, token || undefined); setTalkSending(false); if (res.success) setTalkSent(true); }} disabled={!talkBody.trim()} className="flex-1 rounded-xl bg-[#114B36] text-white py-3 font-bold text-sm border-none cursor-pointer disabled:opacity-50">Send message</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

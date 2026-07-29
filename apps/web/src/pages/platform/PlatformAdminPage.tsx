@@ -2,8 +2,8 @@ import React, { useEffect, useState, useCallback } from "react";
 import { apiGet, apiPost, apiPatch, apiDelete } from "../../lib/api";
 import { useNotifications } from "../../context/NotificationsContext";
 import { usePlatformAdminAuth } from "../../context/PlatformAdminAuthContext";
-import { Modal } from "../../components/Modal";
-import { ConversationsPage } from "../ConversationsPage";
+import { Modal } from "../../components/ui/Modal";
+import { InboxPage } from "../InboxPage";
 import { Activity, Building2, ChevronRight, ClipboardList, LayoutDashboard, LogOut, Menu, MessageCircle, Plus, RefreshCw, Send, UserPlus, Users, UserCircle, X } from "lucide-react";
 
 type PlatformView = "login" | "overview" | "hotels" | "hotel_detail" | "create_hotel" | "admins" | "create_admin" | "audit" | "outbox" | "communications" | "profile";
@@ -639,7 +639,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                         </div>
                     </div>
                 ) : view === "communications" ? (
-                    <ConversationsPage token={token} mode="global" title="Communications" onBack={() => setView("overview")} />
+                    <InboxPage token={token} actorId={user?.id} mode="global" title="Communications" onBack={() => setView("overview")} />
                 ) : view === "outbox" ? (
                     <>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: s(6) }}>
@@ -678,10 +678,9 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                     type="danger"
                     title={confirm.title}
                     message={confirm.message}
-                    confirmText="Confirm"
-                    cancelText="Cancel"
-                    onConfirm={() => { confirm.onConfirm(); setConfirm(null); }}
-                    onCancel={() => { setConfirm(null); }}
+                    onClose={() => setConfirm(null)}
+                    primaryAction={{ label: "Confirm", variant: "danger", onClick: () => { confirm.onConfirm(); setConfirm(null); } }}
+                    secondaryAction={{ label: "Cancel", onClick: () => setConfirm(null) }}
                 />
             )}
         </div>

@@ -22,7 +22,7 @@ import { settingsRoute } from "./src/modules/settings/route";
 import { uploadRoute } from "./src/modules/upload/route";
 import { messagingRoute } from "./src/modules/messaging/routes";
 import { resolveMessagingActor } from "./src/modules/messaging/controller";
-import { assertConversationAccess, getConversationIdentityKeys, listConversations } from "./src/modules/messaging/service";
+import { assertConversationAccess, getConversationIdentityKeys, getInbox } from "./src/modules/messaging/service";
 import { wsHub } from "./src/modules/websocket/hub";
 import { env } from "../../shared/config";
 
@@ -78,20 +78,27 @@ export const app = new Elysia()
       conversationId: t.Optional(t.String()),
     }),
     async open(ws) {
-      const role = (ws.data.query.role === "admin" ? "admin" : "customer") as "admin" | "customer";
+      const requestedRole = ws.data.query.role === "admin" ? "admin" : "customer";
+      let role: "admin" | "customer" = "customer";
       const orderId = ws.data.query.orderId;
 
       let hotelId: string | undefined;
       let identityKey: string | undefined;
       const conversationIds = new Set<string>();
-      if (role === "admin" && ws.data.query.token) {
+      if (requestedRole === "admin" && ws.data.query.token) {
         try {
           const payload = await ws.data.jwt.verify(ws.data.query.token);
           if (payload && typeof payload === "object" && (payload as any).hotelId) {
             hotelId = (payload as any).hotelId;
           }
+          // Derive identity key directly from JWT sub as fallback
+          if (payload && typeof payload === "object" && (payload as any).sub) {
+            identityKey = `admin:${(payload as any).sub}`;
+          }
+          // Never trust the URL role alone. The messaging actor below confirms
+          // whether this is hotel staff or a platform administrator.
         } catch {
-          console.warn(`[WS] Admin ${ws.id} connected with invalid token — no hotel scoping`);
+          console.warn(`[WS] Rejected admin privileges for invalid socket token: ${ws.id}`);
         }
       }
 
@@ -101,12 +108,18 @@ export const app = new Elysia()
           (token) => ws.data.jwt.verify(token)
         );
         identityKey = actor.kind === "CUSTOMER" ? `customer:${actor.customerId}` : actor.kind === "GUEST" ? `guest:${actor.guestIdentityId}` : actor.kind === "HOTEL_STAFF" ? `admin:${actor.adminUserId}` : `platform:${actor.platformAdminId}`;
-        if (!hotelId && actor.kind === "HOTEL_STAFF") hotelId = actor.hotelId;
+        if (actor.kind === "HOTEL_STAFF") {
+          role = "admin";
+          hotelId = actor.hotelId;
+        } else if (actor.kind === "PLATFORM_ADMIN") {
+          role = "admin";
+        }
         // The application intentionally uses one root socket. Authorize all
         // conversations visible to this identity once, so typing events can
         // still use conversation-level routing without a page socket.
-        const accessible = await listConversations(actor);
-        accessible.forEach((conversation) => conversationIds.add(conversation.id));
+        const accessible = await getInbox(actor);
+        const allConversations = [...accessible.orderConversations, ...accessible.hotelNotices, ...accessible.platformNotices, ...accessible.talkToStaff, ...accessible.communityChannels];
+        allConversations.forEach((conversation) => conversationIds.add(conversation.id));
       } catch {}
 
       if (ws.data.query.conversationId) {
@@ -142,6 +155,13 @@ export const app = new Elysia()
       wsHub.touch(ws.id);
       try {
         const event = JSON.parse(String(message)) as { type?: string; conversationId?: string };
+        if (event.type === "JOIN_CONVERSATION") {
+          if (!event.conversationId) return;
+          const senderIdentity = wsHub.getIdentityKey(ws.id);
+          const recipients = await getConversationIdentityKeys(event.conversationId);
+          if (senderIdentity && recipients.includes(senderIdentity)) wsHub.joinConversation(ws.id, event.conversationId);
+          return;
+        }
         if (event.type === "TYPING_START" || event.type === "TYPING_STOP") {
           if (!event.conversationId) return;
           const senderIdentity = wsHub.getIdentityKey(ws.id);

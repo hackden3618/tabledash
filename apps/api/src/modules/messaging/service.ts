@@ -14,16 +14,6 @@ export function messagingActorIdentityKey(actor: MessagingActor) {
   return `platform:${actor.platformAdminId}`;
 }
 
-type CreateConversationInput = {
-  type: "DIRECT" | "GROUP" | "SUPPORT";
-  hotelId?: string;
-  title?: string;
-  targetAdminUserId?: string;
-  targetCustomerId?: string;
-  targetGuestIdentityId?: string;
-  adminUserIds?: string[];
-};
-
 function participantData(actor: MessagingActor, canReply = true) {
   if (actor.kind === "CUSTOMER") return { kind: "CUSTOMER" as ParticipantKind, customerId: actor.customerId, canReply };
   if (actor.kind === "GUEST") return { kind: "GUEST" as ParticipantKind, guestIdentityId: actor.guestIdentityId, canReply };
@@ -45,83 +35,60 @@ async function customerHotelIds(actor: MessagingActor) {
   return orders.flatMap((order) => order.hotelId ? [order.hotelId] : []);
 }
 
-async function accessibleConversationWhere(actor: MessagingActor) {
-  const own = { participants: { some: actorWhere(actor) } };
-  if (actor.kind === "HOTEL_STAFF") {
-    return { OR: [own, { type: "HOTEL_ANNOUNCEMENT" as const, hotelId: actor.hotelId }] };
-  }
-  if (actor.kind === "PLATFORM_ADMIN") {
-    return { OR: [own, { type: "GLOBAL_ANNOUNCEMENT" as const, hotelId: null }] };
-  }
-  const hotelIds = await customerHotelIds(actor);
-  return { OR: [own, { type: "GLOBAL_ANNOUNCEMENT" as const, hotelId: null }, ...(hotelIds.length ? [{ type: "HOTEL_ANNOUNCEMENT" as const, hotelId: { in: hotelIds } }] : [])] };
-}
-
 const conversationInclude = {
   participants: true,
   messages: { orderBy: { createdAt: "desc" as const }, take: 1 },
 };
 
-export async function listConversations(actor: MessagingActor) {
-  const conversations = await prisma.conversation.findMany({
+// ── Inbox ──
+
+export async function getInbox(actor: MessagingActor) {
+  const all = await prisma.conversation.findMany({
     where: await accessibleConversationWhere(actor),
-    include: conversationInclude,
+    include: { ...conversationInclude, order: { select: { orderNumber: true, status: true, hotel: { select: { name: true } } } } },
     orderBy: [{ lastMessageAt: "desc" }, { createdAt: "desc" }],
   });
-  const own = actorWhere(actor);
-  const hotelIds = conversations.flatMap((conversation) => conversation.hotelId ? [conversation.hotelId] : []);
-  const hotels = hotelIds.length ? await prisma.hotel.findMany({ where: { id: { in: hotelIds } }, select: { id: true, name: true } }) : [];
-  const hotelNames = new Map(hotels.map((hotel) => [hotel.id, hotel.name]));
-  const customerIds = [...new Set(conversations.flatMap((conversation) => conversation.participants.flatMap((participant) => participant.customerId ? [participant.customerId] : [])))];
-  const adminIds = [...new Set(conversations.flatMap((conversation) => conversation.participants.flatMap((participant) => participant.adminUserId ? [participant.adminUserId] : [])))];
-  const platformIds = [...new Set(conversations.flatMap((conversation) => conversation.participants.flatMap((participant) => participant.platformAdminId ? [participant.platformAdminId] : [])))];
-  const [customers, admins, platforms] = await Promise.all([
-    customerIds.length ? prisma.customer.findMany({ where: { id: { in: customerIds } }, select: { id: true, firstName: true, lastName: true, knownName: true } }) : [],
-    adminIds.length ? prisma.adminUser.findMany({ where: { id: { in: adminIds } }, select: { id: true, name: true } }) : [],
-    platformIds.length ? prisma.platformAdmin.findMany({ where: { id: { in: platformIds } }, select: { id: true, name: true } }) : [],
-  ]);
-  const customerNames = new Map(customers.map((customer) => [customer.id, customer.knownName || `${customer.firstName} ${customer.lastName || ""}`.trim()]));
-  const adminNames = new Map(admins.map((admin) => [admin.id, admin.name]));
-  const platformNames = new Map(platforms.map((admin) => [admin.id, admin.name]));
-
-  return Promise.all(conversations.map(async (conversation) => {
-    const participant = conversation.participants.find((item) => Object.entries(own).every(([key, value]) => (item as Record<string, unknown>)[key] === value));
-    const unreadCount = participant ? await prisma.message.count({ where: { conversationId: conversation.id, senderParticipantId: { not: participant.id }, ...(participant.lastReadAt ? { createdAt: { gt: participant.lastReadAt } } : {}) } }) : 0;
-    const other = conversation.participants.find((item) => item.id !== participant?.id);
-    const otherName = other?.customerId ? customerNames.get(other.customerId) : other?.adminUserId ? adminNames.get(other.adminUserId) : other?.platformAdminId ? platformNames.get(other.platformAdminId) : undefined;
-    const sourceName = conversation.type === "SUPPORT" ? "Ladha Delivery Support" : conversation.type === "GLOBAL_ANNOUNCEMENT" ? (other?.platformAdminId ? platformNames.get(other.platformAdminId) : "Platform Administration") : conversation.type === "HOTEL_ANNOUNCEMENT" ? (conversation.hotelId ? hotelNames.get(conversation.hotelId) : undefined) : conversation.type === "DIRECT" ? (otherName || "Direct conversation") : conversation.type === "GROUP" ? (conversation.title || hotelNames.get(conversation.hotelId || "") || "Hotel team") : undefined;
-    const sourceKind = conversation.type === "SUPPORT" ? "Ladha Delivery Support" : conversation.type === "GLOBAL_ANNOUNCEMENT" ? "Platform announcement" : conversation.type === "HOTEL_ANNOUNCEMENT" ? "Hotel announcement" : conversation.type === "GROUP" ? "Hotel group" : "Direct conversation";
-    const sourceContext = conversation.type === "SUPPORT" ? "Support conversation for this account" : conversation.type === "GLOBAL_ANNOUNCEMENT" ? "Published by Platform Administration" : conversation.type === "HOTEL_ANNOUNCEMENT" ? `Published by ${sourceName || "hotel management"}` : conversation.type === "GROUP" ? "Private hotel team conversation" : `Private conversation with ${sourceName || "another participant"}`;
-    return { ...conversation, title: conversation.type === "SUPPORT" ? "Ladha Delivery Support" : conversation.title, unreadCount, sourceName, sourceKind, sourceContext };
-  }));
+  const enriched = await enrichConversations(all, actor);
+  return {
+    orderConversations: enriched.filter((c) => c.type === "ORDER"),
+    hotelNotices: enriched.filter((c) => c.type === "HOTEL_NOTICE"),
+    platformNotices: enriched.filter((c) => c.type === "PLATFORM_NOTICE"),
+    talkToStaff: enriched.filter((c) => c.type === "TALK_TO_STAFF"),
+    communityChannels: enriched.filter((c) => c.type === "HOTEL_COMMUNITY"),
+  };
 }
 
 export async function getUnreadCount(actor: MessagingActor) {
-  const conversations = await listConversations(actor);
-  return conversations.reduce((total, conversation) => total + (conversation.unreadCount || 0), 0);
+  const conversations = await prisma.conversation.findMany({
+    where: await accessibleConversationWhere(actor),
+    select: { id: true },
+  });
+  const own = actorWhere(actor);
+  let total = 0;
+  for (const conversation of conversations) {
+    const participant = await prisma.conversationParticipant.findFirst({ where: { conversationId: conversation.id, ...own } });
+    if (participant) {
+      total += await prisma.message.count({
+        where: { conversationId: conversation.id, senderParticipantId: { not: participant.id }, ...(participant.lastReadAt ? { createdAt: { gt: participant.lastReadAt } } : {}) },
+      });
+    }
+  }
+  return total;
 }
 
-function identityKeyForParticipant(participant: { kind: ParticipantKind; customerId: string | null; guestIdentityId: string | null; adminUserId: string | null; platformAdminId: string | null }) {
-  if (participant.kind === "CUSTOMER" && participant.customerId) return `customer:${participant.customerId}`;
-  if (participant.kind === "GUEST" && participant.guestIdentityId) return `guest:${participant.guestIdentityId}`;
-  if (participant.kind === "HOTEL_STAFF" && participant.adminUserId) return `admin:${participant.adminUserId}`;
-  if (participant.kind === "PLATFORM_ADMIN" && participant.platformAdminId) return `platform:${participant.platformAdminId}`;
-  return null;
-}
+// ── Conversation access ──
 
 export async function getConversationIdentityKeys(conversationId: string) {
   const participants = await prisma.conversationParticipant.findMany({ where: { conversationId }, select: { kind: true, customerId: true, guestIdentityId: true, adminUserId: true, platformAdminId: true } });
   return participants.map(identityKeyForParticipant).filter((key): key is string => Boolean(key));
 }
 
-/** Recipients for announcement fan-out. Customers only receive hotel notices
- * for hotels they have ordered from; platform notices are global by design. */
 export async function getAnnouncementRecipientIdentityKeys(conversationId: string) {
   const conversation = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { type: true, hotelId: true } });
   if (!conversation) return [];
   const [admins, platforms, customerIds] = await Promise.all([
     prisma.adminUser.findMany({ where: conversation.hotelId ? { hotelId: conversation.hotelId } : undefined, select: { id: true } }),
-    prisma.platformAdmin.findMany({ select: { id: true } }),
+    conversation.hotelId ? Promise.resolve([]) : prisma.platformAdmin.findMany({ select: { id: true } }),
     conversation.hotelId
       ? prisma.order.findMany({ where: { hotelId: conversation.hotelId }, select: { customerId: true }, distinct: ["customerId"] })
       : prisma.customer.findMany({ select: { id: true } }),
@@ -151,104 +118,276 @@ export async function assertConversationAccess(actor: MessagingActor, conversati
   const isParticipant = conversation.participants.some((participant) =>
     Object.entries(actorWhere(actor)).every(([key, value]) => (participant as Record<string, unknown>)[key] === value)
   );
+  if (isParticipant) return conversation;
   const accessible = (await accessibleConversationWhere(actor)) as { OR: any[] };
-  const isAnnouncement = accessible.OR.some((clause) => clause.type === conversation.type && (clause.hotelId === null || clause.hotelId === conversation.hotelId || clause.hotelId?.in?.includes(conversation.hotelId)));
-  if (!isParticipant && !isAnnouncement) throw new Error("You do not have access to this conversation");
+  const canAccess = accessible.OR.some((clause: any) => {
+    if (clause.type === "HOTEL_NOTICE" || clause.type === "PLATFORM_NOTICE") {
+      return clause.type === conversation.type && (clause.hotelId === null || clause.hotelId === conversation.hotelId || clause.hotelId?.in?.includes(conversation.hotelId));
+    }
+    if (clause.type === "HOTEL_COMMUNITY") {
+      return conversation.type === "HOTEL_COMMUNITY" && clause.hotelId === conversation.hotelId;
+    }
+    if (clause.type === "TALK_TO_STAFF") {
+      return conversation.type === "TALK_TO_STAFF" && clause.hotelId === conversation.hotelId;
+    }
+    return false;
+  });
+  if (!canAccess) throw new Error("You do not have access to this conversation");
+  // Auto-join if community channel or staff opening a talk-to-staff conversation
+  if (conversation.type === "HOTEL_COMMUNITY" || (conversation.type === "TALK_TO_STAFF" && actor.kind === "HOTEL_STAFF")) {
+    const newParticipant = await prisma.conversationParticipant.create({ data: { conversationId, ...participantData(actor) } });
+    return { ...conversation, participants: [...conversation.participants, newParticipant] };
+  }
   return conversation;
 }
 
-export async function createConversation(actor: MessagingActor, input: CreateConversationInput) {
-  if (input.type === "GROUP" && actor.kind !== "HOTEL_STAFF") throw new Error("Only hotel staff can create group conversations");
-  if (input.type === "DIRECT" && !input.targetAdminUserId && !input.targetCustomerId && !input.targetGuestIdentityId) throw new Error("A direct conversation needs a recipient");
-  if ((input.type === "GROUP" || (input.type === "DIRECT" && Boolean(input.targetAdminUserId))) && !input.hotelId && actor.kind !== "HOTEL_STAFF") throw new Error("A hotel is required for this conversation");
-  if (actor.kind === "HOTEL_STAFF" && input.hotelId && input.hotelId !== actor.hotelId) throw new Error("You can only use your own hotel");
+// ── ORDER conversations ──
 
-  const participants = [participantData(actor)];
-  const hotelId = input.hotelId ?? (actor.kind === "HOTEL_STAFF" ? actor.hotelId : undefined);
-
-  if (input.type === "GROUP") {
-    if (actor.kind !== "HOTEL_STAFF") throw new Error("Only hotel staff can create group conversations");
-    const adminIds = [...new Set([actor.adminUserId, ...(input.adminUserIds ?? [])])];
-    const admins = await prisma.adminUser.findMany({ where: { id: { in: adminIds }, hotelId }, select: { id: true } });
-    if (admins.length !== adminIds.length) throw new Error("Every group member must belong to the same hotel");
-    return prisma.conversation.create({ data: { type: input.type, hotelId, title: input.title, participants: { create: adminIds.map((adminUserId) => ({ kind: "HOTEL_STAFF", adminUserId, canReply: true })) } }, include: conversationInclude });
-  }
-
-  if (input.targetAdminUserId) {
-    const target = await prisma.adminUser.findUnique({ where: { id: input.targetAdminUserId }, select: { id: true, hotelId: true } });
-    if (!target || !target.hotelId || (hotelId && target.hotelId !== hotelId)) throw new Error("Recipient is not in the selected hotel");
-    participants.push({ kind: "HOTEL_STAFF", adminUserId: target.id, canReply: true });
-  } else if (input.targetCustomerId) {
-    if (actor.kind === "CUSTOMER" || actor.kind === "GUEST") {
-      const currentCustomerId = actor.kind === "CUSTOMER" ? actor.customerId : actor.customerId;
-      if (!currentCustomerId) throw new Error("Create an account before starting a new user chat");
-      const current = await prisma.customer.findUnique({ where: { id: currentCustomerId }, select: { isDiscoverable: true } });
-      if (!current?.isDiscoverable) throw new Error("Turn on discoverability before finding other users");
-    } else if (actor.kind !== "HOTEL_STAFF" && actor.kind !== "PLATFORM_ADMIN") throw new Error("Only staff can start a customer direct chat");
-    const target = await prisma.customer.findUnique({ where: { id: input.targetCustomerId }, select: { id: true, isDiscoverable: true } });
-    if (!target) throw new Error("Customer not found");
-    if ((actor.kind === "CUSTOMER" || actor.kind === "GUEST") && !target.isDiscoverable) throw new Error("This user is not discoverable");
-    participants.push({ kind: "CUSTOMER", customerId: target.id, canReply: true });
-  } else if (input.targetGuestIdentityId) {
-    if (actor.kind !== "HOTEL_STAFF" && actor.kind !== "PLATFORM_ADMIN") throw new Error("Only staff can start a guest direct chat");
-    const target = await prisma.guestIdentity.findUnique({ where: { id: input.targetGuestIdentityId } });
-    if (!target) throw new Error("Guest identity not found");
-    participants.push({ kind: "GUEST", guestIdentityId: target.id, canReply: true });
-  }
-
-  if (input.type === "SUPPORT" && actor.kind !== "PLATFORM_ADMIN") {
-    const platform = await prisma.platformAdmin.findFirst({ orderBy: { createdAt: "asc" }, select: { id: true } });
-    if (!platform) throw new Error("Support is not currently staffed");
-    participants.push({ kind: "PLATFORM_ADMIN", platformAdminId: platform.id, canReply: true });
-  }
-
-  return prisma.conversation.create({ data: { type: input.type, hotelId: input.type === "SUPPORT" && actor.kind === "HOTEL_STAFF" ? actor.hotelId : hotelId, title: input.title || (input.type === "SUPPORT" ? "Ladha Delivery Support" : undefined), participants: { create: participants } }, include: conversationInclude });
+export async function createOrderConversation(tx: any, orderId: string, hotelId: string, customerId: string) {
+  const staff = await prisma.adminUser.findMany({ where: { hotelId, role: { in: ["HOTEL_ADMIN", "HOTEL_STAFF"] } }, select: { id: true } });
+  const participants: { kind: ParticipantKind; adminUserId?: string; customerId?: string; canReply: boolean }[] = [
+    { kind: "CUSTOMER", customerId, canReply: true },
+    ...staff.map((admin) => ({ kind: "HOTEL_STAFF" as ParticipantKind, adminUserId: admin.id, canReply: true })),
+  ];
+  return tx.conversation.create({
+    data: {
+      type: "ORDER",
+      orderId,
+      hotelId,
+      participants: { create: participants },
+    },
+  });
 }
 
-export async function getDirectory(actor: MessagingActor, query?: string) {
-  const q = query?.trim() ?? "";
-  if (actor.kind === "CUSTOMER" || actor.kind === "GUEST") {
-    const customerId = actor.kind === "CUSTOMER" ? actor.customerId : actor.customerId;
-    if (!customerId) return [];
-    const current = await prisma.customer.findUnique({ where: { id: customerId }, select: { isDiscoverable: true } });
-    if (!current?.isDiscoverable) return [];
-    return prisma.customer.findMany({
-      where: { isDiscoverable: true, id: { not: customerId }, ...(q ? { OR: [{ firstName: { contains: q, mode: "insensitive" } }, { lastName: { contains: q, mode: "insensitive" } }, { knownName: { contains: q, mode: "insensitive" } }] } : {}) },
-      select: { id: true, firstName: true, lastName: true, knownName: true }, take: 20,
+export async function sendOrderMessage(actor: MessagingActor, orderId: string, body: string, replyToId?: string) {
+  const order = await prisma.order.findUnique({ where: { id: orderId }, select: { status: true, id: true } });
+  if (!order) throw new Error("Order not found");
+  if (order.status === "DELIVERED" || order.status === "CANCELLED") throw new Error("This order is complete and can no longer receive messages");
+  const conversation = await prisma.conversation.findFirst({ where: { orderId, type: "ORDER" }, include: { participants: true } });
+  if (!conversation) throw new Error("Order conversation not found");
+  return sendMessageToConversation(actor, conversation, body, replyToId);
+}
+
+// ── TALK TO STAFF ──
+
+export async function getOrCreateTalkToStaff(actor: MessagingActor, hotelId: string, initialBody?: string) {
+  if (actor.kind === "HOTEL_STAFF") throw new Error("Staff cannot start a Talk to Staff conversation");
+  const customerId = actor.kind === "CUSTOMER" ? actor.customerId : actor.kind === "GUEST" ? actor.customerId : undefined;
+  const guestIdentityId = actor.kind === "GUEST" ? actor.guestIdentityId : undefined;
+  if (!customerId && !guestIdentityId) throw new Error("Authentication required");
+
+  const existing = await prisma.conversation.findFirst({
+    where: {
+      type: "TALK_TO_STAFF",
+      hotelId,
+      participants: { some: customerId ? { customerId } : { guestIdentityId } },
+    },
+    include: { participants: true, order: { select: { orderNumber: true, status: true } } },
+  });
+  if (existing && !initialBody) return { conversation: existing, created: false };
+  if (existing && initialBody) {
+    const actorParticipant = existing.participants.find((p) =>
+      Object.entries(actorWhere(actor)).every(([key, value]) => (p as Record<string, unknown>)[key] === value)
+    );
+    if (!actorParticipant) throw new Error("You are not a participant in this conversation");
+    const message = await prisma.message.create({
+      data: { conversationId: existing.id, senderParticipantId: actorParticipant.id, body: initialBody.trim() },
     });
+    await prisma.conversation.update({ where: { id: existing.id }, data: { lastMessageAt: message.createdAt } });
+    return { conversation: existing, message, created: false };
   }
-  if (actor.kind === "HOTEL_STAFF") {
-    const current = await prisma.adminUser.findUnique({ where: { id: actor.adminUserId }, select: { isDiscoverable: true } });
-    if (!current?.isDiscoverable) return [];
-    return prisma.adminUser.findMany({ where: { hotelId: actor.hotelId, isDiscoverable: true, id: { not: actor.adminUserId }, ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { username: { contains: q, mode: "insensitive" } }] } : {}) }, select: { id: true, name: true, username: true, role: true }, take: 50 });
+
+  const participants: { kind: ParticipantKind; customerId?: string; guestIdentityId?: string; canReply: boolean }[] = [
+    customerId
+      ? { kind: "CUSTOMER", customerId, canReply: true }
+      : { kind: "GUEST", guestIdentityId, canReply: true },
+  ];
+  const conversation = await prisma.conversation.create({
+    data: { type: "TALK_TO_STAFF", hotelId, participants: { create: participants } },
+    include: { participants: true },
+  });
+  let message = null;
+  if (initialBody) {
+    const sender = conversation.participants.find((p) =>
+      Object.entries(actorWhere(actor)).every(([key, value]) => (p as Record<string, unknown>)[key] === value)
+    );
+    if (sender) {
+      message = await prisma.message.create({
+        data: { conversationId: conversation.id, senderParticipantId: sender.id, body: initialBody.trim() },
+      });
+      await prisma.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: message.createdAt } });
+    }
   }
-  return prisma.adminUser.findMany({ where: { isDiscoverable: true, ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { username: { contains: q, mode: "insensitive" } }] } : {}) }, select: { id: true, name: true, username: true, role: true }, take: 50 });
+  return { conversation, message, created: true };
 }
 
-export async function updateDiscoverability(actor: MessagingActor, discoverable: boolean) {
-  if (actor.kind === "CUSTOMER") return prisma.customer.update({ where: { id: actor.customerId }, data: { isDiscoverable: discoverable }, select: { isDiscoverable: true } });
-  if (actor.kind === "HOTEL_STAFF") return prisma.adminUser.update({ where: { id: actor.adminUserId }, data: { isDiscoverable: discoverable }, select: { isDiscoverable: true } });
-  throw new Error("This account cannot change discoverability here");
+/**
+ * Opens a durable support thread with Platform Administration. Unlike hotel
+ * support, this is deliberately cross-tenant but visible only to its creator
+ * and platform administrators.
+ */
+export async function getOrCreatePlatformSupport(actor: MessagingActor, initialBody?: string) {
+  if (actor.kind !== "CUSTOMER" && actor.kind !== "HOTEL_STAFF") {
+    throw new Error("Sign in as a customer or hotel staff member to contact platform support");
+  }
+  const existing = await prisma.conversation.findFirst({
+    where: { type: "TALK_TO_STAFF", hotelId: null, participants: { some: actorWhere(actor) } },
+    include: { participants: true },
+  });
+  if (existing && !initialBody) return { conversation: existing, message: null, created: false };
+  if (existing && initialBody) {
+    const sender = existing.participants.find((participant) =>
+      Object.entries(actorWhere(actor)).every(([key, value]) => (participant as Record<string, unknown>)[key] === value)
+    );
+    if (!sender) throw new Error("You are not a participant in this support conversation");
+    const message = await prisma.message.create({ data: { conversationId: existing.id, senderParticipantId: sender.id, body: initialBody.trim() } });
+    await prisma.conversation.update({ where: { id: existing.id }, data: { lastMessageAt: message.createdAt } });
+    return { conversation: existing, message, created: false };
+  }
+
+  const platformAdmins = await prisma.platformAdmin.findMany({ select: { id: true } });
+  const participants = [
+    { ...participantData(actor), canReply: true },
+    ...platformAdmins.map((admin) => ({ kind: "PLATFORM_ADMIN" as ParticipantKind, platformAdminId: admin.id, canReply: true })),
+  ];
+  const conversation = await prisma.conversation.create({
+    data: { type: "TALK_TO_STAFF", hotelId: null, participants: { create: participants } },
+    include: { participants: true },
+  });
+  const sender = conversation.participants.find((participant) =>
+    Object.entries(actorWhere(actor)).every(([key, value]) => (participant as Record<string, unknown>)[key] === value)
+  );
+  const message = initialBody && sender
+    ? await prisma.message.create({ data: { conversationId: conversation.id, senderParticipantId: sender.id, body: initialBody.trim() } })
+    : null;
+  if (message) await prisma.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: message.createdAt } });
+  return { conversation, message, created: true };
 }
 
-export async function getDiscoverability(actor: MessagingActor) {
-  if (actor.kind === "CUSTOMER") return prisma.customer.findUnique({ where: { id: actor.customerId }, select: { isDiscoverable: true } });
-  if (actor.kind === "HOTEL_STAFF") return prisma.adminUser.findUnique({ where: { id: actor.adminUserId }, select: { isDiscoverable: true } });
-  return { isDiscoverable: false };
+export async function sendTalkToStaffMessage(actor: MessagingActor, conversationId: string, body: string, replyToId?: string) {
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    include: { participants: true },
+  });
+  if (!conversation || conversation.type !== "TALK_TO_STAFF") throw new Error("Talk to Staff conversation not found");
+
+  const sender = conversation.participants.find((p) =>
+    Object.entries(actorWhere(actor)).every(([key, value]) => (p as Record<string, unknown>)[key] === value)
+  );
+  if (!sender) {
+    if (actor.kind === "PLATFORM_ADMIN" && conversation.hotelId === null) {
+      const newParticipant = await prisma.conversationParticipant.create({ data: { conversationId, ...participantData(actor), canReply: true } });
+      return sendMessageToConversation(actor, { ...conversation, participants: [...conversation.participants, newParticipant] }, body, replyToId);
+    }
+    if (actor.kind !== "HOTEL_STAFF" || actor.hotelId !== conversation.hotelId) throw new Error("You cannot message this conversation");
+    const newParticipant = await prisma.conversationParticipant.create({
+      data: { conversationId, ...participantData(actor), canReply: true },
+    });
+    if (!conversation.assignedStaffId) {
+      await prisma.conversation.update({ where: { id: conversationId }, data: { assignedStaffId: actor.adminUserId } });
+    }
+    return sendMessageToConversation(actor, { ...conversation, participants: [...conversation.participants, newParticipant] }, body, replyToId);
+  }
+
+  const message = await sendMessageToConversation(actor, conversation, body, replyToId);
+  if (actor.kind === "HOTEL_STAFF" && !conversation.assignedStaffId) {
+    await prisma.conversation.update({ where: { id: conversationId }, data: { assignedStaffId: actor.adminUserId } });
+  }
+  return message;
 }
+
+// ── NOTICES ──
+
+export async function createHotelNotice(actor: MessagingActor, input: { hotelId: string; title?: string; body: string }) {
+  if (actor.kind !== "HOTEL_STAFF") throw new Error("Only hotel staff can publish hotel notices");
+  if (input.hotelId !== actor.hotelId) throw new Error("You can only publish notices to your own hotel");
+  return createNotice(actor, "HOTEL_NOTICE", input.hotelId, input.title, input.body);
+}
+
+export async function createPlatformNotice(actor: MessagingActor, input: { title?: string; body: string }) {
+  if (actor.kind !== "PLATFORM_ADMIN") throw new Error("Only platform admins can publish platform notices");
+  return createNotice(actor, "PLATFORM_NOTICE", null, input.title, input.body);
+}
+
+async function createNotice(actor: MessagingActor, type: "HOTEL_NOTICE" | "PLATFORM_NOTICE", hotelId: string | null, title: string | undefined, body: string) {
+  // Notices are one-way for recipients, but their publisher must be able to
+  // add an official follow-up in the same announcement thread.
+  const sender = participantData(actor, true);
+  return prisma.$transaction(async (tx) => {
+    const conversation = await tx.conversation.create({ data: { type, hotelId, title } });
+    const participant = await tx.conversationParticipant.create({ data: { conversationId: conversation.id, ...sender } });
+    const [admins, platforms, customers] = await Promise.all([
+      tx.adminUser.findMany({ where: hotelId ? { hotelId } : undefined, select: { id: true } }),
+      hotelId ? Promise.resolve([] as { id: string }[]) : tx.platformAdmin.findMany({ select: { id: true } }),
+      hotelId
+        ? tx.order.findMany({ where: { hotelId }, select: { customerId: true }, distinct: ["customerId"] })
+        : tx.customer.findMany({ select: { id: true } }),
+    ]);
+    const candidateRows: Array<{ conversationId: string; kind: ParticipantKind; adminUserId?: string; platformAdminId?: string; customerId?: string; canReply: boolean }> = [
+      ...admins.map((admin) => ({ conversationId: conversation.id, kind: "HOTEL_STAFF" as ParticipantKind, adminUserId: admin.id, canReply: false })),
+      ...platforms.map((platform) => ({ conversationId: conversation.id, kind: "PLATFORM_ADMIN" as ParticipantKind, platformAdminId: platform.id, canReply: false })),
+      ...customers.map((customer) => ({ conversationId: conversation.id, kind: "CUSTOMER" as ParticipantKind, customerId: "customerId" in customer ? customer.customerId : customer.id, canReply: false })),
+    ];
+    const recipientRows = candidateRows.filter((row) => !(
+      (actor.kind === "HOTEL_STAFF" && row.adminUserId === actor.adminUserId) ||
+      (actor.kind === "PLATFORM_ADMIN" && row.platformAdminId === actor.platformAdminId) ||
+      (actor.kind === "CUSTOMER" && row.customerId === actor.customerId)
+    ));
+    if (recipientRows.length) await tx.conversationParticipant.createMany({ data: recipientRows });
+    const message = await tx.message.create({ data: { conversationId: conversation.id, senderParticipantId: participant.id, body: body.trim() } });
+    await tx.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: message.createdAt } });
+    return { ...conversation, message };
+  });
+}
+
+// ── HOTEL COMMUNITY CHANNELS ──
+
+export async function createCommunityChannel(actor: MessagingActor, input: { hotelId: string; channelName: string }) {
+  if (actor.kind !== "HOTEL_STAFF") throw new Error("Only hotel staff can create community channels");
+  if (input.hotelId !== actor.hotelId) throw new Error("You can only create channels for your own hotel");
+  const slug = input.channelName.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+  if (!slug) throw new Error("Channel name must contain at least one letter or number");
+  const existing = await prisma.conversation.findFirst({ where: { type: "HOTEL_COMMUNITY", hotelId: input.hotelId, channelName: slug } });
+  if (existing) throw new Error(`Channel #${slug} already exists`);
+  const sender = participantData(actor);
+  return prisma.$transaction(async (tx) => {
+    const conversation = await tx.conversation.create({ data: { type: "HOTEL_COMMUNITY", hotelId: input.hotelId, channelName: slug } });
+    const participant = await tx.conversationParticipant.create({ data: { conversationId: conversation.id, ...sender } });
+    const msg = await tx.message.create({ data: { conversationId: conversation.id, senderParticipantId: participant.id, body: `Channel #${slug} created` } });
+    await tx.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: msg.createdAt } });
+    return { ...conversation, message: msg };
+  });
+}
+
+// ── Message CRUD (shared across all channel types) ──
 
 export async function sendMessage(actor: MessagingActor, conversationId: string, body: string, replyToId?: string) {
   const conversation = await assertConversationAccess(actor, conversationId);
-  const sender = conversation.participants.find((participant) => Object.entries(actorWhere(actor)).every(([key, value]) => (participant as Record<string, unknown>)[key] === value));
+  return sendMessageToConversation(actor, conversation, body, replyToId);
+}
+
+async function sendMessageToConversation(actor: MessagingActor, conversation: { id: string; type: string; participants: Array<{ id: string; canReply: boolean; kind: string; customerId: string | null; guestIdentityId: string | null; adminUserId: string | null; platformAdminId: string | null }> }, body: string, replyToId?: string) {
+  const sender = conversation.participants.find((participant) =>
+    Object.entries(actorWhere(actor)).every(([key, value]) => (participant as Record<string, unknown>)[key] === value)
+  );
   if (!sender) throw new Error("Only conversation participants can send messages");
-  if (!sender.canReply) throw new Error("Replies are disabled for this conversation");
+  if (!sender.canReply) {
+    // Backward compatibility: notices published before publisher follow-ups
+    // were introduced stored every participant as read-only. Only the author
+    // of the original message receives this narrow exception.
+    const isNotice = conversation.type === "HOTEL_NOTICE" || conversation.type === "PLATFORM_NOTICE";
+    const initialMessage = isNotice
+      ? await prisma.message.findFirst({ where: { conversationId: conversation.id }, orderBy: { createdAt: "asc" }, select: { senderParticipantId: true } })
+      : null;
+    if (!isNotice || initialMessage?.senderParticipantId !== sender.id) throw new Error("Replies are disabled for this conversation");
+  }
   if (replyToId) {
     const replyTo = await prisma.message.findUnique({ where: { id: replyToId } });
-    if (!replyTo || replyTo.conversationId !== conversationId) throw new Error("Reply target message not found");
+    if (!replyTo || replyTo.conversationId !== conversation.id) throw new Error("Reply target message not found");
   }
   const message = await prisma.$transaction(async (tx) => {
-    const created = await tx.message.create({ data: { conversationId, senderParticipantId: sender.id, body: body.trim(), replyToId: replyToId || null } });
-    await tx.conversation.update({ where: { id: conversationId }, data: { lastMessageAt: created.createdAt } });
+    const created = await tx.message.create({ data: { conversationId: conversation.id, senderParticipantId: sender.id, body: body.trim(), replyToId: replyToId || null } });
+    await tx.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: created.createdAt } });
     return created;
   });
   if (replyToId) {
@@ -283,8 +422,14 @@ export async function deleteMessage(actor: MessagingActor, conversationId: strin
 }
 
 export async function deleteConversation(actor: MessagingActor, conversationId: string) {
-  await assertConversationAccess(actor, conversationId);
-  await prisma.conversation.delete({ where: { id: conversationId } });
+  const conversation = await assertConversationAccess(actor, conversationId);
+  // Only remove the actor's participant record so the conversation stays for others
+  const participant = await prisma.conversationParticipant.findFirst({
+    where: { conversationId, ...actorWhere(actor) },
+  });
+  if (participant) {
+    await prisma.conversationParticipant.delete({ where: { id: participant.id } });
+  }
   return { success: true };
 }
 
@@ -295,16 +440,128 @@ export async function markConversationRead(actor: MessagingActor, conversationId
   return prisma.conversationParticipant.update({ where: { id: participant.id }, data: { lastReadAt: new Date() } });
 }
 
-export async function createAnnouncement(actor: MessagingActor, input: { type: "HOTEL_ANNOUNCEMENT" | "GLOBAL_ANNOUNCEMENT"; hotelId?: string; title?: string; body: string }) {
-  if (input.type === "GLOBAL_ANNOUNCEMENT" && actor.kind !== "PLATFORM_ADMIN") throw new Error("Only platform admins can send global announcements");
-  if (input.type === "HOTEL_ANNOUNCEMENT" && actor.kind !== "HOTEL_STAFF") throw new Error("Only hotel staff can send hotel announcements");
-  if (input.type === "HOTEL_ANNOUNCEMENT" && (actor.kind !== "HOTEL_STAFF" || input.hotelId !== actor.hotelId)) throw new Error("You can only announce to your own hotel");
-  const sender = participantData(actor, false);
-  return prisma.$transaction(async (tx) => {
-    const conversation = await tx.conversation.create({ data: { type: input.type, hotelId: input.type === "GLOBAL_ANNOUNCEMENT" ? null : input.hotelId, title: input.title } });
-    const participant = await tx.conversationParticipant.create({ data: { conversationId: conversation.id, ...sender } });
-    const message = await tx.message.create({ data: { conversationId: conversation.id, senderParticipantId: participant.id, body: input.body.trim() } });
-    await tx.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: message.createdAt } });
-    return { ...conversation, message };
-  });
+// ── Helpers ──
+
+function identityKeyForParticipant(participant: { kind: ParticipantKind; customerId: string | null; guestIdentityId: string | null; adminUserId: string | null; platformAdminId: string | null }) {
+  if (participant.kind === "CUSTOMER" && participant.customerId) return `customer:${participant.customerId}`;
+  if (participant.kind === "GUEST" && participant.guestIdentityId) return `guest:${participant.guestIdentityId}`;
+  if (participant.kind === "HOTEL_STAFF" && participant.adminUserId) return `admin:${participant.adminUserId}`;
+  if (participant.kind === "PLATFORM_ADMIN" && participant.platformAdminId) return `platform:${participant.platformAdminId}`;
+  return null;
+}
+
+async function accessibleConversationWhere(actor: MessagingActor) {
+  if (actor.kind === "HOTEL_STAFF") {
+    return {
+      OR: [
+        { participants: { some: actorWhere(actor) } },
+        { type: "HOTEL_NOTICE" as const, hotelId: actor.hotelId },
+        { type: "HOTEL_COMMUNITY" as const, hotelId: actor.hotelId },
+        { type: "TALK_TO_STAFF" as const, hotelId: actor.hotelId },
+      ],
+    };
+  }
+  if (actor.kind === "PLATFORM_ADMIN") {
+    return { OR: [{ participants: { some: actorWhere(actor) } }, { type: "PLATFORM_NOTICE" as const, hotelId: null }] };
+  }
+  // GUEST actors must not see any communication or hotel notices — only platform announcements.
+  if (actor.kind === "GUEST") {
+    return { type: "PLATFORM_NOTICE" as const, hotelId: null };
+  }
+  const hotelIds = await customerHotelIds(actor);
+  const communityWhere = actor.kind === "CUSTOMER"
+    ? [{ type: "HOTEL_COMMUNITY" as const }]
+    : hotelIds.length ? [{ type: "HOTEL_COMMUNITY" as const, hotelId: { in: hotelIds } }] : [];
+  return {
+    OR: [
+      { participants: { some: actorWhere(actor) } },
+      { type: "PLATFORM_NOTICE" as const, hotelId: null },
+      ...(hotelIds.length ? [{ type: "HOTEL_NOTICE" as const, hotelId: { in: hotelIds } }] : []),
+      ...communityWhere,
+    ],
+  };
+}
+
+async function enrichConversations(conversations: any[], actor: MessagingActor) {
+  const own = actorWhere(actor);
+  const hotelIds = [...new Set(conversations.flatMap((c: any) => c.hotelId ? [c.hotelId] : []))];
+  const orderIds = [...new Set(conversations.flatMap((c: any) => c.orderId ? [c.orderId] : []))];
+  const customerIds = [...new Set(conversations.flatMap((c: any) => c.type === "TALK_TO_STAFF" ? (c.participants || []).filter((p: any) => p.kind === "CUSTOMER" && p.customerId).map((p: any) => p.customerId) : []))];
+  const staffIds = [...new Set(conversations.flatMap((c: any) => c.type === "TALK_TO_STAFF" ? (c.participants || []).filter((p: any) => p.kind === "HOTEL_STAFF" && p.adminUserId).map((p: any) => p.adminUserId) : []))];
+  const assignedStaffIds = [...new Set(conversations.filter((c: any) => c.type === "TALK_TO_STAFF" && c.assignedStaffId).map((c: any) => c.assignedStaffId))];
+  const [hotels, orders, customers, adminUsers] = await Promise.all([
+    hotelIds.length ? prisma.hotel.findMany({ where: { id: { in: hotelIds } }, select: { id: true, name: true } }) : [],
+    orderIds.length ? prisma.order.findMany({ where: { id: { in: orderIds } }, select: { id: true, orderNumber: true, status: true } }) : [],
+    customerIds.length ? prisma.customer.findMany({ where: { id: { in: customerIds } }, select: { id: true, firstName: true, knownName: true, phone: true } }) : [],
+    [...staffIds, ...assignedStaffIds].length ? prisma.adminUser.findMany({ where: { id: { in: [...new Set([...staffIds, ...assignedStaffIds])] } }, select: { id: true, name: true } }) : [],
+  ]);
+  const hotelNames = new Map(hotels.map((h) => [h.id, h.name]));
+  const orderStatuses = new Map(orders.map((o) => [o.id, { orderNumber: o.orderNumber, status: o.status }]));
+  const customerMap = new Map(customers.map((c) => [c.id, c]));
+  const adminMap = new Map(adminUsers.map((a) => [a.id, a]));
+
+  return Promise.all(conversations.map(async (conversation: any) => {
+    const participant = conversation.participants.find((item: any) =>
+      Object.entries(own).every(([key, value]) => (item as Record<string, unknown>)[key] === value)
+    );
+    const unreadCount = participant
+      ? await prisma.message.count({
+          where: { conversationId: conversation.id, senderParticipantId: { not: participant.id }, ...(participant.lastReadAt ? { createdAt: { gt: participant.lastReadAt } } : {}) },
+        })
+      : 0;
+    const orderInfo = conversation.orderId ? orderStatuses.get(conversation.orderId) : null;
+    const hotelName = conversation.hotelId ? hotelNames.get(conversation.hotelId) : undefined;
+
+    let sourceName: string | undefined;
+    let sourceContext: string | undefined;
+    if (conversation.type === "ORDER") {
+      sourceName = hotelName || "Order";
+      sourceContext = orderInfo ? `Order #${orderInfo.orderNumber} · ${orderInfo.status}` : "Order conversation";
+    } else if (conversation.type === "TALK_TO_STAFF") {
+      if (conversation.hotelId === null && actor.kind !== "PLATFORM_ADMIN") {
+        sourceName = "Ladha Support";
+        sourceContext = "Platform support";
+      } else if (actor.kind === "HOTEL_STAFF" || actor.kind === "PLATFORM_ADMIN") {
+        const customerP = conversation.participants?.find((p: any) => p.kind === "CUSTOMER" && p.customerId);
+        const guestP = conversation.participants?.find((p: any) => p.kind === "GUEST" && p.guestIdentityId);
+        const adminP = conversation.participants?.find((p: any) => p.kind === "HOTEL_STAFF" && p.adminUserId);
+        const cust = customerP ? customerMap.get(customerP.customerId) : null;
+        const admin = adminP ? adminMap.get(adminP.adminUserId) : null;
+        if (cust) {
+          sourceName = cust.knownName || cust.firstName || "Customer";
+          sourceContext = cust.phone || "";
+        } else if (admin) {
+          sourceName = admin.name || "Hotel administrator";
+          sourceContext = "Platform support request";
+        } else if (guestP) {
+          sourceName = "Guest";
+          sourceContext = "Unregistered customer";
+        } else {
+          sourceName = hotelName || "Customer";
+          sourceContext = "";
+        }
+      } else {
+        const assignedStaff = conversation.assignedStaffId ? adminMap.get(conversation.assignedStaffId) : null;
+        const staffP = conversation.participants?.find((p: any) => p.kind === "HOTEL_STAFF" && p.adminUserId);
+        const staff = assignedStaff || (staffP ? adminMap.get(staffP.adminUserId) : null);
+        if (staff) {
+          sourceName = staff.name || "Staff";
+          sourceContext = "Hotel team";
+        } else {
+          sourceName = hotelName || "Staff";
+          sourceContext = "Awaiting response";
+        }
+      }
+    } else if (conversation.type === "HOTEL_NOTICE") {
+      sourceName = hotelName || "Hotel";
+      sourceContext = `Published by ${hotelName || "hotel management"}`;
+    } else if (conversation.type === "PLATFORM_NOTICE") {
+      sourceName = "Ladha Platform";
+      sourceContext = "Platform announcement";
+    } else if (conversation.type === "HOTEL_COMMUNITY") {
+      sourceName = hotelName || "Team";
+      sourceContext = conversation.channelName ? `#${conversation.channelName}` : "Hotel team";
+    }
+    return { ...conversation, unreadCount, sourceName, sourceContext, orderInfo };
+  }));
 }

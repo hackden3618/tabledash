@@ -7,6 +7,7 @@
 
 import { prisma } from "../../../../../infrastructure/database/prisma";
 import type { DashboardMetrics, OrderStatus, PaymentStatus } from "../../../../../shared/types";
+import type { ParticipantKind } from "../../../../../generated/prisma/client";
 import { smsService } from "../notifications/sms.service";
 import { getDefaultHotel } from "../hotels/service";
 import { getSmsRecipients } from "../settings/service";
@@ -41,6 +42,15 @@ interface OrderItemDraft {
 function buildCustomerDisplay(firstName: string, lastName?: string | null, knownName?: string | null): string {
   const name = lastName ? `${firstName} ${lastName}` : firstName;
   return knownName ? `${name} (${knownName})` : name;
+}
+
+/** Resolves every live identity that is allowed to receive a customer's order events. */
+async function getOrderOwnerIdentityKeys(customerId: string): Promise<string[]> {
+  const guestSessions = await prisma.guestIdentity.findMany({
+    where: { customerId },
+    select: { id: true },
+  });
+  return [`customer:${customerId}`, ...guestSessions.map((session) => `guest:${session.id}`)];
 }
 
 const PENDING_STATUSES: OrderStatus[] = [
@@ -234,6 +244,25 @@ export const placeOrder = async (input: CreateOrderInput) => {
         },
       });
 
+      // Create an order conversation so customer and staff can chat
+      const hotelStaff = await tx.adminUser.findMany({
+        where: { hotelId: group.hotelId === "default" ? undefined : group.hotelId, role: { in: ["HOTEL_ADMIN", "HOTEL_STAFF"] } },
+        select: { id: true },
+      });
+      await tx.conversation.create({
+        data: {
+          type: "ORDER",
+          orderId: order.id,
+          hotelId: group.hotelId === "default" ? undefined : group.hotelId,
+          participants: {
+            create: [
+              { kind: "CUSTOMER" as ParticipantKind, customerId: customer.id, canReply: true },
+              ...hotelStaff.map((admin) => ({ kind: "HOTEL_STAFF" as ParticipantKind, adminUserId: admin.id, canReply: true })),
+            ],
+          },
+        },
+      });
+
       const itemsSummary = group.orderItemData.map((it) => `${it.quantity}x ${it.name}`).join(", ");
       const outbox = await tx.eventOutbox.create({
         data: {
@@ -346,9 +375,11 @@ export const getOrders = async (statusFilter?: OrderStatus, hotelId?: string) =>
 /**
  * Retrieves a single order by ID.
  */
-export const getOrderById = async (id: string) => {
+export const getOrderById = async (id: string, hotelId?: string) => {
+  const where: any = { id };
+  if (hotelId) where.hotelId = hotelId;
   const order = await prisma.order.findUnique({
-    where: { id },
+    where,
     include: {
       customer: true,
       orderItems: true,
@@ -362,19 +393,32 @@ export const getOrderById = async (id: string) => {
   return formatOrderResponse(order);
 };
 
+/** Customer/guest tracking must be scoped to the order owner, never only to a UUID. */
+export const getOrderForCustomer = async (id: string, customerId: string) => {
+  const order = await prisma.order.findFirst({
+    where: { id, customerId },
+    include: { customer: true, orderItems: true },
+  });
+  if (!order) throw new Error("Order not found");
+  return formatOrderResponse(order);
+};
+
 /**
- * Canonical forward-only order status pipeline.
- * WHY: Orders must always progress forward. Lower rank = earlier stage.
- * CANCELLED is treated as a terminal exit from any non-terminal state.
+ * Explicitly enumerated valid order status transitions.
+ * WHY: A transition matrix is safer than a rank-based check because it
+ * prevents impossible transitions at the design level (e.g. DELIVERED → PREPARING).
+ * CANCELLED is a terminal state: no transitions out, reachable from any
+ * non-terminal state (NEW, ACCEPTED, PREPARING, READY_FOR_DELIVERY, OUT_FOR_DELIVERY).
+ * DELIVERED is also terminal.
  */
-const STATUS_RANK: Record<string, number> = {
-  NEW:                1,
-  ACCEPTED:           2,
-  PREPARING:          3,
-  READY_FOR_DELIVERY: 4,
-  OUT_FOR_DELIVERY:   5,
-  DELIVERED:          6,
-  CANCELLED:          99,
+const ALLOWED_TRANSITIONS: Record<string, ReadonlyArray<string>> = {
+  NEW:                ["ACCEPTED", "PREPARING", "CANCELLED"],
+  ACCEPTED:           ["PREPARING", "READY_FOR_DELIVERY", "CANCELLED"],
+  PREPARING:          ["READY_FOR_DELIVERY", "OUT_FOR_DELIVERY", "CANCELLED"],
+  READY_FOR_DELIVERY: ["OUT_FOR_DELIVERY", "CANCELLED"],
+  OUT_FOR_DELIVERY:   ["DELIVERED", "CANCELLED"],
+  DELIVERED:          [],
+  CANCELLED:          [],
 };
 
 /**
@@ -402,7 +446,8 @@ async function restoreStockFromCancellation(tx: any, orderItems: any[]) {
 /**
  * Updates an order status and broadcasts the update via WebSockets to customer and admin.
  * Sends SMS notification to customer when status changes to OUT_FOR_DELIVERY.
- * Enforces forward-only progression: an order can never be reverted to a previous status.
+ * Enforces an explicit transition matrix: only enumerated (from→to) pairs are allowed.
+ * Terminal states (DELIVERED, CANCELLED) cannot transition to any state.
  * On CANCELLED, atomically restores stock quantities via restoreStockFromCancellation.
  */
 export const updateOrderStatus = async (id: string, newStatus: OrderStatus, cancelReason?: string, hotelId?: string) => {
@@ -417,21 +462,16 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus, canc
     throw new Error("Order does not belong to your hotel");
   }
 
-  const hotel = hotelId ? await prisma.hotel.findUnique({ where: { id: hotelId } }) : await getDefaultHotel();
+  const hotel = hotelId ? await prisma.hotel.findUnique({ where: { id: hotelId } }) : existing.hotelId ? await prisma.hotel.findUnique({ where: { id: existing.hotelId } }) : await getDefaultHotel();
   const hotelName = hotel?.name ?? "Ladha Deliveries";
 
-  const currentRank = STATUS_RANK[existing.status] ?? 0;
-  const newRank     = STATUS_RANK[newStatus]       ?? 0;
-
-  if (newStatus !== "CANCELLED" && newRank <= currentRank) {
+  const allowed = ALLOWED_TRANSITIONS[existing.status];
+  if (!allowed || !allowed.includes(newStatus)) {
+    if (existing.status === "DELIVERED" || existing.status === "CANCELLED") {
+      throw new Error(`Order is already "${existing.status}" and cannot be changed further.`);
+    }
     throw new Error(
-      `Cannot move order from "${existing.status}" back to "${newStatus}". Status can only advance forward.`
-    );
-  }
-
-  if (existing.status === "DELIVERED" || existing.status === "CANCELLED") {
-    throw new Error(
-      `Order is already "${existing.status}" and cannot be changed further.`
+      `Cannot move order from "${existing.status}" to "${newStatus}". Allowed: ${(allowed || []).join(", ") || "(none)"}`
     );
   }
 
@@ -498,34 +538,39 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus, canc
   }
 
   const orderHotelId = existing.hotelId || undefined;
+  const customerRecipientIdentityKeys = await getOrderOwnerIdentityKeys(existing.customerId);
 
   wsHub.notifyOrderStatusUpdate(id, {
     type: "ORDER_STATUS_UPDATED",
     payload: formattedOrder,
-  }, orderHotelId);
+  }, orderHotelId, customerRecipientIdentityKeys);
 
   if (newStatus === "OUT_FOR_DELIVERY") {
-    wsHub.broadcastNotification({
-      type: "NOTIFICATION",
+    const dispatchNotification = {
+      type: "NOTIFICATION" as const,
       payload: {
         category: "dispatch",
         title: "🚀 Order Dispatched",
         message: `Order #${formattedOrder.orderNumber} is out for delivery!`,
         orderId: id,
       },
-    }, orderHotelId);
+    };
+    wsHub.broadcastToHotelAdmins(orderHotelId, dispatchNotification);
+    wsHub.broadcastToIdentities(customerRecipientIdentityKeys, dispatchNotification);
   }
 
   if (newStatus === "CANCELLED") {
-    wsHub.broadcastNotification({
-      type: "NOTIFICATION",
+    const cancelNotification = {
+      type: "NOTIFICATION" as const,
       payload: {
         category: "cancellation",
         title: "⚠️ Order Cancelled",
         message: `Order #${formattedOrder.orderNumber} has been cancelled. Reason: ${cancelReason || "N/A"}`,
         orderId: id,
       },
-    }, orderHotelId);
+    };
+    wsHub.broadcastToHotelAdmins(orderHotelId, cancelNotification);
+    wsHub.broadcastToIdentities(customerRecipientIdentityKeys, cancelNotification);
   }
 
   if (newStatus === "OUT_FOR_DELIVERY" && formattedOrder.customer?.phone) {
@@ -612,11 +657,15 @@ export const cancelOrderByCustomer = async (id: string, customerId: string, reas
   }
 
   const cancelReason = reason ? `Cancelled by customer: ${reason}` : "Cancelled by customer";
-  return updateOrderStatus(id, "CANCELLED", cancelReason);
+  return updateOrderStatus(id, "CANCELLED", cancelReason, order.hotelId || undefined);
 };
 
 /**
  * Updates payment status and amount paid for an order.
+ * Guards:
+ *  - REFUNDED orders cannot be changed further (terminal payment state).
+ *  - CANCELLED orders: only REFUNDED or UNPAID is allowed (refund processed or write-off).
+ *  - Non-cancelled orders: standard UNPAID → PARTIAL → PAID flow.
  * When marked PAID, auto-sets amountPaid = totalAmount.
  * When marked UNPAID, sets amountPaid = 0.
  * Broadcasts ORDER_PAYMENT_UPDATED via WS and writes outbox event.
@@ -633,25 +682,57 @@ export const updateOrderPayment = async (id: string, data: { paymentStatus?: Pay
     throw new Error("Order does not belong to your hotel");
   }
 
+  if (existing.paymentStatus === "REFUNDED") {
+    throw new Error("Payment is already marked as REFUNDED and cannot be changed.");
+  }
+
   const total = Number(existing.totalAmount);
   let paymentStatus = data.paymentStatus ?? existing.paymentStatus;
   let amountPaid = data.amountPaid ?? Number(existing.amountPaid);
+  let refundedAt: Date | null = null;
 
-  if (data.paymentStatus === "PAID") {
-    amountPaid = total;
-  } else if (data.paymentStatus === "UNPAID") {
-    amountPaid = 0;
+  // CANCELLED order payment constraints
+  if (existing.status === "CANCELLED") {
+    if (data.paymentStatus === "REFUNDED") {
+      if (Number(existing.amountPaid) <= 0) {
+        throw new Error("Cannot mark as REFUNDED — no payment was collected on this order.");
+      }
+      amountPaid = 0;
+      refundedAt = new Date();
+    } else if (data.paymentStatus === "PAID" || data.paymentStatus === "PARTIAL") {
+      throw new Error("Cannot collect payment on a cancelled order. Process a refund instead.");
+    } else if (data.paymentStatus === "UNPAID" || !data.paymentStatus) {
+      paymentStatus = "UNPAID";
+      amountPaid = 0;
+    }
+  } else {
+    if (data.paymentStatus === "REFUNDED") {
+      throw new Error("Cannot mark a non-cancelled order as REFUNDED. You must cancel the order first.");
+    }
+    if (data.paymentStatus === "PAID") {
+      amountPaid = total;
+    } else if (data.paymentStatus === "UNPAID") {
+      amountPaid = 0;
+    }
   }
 
   const updated = await prisma.order.update({
     where: { id },
-    data: { paymentStatus, amountPaid },
+    data: { paymentStatus, amountPaid, ...(refundedAt ? { refundedAt } : {}) },
     include: { customer: true, orderItems: true },
   });
 
   const formatted = formatOrderResponse(updated);
 
-  wsHub.broadcastNotification({
+  wsHub.broadcastToHotelAdmins(existing.hotelId || undefined, {
+    type: "ORDER_PAYMENT_UPDATED",
+    payload: {
+      ...formatted,
+      paymentStatus,
+      amountPaid,
+    },
+  });
+  wsHub.broadcastToIdentities(await getOrderOwnerIdentityKeys(existing.customerId), {
     type: "ORDER_PAYMENT_UPDATED",
     payload: {
       ...formatted,
@@ -660,7 +741,7 @@ export const updateOrderPayment = async (id: string, data: { paymentStatus?: Pay
     },
   });
 
-  const hotel = await getDefaultHotel();
+  const hotel = existing.hotelId ? await prisma.hotel.findUnique({ where: { id: existing.hotelId } }) : await getDefaultHotel();
   const hotelName = hotel?.name ?? "Ladha Deliveries";
 
     (async () => {
@@ -736,6 +817,7 @@ export const getDashboardMetrics = async (hotelId?: string): Promise<DashboardMe
   let deliveredOrders = 0;
   let pendingOrders = 0;
   let cancelledOrders = 0;
+  let refundedCount = 0;
   const itemCounts: Record<string, number> = {};
 
   for (const order of allOrders) {
@@ -753,6 +835,10 @@ export const getDashboardMetrics = async (hotelId?: string): Promise<DashboardMe
       cancelledOrders++;
     }
 
+    if (order.paymentStatus === "REFUNDED") {
+      refundedCount++;
+    }
+
     for (const item of order.orderItems) {
       itemCounts[item.name] = (itemCounts[item.name] ?? 0) + item.quantity;
     }
@@ -760,11 +846,11 @@ export const getDashboardMetrics = async (hotelId?: string): Promise<DashboardMe
 
   const nonCancelledCount = allOrders.length - cancelledOrders;
   const outstandingBalance = allOrders
-    .filter((o) => o.paymentStatus !== "PAID" && o.status !== "CANCELLED")
+    .filter((o) => o.paymentStatus !== "PAID" && o.paymentStatus !== "REFUNDED" && o.status !== "CANCELLED")
     .reduce((sum, o) => sum + (Number(o.totalAmount) - Number(o.amountPaid)), 0);
 
   const refundsDue = allOrders
-    .filter((o) => o.status === "CANCELLED" && Number(o.amountPaid) > 0)
+    .filter((o) => o.status === "CANCELLED" && Number(o.amountPaid) > 0 && o.paymentStatus !== "REFUNDED")
     .reduce((sum, o) => sum + Number(o.amountPaid), 0);
 
   const topItems = Object.entries(itemCounts)
@@ -777,6 +863,7 @@ export const getDashboardMetrics = async (hotelId?: string): Promise<DashboardMe
     deliveredOrders,
     pendingOrders,
     cancelledOrders,
+    refundsProcessed: refundedCount,
     totalSales,
     outstandingBalance,
     refundsDue,
@@ -790,6 +877,7 @@ function formatOrderResponse(order: any) {
     ...order,
     totalAmount: Number(order.totalAmount),
     amountPaid: Number(order.amountPaid),
+    refundedAt: order.refundedAt ? order.refundedAt.toISOString() : null,
     orderItems: order.orderItems?.map((item: any) => ({
       ...item,
       unitPrice: Number(item.unitPrice),

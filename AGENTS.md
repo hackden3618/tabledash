@@ -304,3 +304,45 @@ Do not start step 3 before step 2's dispatcher exists — hotel/admin/staff crea
 - Platform-level surfaces (OpenAPI title, `/platform` chrome, platform-originated SMS, app shell footer) say **TableDash Deliveries**.
 - Hotel-level surfaces (per-hotel SMS, `/kitchen` header, marketplace hotel badges) say that hotel's own name.
 - Completion test: grep the repo for "Wambu" after Part 5 lands — zero results in code, with the sole exception of that hotel's own seeded `Hotel.name` row in the database.
+
+## Phase Omega — Production Readiness & System Hardening
+
+Completed in the most recent work session. All items verified with `tsc --noEmit` + `vite build` passing (exit 0).
+
+### Order Lifecycle State Machine (data integrity)
+- Replaced rank-based `STATUS_RANK` check with explicit `ALLOWED_TRANSITIONS` matrix in `orders/service.ts` — impossible transitions (DELIVERED→PREPARING, CANCELLED→any) are blocked by design.
+- Added `REFUNDED` to `PaymentStatus` Prisma enum with `refundedAt` column on `Order` — migration `20260729200000_add_refunded_enum`.
+- `updateOrderPayment` now guards against payment mutation on `REFUNDED` orders, blocks payment collection on `CANCELLED` orders, and enforces refund semantics.
+- `getDashboardMetrics` now tracks `refundsProcessed`, excludes `REFUNDED` from `outstandingBalance`, excludes already-refunded from `refundsDue`.
+- `formatOrderResponse` includes `refundedAt`.
+- `cancelOrderByCustomer` now passes `hotelId` for correct hotel-branded SMS.
+- `updateOrderStatus` resolves hotel name from `existing.hotelId` or `hotelId` param, not hardcoded `getDefaultHotel()`.
+- `updateOrderPayment` resolves hotel name from `existing.hotelId`, not `getDefaultHotel()`.
+- Updated `shared/types.ts` (`PaymentStatus` + `DashboardMetrics.refundsProcessed` + `OrderData.refundedAt`), `shared/schemas.ts` (REFUNDED in union), `DashboardMetrics` interface (added `refundsProcessed`).
+
+### WebSocket Architecture Hardening
+- Fixed order-specific notifications (`OUT_FOR_DELIVERY`, `CANCELLED`) to use `broadcastToIdentity` targeting the specific customer (not `broadcastNotification` which leaked to ALL customers).
+- `broadcastToHotelAdmins` + `broadcastToIdentity` now replace `broadcastNotification` for all order lifecycle events.
+- Added stale client Sweep every 30s in `WebSocketHub` (removes clients inactive for 60s).
+- `broadcastNotification` in `orders/service.ts` no longer used for order events — replaced by targeted sends.
+- Fixed `updateOrderPayment` to also use targeted identity sends to customer + hotel admins.
+
+### Tenant Isolation Hardening
+- `GUEST` actors in `accessibleConversationWhere` restricted to `PLATFORM_NOTICE` only — no hotel notices, order conversations, or talk-to-staff. GUESTs only see platform announcements unless signed in.
+- `platform-notices` route recipient lookup (`getAnnouncementRecipientIdentityKeys`) includes customers across all hotels (platform-wide announcements).
+- Messaging route broadcast lookups (`body.hotelId`) replaced with server-validated `result.conversation.hotelId` / `created.hotelId` (`talk-to-staff`, `community-channels`).
+- `getOrderById` now accepts optional `hotelId` parameter for future multi-tenant scoping.
+
+### Design Consistency
+- Deleted legacy `BottomNavBar.tsx` duplicate (not imported anywhere).
+- Deleted legacy `Modal.tsx` (old version without framer-motion — not imported).
+- Fixed `PlatformAdminPage.tsx` Modal import to use `../../components/ui/Modal`.
+- Fixed `index.css` h1-h6 to use `var(--font-family-display)` (League Spartan) instead of `var(--font-family-base)`.
+- Synchronized `AdminBottomNavBar` badge sizing (`min-w-4 h-4 text-[0.55rem]`) and positioning (`-top-2 -right-2.5`) to match `BottomNav`.
+- Fixed `AdminBottomNavBar` inactive icon size (was 18px, now 20px) and active indicator width (`w-5` → `w-6`).
+
+### Notification WS Event Handling
+- Added `NOTIFICATION` event handler in `App.tsx` (dispatches push toasts for order dispatch/cancellation to the correct scope).
+- Added `ORDER_PAYMENT_UPDATED` handler in `App.tsx` (dispatches payment update toasts for admin views with status label and amount).
+- Added `HOTEL_CLOSING` handler in `App.tsx` (dispatches closing countdown + closed-toast to correct scope).
+- Added `HOTEL_STATUS_UPDATED` handler in `App.tsx` (dispatches open/closed toast to correct scope).

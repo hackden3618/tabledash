@@ -34,6 +34,7 @@ enum PaymentStatus {
     UNPAID
     PARTIAL
     PAID
+    REFUNDED
 }
 
 enum HotelRole {
@@ -95,6 +96,7 @@ model Hotel {
     products      Product[]
     orders        Order[]
     staffUsers    StaffUser[]
+    media         Media[]
 
     @@map("hotels")
 }
@@ -256,6 +258,7 @@ model Order {
     completedAt         DateTime?     @map("completed_at") @db.Timestamptz()
     cancelReason        String?       @map("cancel_reason")
     cancelledAtStatus   String?       @map("cancelled_at_status")
+    refundedAt          DateTime?     @map("refunded_at") @db.Timestamptz()
 
     customer   Customer    @relation(fields: [customerId], references: [id])
     hotel      Hotel?       @relation(fields: [hotelId], references: [id])
@@ -293,6 +296,33 @@ model EventOutbox {
 
     @@index([status])
     @@map("event_outbox")
+}
+
+enum MediaStatus {
+    UPLOADING
+    PROCESSING
+    READY
+    FAILED
+}
+
+model Media {
+    id          String     @id @default(uuid()) @db.Uuid
+    originalName String    @map("original_name")
+    mimeType     String    @map("mime_type")
+    sizeBytes    Int       @map("size_bytes")
+    url          String    @db.Text
+    thumbnailUrl String?   @map("thumbnail_url") @db.Text
+    width        Int?
+    height       Int?
+    status       MediaStatus @default(UPLOADING)
+    hotelId      String?   @map("hotel_id") @db.Uuid
+    createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+    updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+    deletedAt    DateTime? @map("deleted_at") @db.Timestamptz()
+
+    hotel Hotel? @relation(fields: [hotelId], references: [id])
+
+    @@map("media")
 }
 
 model Setting {

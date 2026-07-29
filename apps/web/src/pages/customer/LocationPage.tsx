@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useCart } from "../../context/CartContext";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
 import { apiPost } from "../../lib/api";
-import { useWebSocket } from "../../lib/websocket";
 import { Header } from "../../components/ui/Header";
 import { Button } from "../../components/ui/Button";
 import { Input, Textarea } from "../../components/ui/Input";
@@ -57,15 +56,20 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
     }
   }, [isLoggedIn, customer]);
 
-  useWebSocket("customer", undefined, (event) => {
-    if (event.type === "HOTEL_CLOSING") {
-      const data = event.payload as { hotelId?: string };
-      if (data.hotelId) setClosedHotelIds((prev) => prev.includes(data.hotelId!) ? prev : [...prev, data.hotelId!]);
-    } else if (event.type === "HOTEL_STATUS_UPDATED") {
-      const status = event.payload as { isOpen: boolean; hotelId?: string };
-      if (status.hotelId) setClosedHotelIds((prev) => status.isOpen ? prev.filter((id) => id !== status.hotelId) : prev.includes(status.hotelId!) ? prev : [...prev, status.hotelId!]);
-    }
-  });
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail.type === "HOTEL_CLOSING") {
+        const data = detail.payload as { hotelId?: string };
+        if (data.hotelId) setClosedHotelIds((prev) => prev.includes(data.hotelId!) ? prev : [...prev, data.hotelId!]);
+      } else if (detail.type === "HOTEL_STATUS_UPDATED") {
+        const status = detail.payload as { isOpen: boolean; hotelId?: string };
+        if (status.hotelId) setClosedHotelIds((prev) => status.isOpen ? prev.filter((id) => id !== status.hotelId) : prev.includes(status.hotelId!) ? prev : [...prev, status.hotelId!]);
+      }
+    };
+    window.addEventListener("tabledash:realtime", handler);
+    return () => window.removeEventListener("tabledash:realtime", handler);
+  }, [setClosedHotelIds]);
 
   useEffect(() => {
     if (!isLoggedIn && (firstName || phone || stallNumber || locationDescription || marketSection)) {

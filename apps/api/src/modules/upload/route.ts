@@ -1,23 +1,11 @@
-/**
- * Purpose: File & Image Upload Management Route for tableDash backend.
- * Responsibilities: Handles multipart image uploads for menu items, saves them to local disk storage,
- *   and serves static upload URLs (/uploads/:filename).
- * Dependencies: Elysia, Bun.file, node:fs/promises, node:path.
- * When to modify: When changing upload file size limits, allowed extensions, or storage providers.
- */
-
 import { jwt } from "@elysiajs/jwt";
 import { Elysia, t } from "elysia";
-import { existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
 import { env } from "../../../../../shared/config";
 import { verifyAdminToken } from "../auth/service";
-
-// Ensure uploads directory exists inside apps/api/uploads
-const UPLOAD_DIR = join(process.cwd(), "apps", "api", "uploads");
-if (!existsSync(UPLOAD_DIR)) {
-  mkdirSync(UPLOAD_DIR, { recursive: true });
-}
+import { uploadMedia } from "../media/service";
+import { getLocalUploadPath } from "../media/local";
+import { MEDIA_STORAGE_CONFIG } from "../media/types";
+import { existsSync } from "node:fs";
 
 export const uploadRoute = new Elysia({ prefix: "/api/v1" })
   .use(
@@ -26,20 +14,20 @@ export const uploadRoute = new Elysia({ prefix: "/api/v1" })
       secret: env.jwtSecret,
     })
   )
-  // Serve static files from /uploads/:filename
-  .get("/uploads/:filename", async ({ params: { filename }, set }) => {
-    const filePath = join(UPLOAD_DIR, filename);
-    const file = Bun.file(filePath);
-
-    if (!(await file.exists())) {
+  // Local storage is intentionally development-only. Production serves images
+  // directly from object storage/CDN rather than this application container.
+  .get("/uploads/:filename", ({ params, set }) => {
+    if (MEDIA_STORAGE_CONFIG.provider !== "local" || !/^[a-zA-Z0-9._-]+$/.test(params.filename)) {
       set.status = 404;
       return { success: false, error: "File not found" };
     }
-
-    return file;
-  })
-
-  // POST /api/v1/upload — upload an image file (admin only)
+    const filePath = getLocalUploadPath(params.filename);
+    if (!existsSync(filePath)) {
+      set.status = 404;
+      return { success: false, error: "File not found" };
+    }
+    return new Response(Bun.file(filePath));
+  }, { params: t.Object({ filename: t.String() }) })
   .post(
     "/upload",
     async ({ body, set, headers, jwt }) => {
@@ -49,10 +37,17 @@ export const uploadRoute = new Elysia({ prefix: "/api/v1" })
         return { success: false, error: "Missing or invalid authorization header" };
       }
       const token = authHeader.split(" ")[1] ?? "";
-      try { await verifyAdminToken(token, (t) => jwt.verify(t)); }
-      catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
+      let adminHotelId: string | undefined;
+      try {
+        const admin = await verifyAdminToken(token, (t) => jwt.verify(t));
+        if (!admin.hotelId) throw new Error("This account is not assigned to a hotel");
+        adminHotelId = admin.hotelId;
+      } catch {
+        set.status = 403;
+        return { success: false, error: "Invalid session or hotel assignment" };
+      }
       const file = body.file as File;
-      const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
+      const MAX_SIZE = 10 * 1024 * 1024;
 
       if (!file) {
         set.status = 400;
@@ -61,43 +56,32 @@ export const uploadRoute = new Elysia({ prefix: "/api/v1" })
 
       if (file.size > MAX_SIZE) {
         set.status = 400;
-        return { success: false, error: "File size exceeds 5 MB limit" };
+        return { success: false, error: "File size exceeds 10 MB limit" };
       }
 
-      // Validate mime type
       if (!file.type.startsWith("image/")) {
         set.status = 400;
         return { success: false, error: "Only image files (PNG, JPG, WEBP) are allowed" };
       }
 
-      // Generate unique file name
-      const ext = file.name.split(".").pop() || "png";
-      const filename = `img-${Date.now()}-${Math.floor(Math.random() * 10000)}.${ext}`;
-      const destination = join(UPLOAD_DIR, filename);
-
-      const arrayBuffer = await file.arrayBuffer();
-      await Bun.write(destination, arrayBuffer);
-
-      const publicUrl = process.env.PUBLIC_URL ?? "http://localhost:3000";
-      const imageUrl = `${publicUrl}/api/v1/uploads/${filename}`;
-
-      return {
-        success: true,
-        data: {
-          url: imageUrl,
-          filename: filename,
-        },
-      };
+      const buffer = Buffer.from(await file.arrayBuffer());
+      try {
+        const result = await uploadMedia(buffer, file.name, {
+          hotelId: adminHotelId,
+        });
+        return { success: true, data: result };
+      } catch (err: any) {
+        set.status = 500;
+        return { success: false, error: err.message || "Upload failed" };
+      }
     },
     {
       body: t.Object({
-        file: t.File({
-          description: "Menu item image file",
-        }),
+        file: t.File({ description: "Image file (PNG, JPG, WEBP, max 10 MB)" }),
       }),
       detail: {
-        tags: ["Menu"],
-        summary: "Upload image file for menu items",
+        tags: ["Media"],
+        summary: "Upload an image file to object storage",
       },
     }
   );

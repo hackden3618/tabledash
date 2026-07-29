@@ -146,6 +146,38 @@ export const updateProductStock = async (id: string, stockQty: number, hotelId?:
   return formattedProduct;
 };
 
+export const updateProduct = async (id: string, input: { name?: string; category?: string; imageUrl?: string; price?: number; available?: boolean }, hotelId?: string) => {
+  const existing = await prisma.product.findUnique({ where: { id } });
+  if (!existing) throw new Error("Product not found");
+  if (hotelId && existing.hotelId && existing.hotelId !== hotelId) {
+    throw new Error("Product does not belong to your hotel");
+  }
+
+  const updateData: any = {};
+  if (input.name !== undefined) updateData.name = input.name;
+  if (input.category !== undefined) updateData.category = input.category;
+  if (input.imageUrl !== undefined) updateData.imageUrl = input.imageUrl;
+  if (input.price !== undefined) updateData.price = input.price;
+  if (input.available !== undefined) updateData.available = input.available;
+
+  const product = await prisma.product.update({
+    where: { id },
+    data: updateData,
+  });
+
+  const formattedProduct = {
+    ...product,
+    price: Number(product.price),
+  };
+
+  wsHub.broadcastMenuUpdate({
+    type: "MENU_AVAILABILITY_UPDATED",
+    payload: formattedProduct,
+  });
+
+  return formattedProduct;
+};
+
 /**
  * Soft-deletes a menu item to preserve foreign key order history.
  * Marks deleted=true and available=false, and broadcasts update to clients.

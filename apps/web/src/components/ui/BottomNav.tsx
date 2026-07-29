@@ -2,7 +2,7 @@ import React from "react";
 import { motion } from "framer-motion";
 import { useCart } from "../../context/CartContext";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
-import { MapPin, ShoppingBag, Utensils, UserCircle2, MessageCircle } from "lucide-react";
+import { MapPin, ShoppingBag, Utensils, UserCircle2, Inbox } from "lucide-react";
 import { apiGet } from "../../lib/api";
 
 export type CustomerTab = "menu" | "cart" | "tracking" | "conversations" | "account";
@@ -17,7 +17,7 @@ const tabs: { key: CustomerTab; label: string; icon: React.ElementType }[] = [
   { key: "menu", label: "Menu", icon: Utensils },
   { key: "cart", label: "Cart", icon: ShoppingBag },
   { key: "tracking", label: "Tracker", icon: MapPin },
-  { key: "conversations", label: "Chats", icon: MessageCircle },
+  { key: "conversations", label: "Inbox", icon: Inbox },
   { key: "account", label: "Account", icon: UserCircle2 },
 ];
 

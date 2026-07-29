@@ -25,6 +25,15 @@ import {
 } from "./service";
 import { verifyAdminToken } from "../auth/service";
 
+function requireHotelAdmin(admin: { role: string; hotelId: string | null }) {
+  if (admin.role !== "HOTEL_ADMIN" || !admin.hotelId) throw new Error("Only a hotel administrator can manage staff accounts");
+}
+
+function requireHotelAccount(admin: { hotelId: string | null }): string {
+  if (!admin.hotelId) throw new Error("This account is not assigned to a hotel");
+  return admin.hotelId;
+}
+
 export const settingsRoute = new Elysia({
   prefix: `${env.apiPrefix}/settings`,
   detail: {
@@ -46,7 +55,9 @@ export const settingsRoute = new Elysia({
       try { const admin = await verifyAdminToken(token, (t) => jwt.verify(t)); adminHotelId = admin.hotelId ?? undefined; } catch {}
     }
 
-    const staffPhone = await getStaffPhone();
+    // Staff contact details are operational data, not marketplace data. Do not
+    // expose them through the unauthenticated hotel settings response.
+    const staffPhone = adminHotelId ? await getStaffPhone() : null;
     const status = await getHotelIsOpen(adminHotelId);
     const hotelName = await getHotelName(adminHotelId);
     const hotelImageUrl = await getHotelImageUrl(adminHotelId);
@@ -75,20 +86,23 @@ export const settingsRoute = new Elysia({
       catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
 
       try {
+        const hotelId = requireHotelAccount(admin);
         let staffPhone = await getStaffPhone();
-        let status = await getHotelIsOpen(admin.hotelId ?? undefined);
+        let status = await getHotelIsOpen(hotelId);
         let hotelImageUrl: string | null = null;
 
         if (body.staffPhone !== undefined) {
+          requireHotelAdmin(admin);
           staffPhone = await updateStaffPhone(body.staffPhone);
         }
 
         if (body.hotelIsOpen !== undefined) {
-          status = await updateHotelIsOpen(body.hotelIsOpen, body.autoCloseAt, admin.hotelId ?? undefined);
+          status = await updateHotelIsOpen(body.hotelIsOpen, body.autoCloseAt, hotelId);
         }
 
         if (body.hotelImageUrl !== undefined) {
-          hotelImageUrl = await updateHotelImageUrl(body.hotelImageUrl, admin.hotelId ?? undefined);
+          requireHotelAdmin(admin);
+          hotelImageUrl = await updateHotelImageUrl(body.hotelImageUrl, hotelId);
         }
 
         return {
@@ -127,7 +141,9 @@ export const settingsRoute = new Elysia({
       try { admin = await verifyAdminToken(token, (t) => jwt.verify(t)); }
       catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
 
-      const staff = await getStaffUsers(admin.hotelId ?? undefined);
+      try { requireHotelAdmin(admin); } catch (err: any) { set.status = 403; return { success: false, error: err.message }; }
+
+      const staff = await getStaffUsers(requireHotelAccount(admin));
       return { success: true, data: staff };
     }
   )
@@ -144,8 +160,10 @@ export const settingsRoute = new Elysia({
       try { admin = await verifyAdminToken(token, (t) => jwt.verify(t)); }
       catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
 
+      try { requireHotelAdmin(admin); } catch (err: any) { set.status = 403; return { success: false, error: err.message }; }
+
       try {
-        const created = await addStaffUser(body, admin.hotelId ?? undefined);
+        const created = await addStaffUser(body, requireHotelAccount(admin));
         return { success: true, data: created };
       } catch (err: any) {
         set.status = 400;
@@ -173,8 +191,10 @@ export const settingsRoute = new Elysia({
       try { admin = await verifyAdminToken(token, (t) => jwt.verify(t)); }
       catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
 
+      try { requireHotelAdmin(admin); } catch (err: any) { set.status = 403; return { success: false, error: err.message }; }
+
       try {
-        const updated = await updateStaffUser(params.id, body, admin.hotelId ?? undefined);
+        const updated = await updateStaffUser(params.id, body, requireHotelAccount(admin));
         return { success: true, data: updated };
       } catch (err: any) {
         set.status = 400;
@@ -194,9 +214,10 @@ export const settingsRoute = new Elysia({
     if (!authHeader?.startsWith("Bearer ")) { set.status = 401; return { success: false, error: "Missing or invalid authorization header" }; }
     try {
       const admin = await verifyAdminToken(authHeader.slice(7), (t) => jwt.verify(t));
-      const staff = await provisionStaffLogin(params.id, admin.hotelId ?? undefined);
+      requireHotelAdmin(admin);
+      const staff = await provisionStaffLogin(params.id, requireHotelAccount(admin));
       return { success: true, data: staff };
-    } catch (err: any) { set.status = 400; return { success: false, error: err.message || "Unable to provision staff login" }; }
+    } catch (err: any) { set.status = err.message?.includes("Only a hotel administrator") ? 403 : 400; return { success: false, error: err.message || "Unable to provision staff login" }; }
   }, { params: t.Object({ id: t.String({ format: "uuid" }) }) })
   .delete("/staff/:id", async ({ params, set, headers, jwt }) => {
     const authHeader = headers["authorization"];
@@ -209,8 +230,10 @@ export const settingsRoute = new Elysia({
     try { admin = await verifyAdminToken(token, (t) => jwt.verify(t)); }
     catch { set.status = 401; return { success: false, error: "Invalid or expired session token" }; }
 
+    try { requireHotelAdmin(admin); } catch (err: any) { set.status = 403; return { success: false, error: err.message }; }
+
     try {
-      await deleteStaffUser(params.id, admin.hotelId ?? undefined);
+      await deleteStaffUser(params.id, requireHotelAccount(admin));
       return { success: true };
     } catch (err: any) {
       set.status = 400;

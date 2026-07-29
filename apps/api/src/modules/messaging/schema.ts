@@ -2,24 +2,33 @@ import { t } from "elysia";
 
 export const ConversationIdSchema = t.Object({ id: t.String({ format: "uuid" }) });
 
-export const CreateConversationSchema = t.Object({
-  type: t.Union([t.Literal("DIRECT"), t.Literal("GROUP"), t.Literal("SUPPORT")]),
-  hotelId: t.Optional(t.String({ format: "uuid" })),
-  title: t.Optional(t.String({ maxLength: 120 })),
-  targetAdminUserId: t.Optional(t.String({ format: "uuid" })),
-  targetCustomerId: t.Optional(t.String({ format: "uuid" })),
-  targetGuestIdentityId: t.Optional(t.String({ format: "uuid" })),
-  adminUserIds: t.Optional(t.Array(t.String({ format: "uuid" }), { maxItems: 50 })),
-});
-
 export const SendMessageSchema = t.Object({
   body: t.String({ minLength: 1, maxLength: 4000 }),
   replyToId: t.Optional(t.String({ format: "uuid" })),
 });
 
-export const AnnouncementSchema = t.Object({
-  type: t.Union([t.Literal("HOTEL_ANNOUNCEMENT"), t.Literal("GLOBAL_ANNOUNCEMENT")]),
-  hotelId: t.Optional(t.String({ format: "uuid" })),
+export const HotelNoticeSchema = t.Object({
+  hotelId: t.String({ format: "uuid" }),
   title: t.Optional(t.String({ maxLength: 120 })),
   body: t.String({ minLength: 1, maxLength: 4000 }),
+});
+
+export const PlatformNoticeSchema = t.Object({
+  title: t.Optional(t.String({ maxLength: 120 })),
+  body: t.String({ minLength: 1, maxLength: 4000 }),
+});
+
+export const TalkToStaffSchema = t.Object({
+  hotelId: t.String({ format: "uuid" }),
+  body: t.Optional(t.String({ minLength: 1, maxLength: 4000 })),
+});
+
+/** Authenticated customer or hotel-staff request to Ladha platform support. */
+export const PlatformSupportSchema = t.Object({
+  body: t.Optional(t.String({ minLength: 1, maxLength: 4000 })),
+});
+
+export const CommunityChannelSchema = t.Object({
+  hotelId: t.String({ format: "uuid" }),
+  channelName: t.String({ minLength: 1, maxLength: 60 }),
 });

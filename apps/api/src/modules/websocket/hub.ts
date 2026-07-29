@@ -23,6 +23,43 @@ interface ClientSocket {
 
 export class WebSocketHub {
   private clients: Map<string, ClientSocket> = new Map();
+  private cleanupInterval: ReturnType<typeof setInterval> | null = null;
+  private static readonly STALE_TIMEOUT_MS = 60_000;
+  private static readonly CLEANUP_INTERVAL_MS = 30_000;
+
+  constructor() {
+    this.cleanupInterval = setInterval(() => this.sweepStaleClients(), WebSocketHub.CLEANUP_INTERVAL_MS);
+    if (typeof globalThis !== "undefined" && (globalThis as any).unref) {
+      (this.cleanupInterval as any).unref();
+    }
+  }
+
+  private sweepStaleClients(): void {
+    const now = Date.now();
+    const staleIds: string[] = [];
+    for (const [id, client] of this.clients) {
+      if (client.lastActiveAt && now - client.lastActiveAt > WebSocketHub.STALE_TIMEOUT_MS) {
+        staleIds.push(id);
+      }
+    }
+    for (const id of staleIds) {
+      this.clients.delete(id);
+    }
+    if (staleIds.length > 0) {
+      console.log(`[WS Hub] Swept ${staleIds.length} stale client(s)`);
+    }
+  }
+
+  /**
+   * Graceful shutdown — stop the cleanup interval and clear all clients.
+   */
+  public shutdown(): void {
+    if (this.cleanupInterval !== null) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+    this.clients.clear();
+  }
 
   /**
    * Registers a connected socket client.
@@ -55,6 +92,14 @@ export class WebSocketHub {
     return this.clients.get(socketId)?.conversationIds?.has(conversationId) ?? false;
   }
 
+  /** Adds a server-authorized conversation channel to the root socket. */
+  public joinConversation(socketId: string, conversationId: string): void {
+    const client = this.clients.get(socketId);
+    if (!client) return;
+    client.conversationIds ??= new Set<string>();
+    client.conversationIds.add(conversationId);
+  }
+
   public getIdentityKey(socketId: string): string | null {
     return this.clients.get(socketId)?.identityKey ?? null;
   }
@@ -69,7 +114,9 @@ export class WebSocketHub {
 
   /**
    * Broadcasts a message to admin clients belonging to a specific hotel.
-   * When hotelId is undefined, sends to all admin clients (platform-level).
+   * An undefined hotelId deliberately sends to nobody. Platform-wide events
+   * must use explicit platform identity recipients, rather than treating every
+   * connected hotel admin as a platform subscriber.
    * WHY: Tenant isolation — hotel A's staff should never see hotel B's orders.
    */
   public broadcastToHotelAdmins<T>(hotelId: string | undefined, message: WsMessage<T>): void {
@@ -77,9 +124,7 @@ export class WebSocketHub {
     const staleIds: string[] = [];
 
     for (const client of this.clients.values()) {
-      const matches = hotelId !== undefined
-        ? client.role === "admin" && client.hotelId === hotelId
-        : client.role === "admin";
+      const matches = Boolean(hotelId) && client.role === "admin" && client.hotelId === hotelId;
       if (matches) {
         try {
           client.send(payloadStr);
@@ -96,24 +141,31 @@ export class WebSocketHub {
   /**
    * Broadcasts a status update to:
    *   - Admin clients (optionally scoped by hotelId)
-   *   - Customers subscribed to this specific orderId (Order Tracker page)
-   *   - Customers with NO orderId subscription (My Orders page — browsing history)
-   * WHY: My Orders page connects without an orderId, so it must also receive status
-   *   patches to stay live without requiring a full profile refetch.
+   *   - The order owner's authenticated and linked guest sessions.
+   *
+   * A root customer socket must never receive another customer's order update.
+   * The caller resolves recipient identities from durable ownership data before
+   * handing the event to the hub; `orderId` is retained for event correlation.
    * @param orderId Target order ID being updated.
    * @param message Payload message containing updated order data.
-   * @param hotelId Optional — scopes admin broadcast to a specific hotel.
+   * @param hotelId Scopes the admin broadcast to a specific hotel.
+   * @param recipientIdentityKeys Customer/guest identities authorised for this order.
    */
-  public notifyOrderStatusUpdate<T>(orderId: string, message: WsMessage<T>, hotelId?: string): void {
+  public notifyOrderStatusUpdate<T>(
+    _orderId: string,
+    message: WsMessage<T>,
+    hotelId: string | undefined,
+    recipientIdentityKeys: string[]
+  ): void {
     const payloadStr = JSON.stringify(message);
     const staleIds: string[] = [];
+    const recipients = new Set(recipientIdentityKeys);
 
     for (const client of this.clients.values()) {
-      const isAdmin             = client.role === "admin" && (hotelId === undefined || client.hotelId === hotelId);
-      const isOrderTracker      = client.role === "customer" && client.orderId === orderId;
-      const isMyOrdersBrowser   = client.role === "customer" && !client.orderId;
+      const isAdmin = Boolean(hotelId) && client.role === "admin" && client.hotelId === hotelId;
+      const isOrderOwner = client.role === "customer" && client.identityKey !== undefined && recipients.has(client.identityKey);
 
-      if (isAdmin || isOrderTracker || isMyOrdersBrowser) {
+      if (isAdmin || isOrderOwner) {
         try {
           client.send(payloadStr);
         } catch (err) {
@@ -167,8 +219,10 @@ export class WebSocketHub {
     const staleIds: string[] = [];
 
     for (const client of this.clients.values()) {
-      const matchesAdmin = client.role === "admin" && (hotelId === undefined || client.hotelId === hotelId);
-      const matchesCustomer = client.role === "customer";
+      const matchesAdmin = Boolean(hotelId) && client.role === "admin" && client.hotelId === hotelId;
+      // Generic notifications do not have customer ownership information, so
+      // they must not be broadcast to all customer sockets.
+      const matchesCustomer = false;
       if (matchesAdmin || matchesCustomer) {
         try {
           client.send(payloadStr);

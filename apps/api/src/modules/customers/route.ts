@@ -21,6 +21,11 @@ import { getCustomerProfile, loginCustomer, registerCustomer, verifyCustomerToke
 import { verifyAdminToken } from "../auth/service";
 import { AUTH_LIMITER } from "../../lib/rate-limiter";
 
+function requireHotelAccount(admin: { hotelId: string | null }): string {
+  if (!admin.hotelId) throw new Error("This account is not assigned to a hotel");
+  return admin.hotelId;
+}
+
 export const customersRoute = new Elysia({
   prefix: `${env.apiPrefix}/customers`,
   detail: {
@@ -49,7 +54,9 @@ export const customersRoute = new Elysia({
       set.status = 401;
       return { success: false, error: "Invalid or expired session token" };
     }
-    const customers = await getAllCustomers(admin.hotelId ?? undefined);
+    let hotelId: string;
+    try { hotelId = requireHotelAccount(admin); } catch (err: any) { set.status = 403; return { success: false, error: err.message }; }
+    const customers = await getAllCustomers(hotelId);
     return { success: true, data: customers };
   })
 
@@ -72,7 +79,7 @@ export const customersRoute = new Elysia({
       return { success: false, error: "Invalid or expired session token" };
     }
     try {
-      const history = await getCustomerHistory(params.id, admin.hotelId ?? undefined);
+      const history = await getCustomerHistory(params.id, requireHotelAccount(admin));
       return { success: true, data: history };
     } catch (err: any) {
       set.status = 404;

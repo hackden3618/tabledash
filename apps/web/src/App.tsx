@@ -25,7 +25,7 @@ import { OrderTrackingPage } from "./pages/customer/OrderTrackingPage";
 import { SearchPage } from "./pages/customer/SearchPage";
 import { TrackingListPage } from "./pages/customer/TrackingListPage";
 import { CustomerProfilePage } from "./pages/customer/CustomerProfilePage";
-import { ConversationsPage } from "./pages/ConversationsPage";
+import { InboxPage } from "./pages/InboxPage";
 import { decodeJwt } from "./lib/jwt";
 import { useWebSocket, type WsEventPayload } from "./lib/websocket";
 
@@ -161,6 +161,31 @@ export function AppContent() {
     } else if (event.type === "ANNOUNCEMENT_PUBLISHED") {
       const announcement = event.payload as { title?: string; body?: string; sourceName?: string };
       if ((announcement as { senderIdentityKey?: string }).senderIdentityKey !== currentIdentityKey) pushNotification("info", announcement.title || "New announcement", `${announcement.sourceName ? `${announcement.sourceName}: ` : ""}${announcement.body || "A new announcement is available."}`, { scope: isCustomerView ? "customer" : currentView === "platform_admin" ? "platform" : "admin" });
+    } else if (event.type === "NOTIFICATION") {
+      const notification = event.payload as { category?: string; title?: string; message?: string };
+      const categoryMap: Record<string, "info" | "danger" | "success" | "warning"> = {
+        dispatch: "info",
+        cancellation: "warning",
+      };
+      pushNotification(categoryMap[notification.category || ""] || "info", notification.title || "", notification.message || "", { scope: isCustomerView ? "customer" : currentView === "platform_admin" ? "platform" : "admin" });
+    } else if (event.type === "ORDER_PAYMENT_UPDATED") {
+      const payment = event.payload as { paymentStatus?: string; amountPaid?: number; totalAmount?: number; orderNumber?: number };
+      if (currentView.startsWith("admin_") || currentView === "platform_admin") {
+        const statusLabel = payment.paymentStatus === "REFUNDED" ? "Refunded" : payment.paymentStatus === "PAID" ? "Paid" : payment.paymentStatus === "PARTIAL" ? "Partial" : "Unpaid";
+        pushNotification("info", "Payment Updated", `Order #${payment.orderNumber} — ${statusLabel} (KSh ${Number(payment.amountPaid ?? 0).toFixed(2)} / ${Number(payment.totalAmount ?? 0).toFixed(2)})`, { scope: currentView === "platform_admin" ? "platform" : "admin" });
+      }
+    } else if (event.type === "HOTEL_CLOSING") {
+      const closing = event.payload as { hotelId?: string; hotelName?: string; closingIn?: number };
+      if (closing.closingIn !== undefined && closing.closingIn <= 0) {
+        pushNotification("warning", "Hotel Closed", `${closing.hotelName || "A hotel"} is now closed for new orders.`, { scope: isCustomerView ? "customer" : currentView === "platform_admin" ? "platform" : "admin" });
+      } else if (closing.closingIn !== undefined) {
+        pushNotification("warning", "Hotel Closing", `${closing.hotelName || "A hotel"} will close in ${closing.closingIn}s — place your order soon.`, { scope: isCustomerView ? "customer" : currentView === "platform_admin" ? "platform" : "admin", duration: 10000 });
+      }
+    } else if (event.type === "HOTEL_STATUS_UPDATED") {
+      const status = event.payload as { hotelId?: string; hotelName?: string; isOpen?: boolean };
+      if (status.hotelName) {
+        pushNotification(status.isOpen ? "info" : "warning", status.isOpen ? "Hotel Open" : "Hotel Closed", `${status.hotelName} is now ${status.isOpen ? "open" : "closed"}.`, { scope: isCustomerView ? "customer" : currentView === "platform_admin" ? "platform" : "admin" });
+      }
     }
   }, undefined, realtimeToken);
   useEffect(() => {
@@ -221,7 +246,7 @@ export function AppContent() {
       )}
 
       {currentView === "customer_conversations" && (
-        <ConversationsPage token={customerToken} actorId={customer?.id} onBack={() => setCurrentView("customer_menu")} />
+        <InboxPage token={customerToken} actorId={customer?.id} onBack={() => setCurrentView("customer_menu")} />
       )}
 
       {currentView === "customer_cart" && (
@@ -389,7 +414,7 @@ export function AppContent() {
       )}
 
       {currentView === "admin_conversations" && (
-        <ConversationsPage token={adminToken} actorId={adminUser?.id} mode="hotel" hotelId={adminToken ? String(decodeJwt(adminToken)?.hotelId ?? "") : undefined} title="Messages" onBack={() => setCurrentView("admin_orders")} />
+        <InboxPage token={adminToken} actorId={adminUser?.id} mode="hotel" hotelId={adminToken ? String(decodeJwt(adminToken)?.hotelId ?? "") : undefined} title="Inbox" onBack={() => setCurrentView("admin_orders")} />
       )}
 
       {/* ─── Platform Admin Panel (self-contained auth) ──────────────── */}

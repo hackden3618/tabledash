@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { apiGet, apiPatch } from "../../lib/api";
-import { useWebSocket } from "../../lib/websocket";
 import { useNotifications } from "../../context/NotificationsContext";
 import { AdminNotificationBell, AdminNotificationPanel } from "../../components/AdminNotificationPanel";
 import { LogOut, ShoppingBag, MapPin, Phone, ChevronRight } from "lucide-react";
@@ -42,40 +41,46 @@ export const AdminOrdersPage: React.FC<AdminOrdersPageProps> = ({
     fetchOrders();
   }, []);
 
-  useWebSocket("admin", undefined, (event: any) => {
-    if (event.type === "ORDER_CREATED") {
-      const order = event.payload as any;
-      setOrders((prev) => [order, ...prev]);
-      pushNotification(
-        "info",
-        `🛎 New Order #${order.orderNumber}`,
-        `${order.customer?.firstName} (${order.customer?.phone}) ordered ${order.orderItems?.map((it: any) => `${it.quantity}× ${it.name}`).join(", ")} — KSh ${order.totalAmount}`
-      );
-    } else if (event.type === "ORDER_STATUS_UPDATED") {
-      const updated = event.payload as any;
-      setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
-      const statusLabels: Record<string, string> = {
-        ACCEPTED: "Accepted by Kitchen",
-        PREPARING: "Now Preparing",
-        READY_FOR_DELIVERY: "Ready for Delivery",
-        OUT_FOR_DELIVERY: "Out for Delivery",
-        DELIVERED: "Delivered",
-        CANCELLED: "Cancelled",
-      };
-      const label = statusLabels[updated.status] ?? updated.status;
-      pushNotification(
-        updated.status === "CANCELLED" ? "danger" : updated.status === "DELIVERED" ? "success" : "info",
-        `Order #${updated.orderNumber} — ${label}`,
-        `Customer: ${updated.customer?.firstName} · KSh ${updated.totalAmount} · ${updated.marketSection || "—"}`
-      );
-    } else if (event.type === "ORDER_BOUNCED") {
-      const b = (event.payload as any);
-      const reason = b.reason === "out_of_stock"
-        ? `Only ${b.availableQty} portion(s) available, customer requested ${b.requestedQty}`
-        : "Item is currently marked unavailable";
-      pushNotification("danger", `⚠️ Order Bounced — ${b.productName}`, `Customer ${b.customerName} (${b.customerPhone}) could not order. Reason: ${reason}. Restock or mark item available.`, { duration: 9000 });
-    }
-  });
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      const msg = detail as { type: string; payload: any };
+      if (msg.type === "ORDER_CREATED") {
+        const order = msg.payload;
+        setOrders((prev) => [order, ...prev]);
+        pushNotification(
+          "info",
+          `🛎 New Order #${order.orderNumber}`,
+          `${order.customer?.firstName} (${order.customer?.phone}) ordered ${order.orderItems?.map((it: any) => `${it.quantity}× ${it.name}`).join(", ")} — KSh ${order.totalAmount}`
+        );
+      } else if (msg.type === "ORDER_STATUS_UPDATED") {
+        const updated = msg.payload;
+        setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+        const statusLabels: Record<string, string> = {
+          ACCEPTED: "Accepted by Kitchen",
+          PREPARING: "Now Preparing",
+          READY_FOR_DELIVERY: "Ready for Delivery",
+          OUT_FOR_DELIVERY: "Out for Delivery",
+          DELIVERED: "Delivered",
+          CANCELLED: "Cancelled",
+        };
+        const label = statusLabels[updated.status] ?? updated.status;
+        pushNotification(
+          updated.status === "CANCELLED" ? "danger" : updated.status === "DELIVERED" ? "success" : "info",
+          `Order #${updated.orderNumber} — ${label}`,
+          `Customer: ${updated.customer?.firstName} · KSh ${updated.totalAmount} · ${updated.marketSection || "—"}`
+        );
+      } else if (msg.type === "ORDER_BOUNCED") {
+        const b = msg.payload;
+        const reason = b.reason === "out_of_stock"
+          ? `Only ${b.availableQty} portion(s) available, customer requested ${b.requestedQty}`
+          : "Item is currently marked unavailable";
+        pushNotification("danger", `⚠️ Order Bounced — ${b.productName}`, `Customer ${b.customerName} (${b.customerPhone}) could not order. Reason: ${reason}. Restock or mark item available.`, { duration: 9000 });
+      }
+    };
+    window.addEventListener("tabledash:realtime", handler);
+    return () => window.removeEventListener("tabledash:realtime", handler);
+  }, [pushNotification]);
 
   const handleAcceptOrder = async (orderId: string, e: React.MouseEvent) => {
     e.stopPropagation();

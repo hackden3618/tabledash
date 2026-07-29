@@ -2,8 +2,16 @@ import { jwt } from "@elysiajs/jwt";
 import { Elysia, t } from "elysia";
 import { env } from "../../../../../shared/config";
 import { resolveMessagingActor } from "./controller";
-import { AnnouncementSchema, ConversationIdSchema, CreateConversationSchema, SendMessageSchema } from "./schema";
-import { createAnnouncement, createConversation, getAnnouncementRecipientIdentityKeys, getConversationIdentityKeys, getConversationMessages, getDirectory, getDiscoverability, getUnreadCount, listConversations, markConversationRead, messagingActorIdentityKey, sendMessage, updateDiscoverability, updateMessage, deleteMessage, deleteConversation } from "./service";
+import { ConversationIdSchema, SendMessageSchema, HotelNoticeSchema, PlatformNoticeSchema, TalkToStaffSchema, PlatformSupportSchema, CommunityChannelSchema } from "./schema";
+import {
+  getInbox, getUnreadCount, getConversationMessages, getConversationIdentityKeys,
+  getAnnouncementRecipientIdentityKeys, sendMessage, sendOrderMessage,
+  getOrCreateTalkToStaff, getOrCreatePlatformSupport, sendTalkToStaffMessage,
+  createHotelNotice, createPlatformNotice,
+  createCommunityChannel,
+  updateMessage, deleteMessage, deleteConversation, markConversationRead,
+  assertConversationAccess, messagingActorIdentityKey,
+} from "./service";
 import { wsHub } from "../websocket/hub";
 import { prisma } from "../../../../../infrastructure/database/prisma";
 
@@ -12,13 +20,15 @@ export const messagingRoute = new Elysia({
   detail: { summary: "Ladha Conversations messaging", tags: ["Messaging"] },
 })
   .use(jwt({ name: "jwt", secret: env.jwtSecret }))
-  .get("/conversations", async ({ headers, jwt, set }) => {
+
+  // ── Inbox ──
+  .get("/inbox", async ({ headers, jwt, set }) => {
     try {
       const actor = await resolveMessagingActor(headers, (token) => jwt.verify(token));
-      return { success: true, data: await listConversations(actor) };
+      return { success: true, data: await getInbox(actor) };
     } catch (error: any) {
       set.status = 401;
-      return { success: false, error: error.message || "Unable to load conversations" };
+      return { success: false, error: error.message || "Unable to load inbox" };
     }
   })
   .get("/unread-count", async ({ headers, jwt, set }) => {
@@ -30,46 +40,8 @@ export const messagingRoute = new Elysia({
       return { success: false, error: error.message || "Unable to load unread count" };
     }
   })
-  .get("/directory", async ({ headers, jwt, query, set }) => {
-    try {
-      const actor = await resolveMessagingActor(headers, (token) => jwt.verify(token));
-      const people = await getDirectory(actor, query.q);
-      return { success: true, data: people.map((person: any) => ({ ...person, presence: wsHub.getPresence(person.firstName ? `customer:${person.id}` : `admin:${person.id}`) })) };
-    } catch (error: any) {
-      set.status = 403;
-      return { success: false, error: error.message || "Directory unavailable" };
-    }
-  }, { query: t.Object({ q: t.Optional(t.String({ maxLength: 80 })) }) })
-  .patch("/discoverability", async ({ headers, jwt, body, set }) => {
-    try {
-      const actor = await resolveMessagingActor(headers, (token) => jwt.verify(token));
-      return { success: true, data: await updateDiscoverability(actor, body.discoverable) };
-    } catch (error: any) {
-      set.status = 400;
-      return { success: false, error: error.message || "Unable to update discoverability" };
-    }
-  }, { body: t.Object({ discoverable: t.Boolean() }) })
-  .get("/discoverability", async ({ headers, jwt, set }) => {
-    try {
-      const actor = await resolveMessagingActor(headers, (token) => jwt.verify(token));
-      return { success: true, data: await getDiscoverability(actor) };
-    } catch (error: any) {
-      set.status = 403;
-      return { success: false, error: error.message || "Unable to load discoverability" };
-    }
-  })
-  .post("/conversations", async ({ headers, jwt, body, set }) => {
-    try {
-      const actor = await resolveMessagingActor(headers, (token) => jwt.verify(token));
-      const conversation = await createConversation(actor, body);
-      const presentedConversation = (await listConversations(actor)).find((item) => item.id === conversation.id) || conversation;
-      wsHub.broadcastToIdentities(await getConversationIdentityKeys(conversation.id), { type: "CONVERSATION_CREATED", payload: presentedConversation });
-      return { success: true, data: presentedConversation };
-    } catch (error: any) {
-      set.status = 400;
-      return { success: false, error: error.message || "Unable to create conversation" };
-    }
-  }, { body: CreateConversationSchema })
+
+  // ── Messages (shared across channels) ──
   .get("/conversations/:id/messages", async ({ headers, jwt, params, query, set }) => {
     try {
       const actor = await resolveMessagingActor(headers, (token) => jwt.verify(token));
@@ -83,7 +55,17 @@ export const messagingRoute = new Elysia({
     try {
       const actor = await resolveMessagingActor(headers, (token) => jwt.verify(token));
       const message = await sendMessage(actor, params.id, body.body, body.replyToId);
-      wsHub.broadcastToIdentities(await getConversationIdentityKeys(params.id), { type: "MESSAGE_CREATED", payload: { ...message, senderIdentityKey: messagingActorIdentityKey(actor) } });
+      const identityKeys = await getConversationIdentityKeys(params.id);
+      const conversation = await prisma.conversation.findUnique({ where: { id: params.id }, select: { type: true, hotelId: true } });
+      if (conversation && conversation.type === "HOTEL_COMMUNITY" && conversation.hotelId) {
+        const hotelCustomers = await prisma.order.findMany({ where: { hotelId: conversation.hotelId }, select: { customerId: true }, distinct: ["customerId"] });
+        const customerKeys = hotelCustomers.map((o) => o.customerId ? `customer:${o.customerId}` : "").filter(Boolean);
+        const staff = await prisma.adminUser.findMany({ where: { hotelId: conversation.hotelId }, select: { id: true } });
+        const staffKeys = staff.map((s) => `admin:${s.id}`);
+        wsHub.broadcastToIdentities([...new Set([...identityKeys, ...staffKeys, ...customerKeys])], { type: "MESSAGE_CREATED", payload: { ...message, senderIdentityKey: messagingActorIdentityKey(actor) } });
+      } else {
+        wsHub.broadcastToIdentities(identityKeys, { type: "MESSAGE_CREATED", payload: { ...message, senderIdentityKey: messagingActorIdentityKey(actor) } });
+      }
       return { success: true, data: message };
     } catch (error: any) {
       set.status = 400;
@@ -134,30 +116,139 @@ export const messagingRoute = new Elysia({
       return { success: false, error: error.message || "Unable to delete conversation" };
     }
   }, { params: ConversationIdSchema })
-  .post("/announcements", async ({ headers, jwt, body, set }) => {
+
+  // ── Order conversations ──
+  .post("/orders/:orderId/messages", async ({ headers, jwt, params, body, set }) => {
     try {
       const actor = await resolveMessagingActor(headers, (token) => jwt.verify(token));
-      const created = await createAnnouncement(actor, body);
-      const hotel = created.hotelId ? await prisma.hotel.findUnique({ where: { id: created.hotelId }, select: { name: true } }) : null;
+      const message = await sendOrderMessage(actor, params.orderId, body.body, body.replyToId);
+      const conversation = await prisma.conversation.findFirst({ where: { orderId: params.orderId, type: "ORDER" }, select: { id: true } });
+      if (conversation) {
+        wsHub.broadcastToIdentities(await getConversationIdentityKeys(conversation.id), { type: "MESSAGE_CREATED", payload: { ...message, senderIdentityKey: messagingActorIdentityKey(actor) } });
+      }
+      return { success: true, data: message };
+    } catch (error: any) {
+      set.status = 400;
+      return { success: false, error: error.message || "Unable to send message" };
+    }
+  }, { params: t.Object({ orderId: t.String({ format: "uuid" }) }), body: SendMessageSchema })
+  .get("/orders/:orderId/conversation", async ({ headers, jwt, params, set }) => {
+    try {
+      const actor = await resolveMessagingActor(headers, (token) => jwt.verify(token));
+      const conversation = await prisma.conversation.findFirst({ where: { orderId: params.orderId, type: "ORDER" }, select: { id: true, orderId: true } });
+      if (!conversation) { set.status = 404; return { success: false, error: "Order conversation not found" }; }
+      // Verify access
+      await assertConversationAccess(actor, conversation.id);
+      return { success: true, data: conversation };
+    } catch (error: any) {
+      set.status = 403;
+      return { success: false, error: error.message || "Unable to access order conversation" };
+    }
+  }, { params: t.Object({ orderId: t.String({ format: "uuid" }) }) })
+
+  // ── Talk to Staff ──
+  .post("/talk-to-staff", async ({ headers, jwt, body, set }) => {
+    try {
+      const actor = await resolveMessagingActor(headers, (token) => jwt.verify(token));
+      const result = await getOrCreateTalkToStaff(actor, body.hotelId, body.body);
+      const identityKeys = await getConversationIdentityKeys(result.conversation.id);
+      const hotelId = result.conversation.hotelId;
+      // Also broadcast to all hotel staff so they see the notification
+      const staff = hotelId ? await prisma.adminUser.findMany({ where: { hotelId }, select: { id: true } }) : [];
+      const staffIdentityKeys = staff.map((s) => `admin:${s.id}`);
+      const allRecipients = [...new Set([...identityKeys, ...staffIdentityKeys])];
+      if (result.message) {
+        wsHub.broadcastToIdentities(allRecipients, { type: "MESSAGE_CREATED", payload: { ...result.message, senderIdentityKey: messagingActorIdentityKey(actor) } });
+      }
+      wsHub.broadcastToIdentities(allRecipients, { type: "CONVERSATION_CREATED", payload: result.conversation });
+      return { success: true, data: result };
+    } catch (error: any) {
+      set.status = 400;
+      return { success: false, error: error.message || "Unable to start conversation" };
+    }
+  }, { body: TalkToStaffSchema })
+
+  // ─── Platform support (customer/hotel staff → Platform Administration) ───
+  .post("/platform-support", async ({ headers, jwt, body, set }) => {
+    try {
+      const actor = await resolveMessagingActor(headers, (token) => jwt.verify(token));
+      const result = await getOrCreatePlatformSupport(actor, body.body);
+      const recipients = await getConversationIdentityKeys(result.conversation.id);
+      if (result.message) {
+        wsHub.broadcastToIdentities(recipients, { type: "MESSAGE_CREATED", payload: { ...result.message, senderIdentityKey: messagingActorIdentityKey(actor) } });
+      }
+      wsHub.broadcastToIdentities(recipients, { type: "CONVERSATION_CREATED", payload: result.conversation });
+      return { success: true, data: result };
+    } catch (error: any) {
+      set.status = 400;
+      return { success: false, error: error.message || "Unable to contact platform support" };
+    }
+  }, { body: PlatformSupportSchema })
+
+  // ── Hotel notices ──
+  .post("/hotel-notices", async ({ headers, jwt, body, set }) => {
+    try {
+      const actor = await resolveMessagingActor(headers, (token) => jwt.verify(token));
+      const created = await createHotelNotice(actor, body);
+      const hotel = body.hotelId ? await prisma.hotel.findUnique({ where: { id: body.hotelId }, select: { name: true } }) : null;
       const payload = {
-        id: created.id,
-        type: created.type,
-        hotelId: created.hotelId,
-        title: created.title,
-        lastMessageAt: created.message.createdAt,
-        createdAt: created.createdAt,
-        sourceName: hotel?.name || "Ladha Deliveries",
-        sourceKind: created.type === "GLOBAL_ANNOUNCEMENT" ? "Platform announcement" : "Hotel announcement",
-        sourceContext: `Published by ${hotel?.name || "Ladha Deliveries"}`,
-        unreadCount: 1,
-        messages: [created.message],
+        id: created.id, type: created.type, hotelId: created.hotelId,
+        title: created.title, lastMessageAt: created.lastMessageAt, createdAt: created.createdAt,
+        sourceName: hotel?.name || "Hotel",
+        sourceKind: "Hotel notice",
+        sourceContext: `Published by ${hotel?.name || "hotel management"}`,
+        unreadCount: 1, messages: [created.message],
       };
       const recipients = await getAnnouncementRecipientIdentityKeys(created.id);
       wsHub.broadcastToIdentities(recipients, { type: "CONVERSATION_CREATED", payload });
-      wsHub.broadcastToIdentities(recipients, { type: "ANNOUNCEMENT_PUBLISHED", payload: { conversationId: created.id, title: created.title, body: created.message.body, sourceName: hotel?.name || "Ladha Deliveries", senderIdentityKey: messagingActorIdentityKey(actor) } });
+      wsHub.broadcastToIdentities(recipients, { type: "ANNOUNCEMENT_PUBLISHED", payload: { conversationId: created.id, title: created.title, body: created.message.body, sourceName: hotel?.name || "Hotel", senderIdentityKey: messagingActorIdentityKey(actor) } });
       return { success: true, data: created };
     } catch (error: any) {
       set.status = 400;
-      return { success: false, error: error.message || "Unable to publish announcement" };
+      return { success: false, error: error.message || "Unable to publish notice" };
     }
-  }, { body: AnnouncementSchema });
+  }, { body: HotelNoticeSchema })
+
+  // ── Platform notices ──
+  .post("/platform-notices", async ({ headers, jwt, body, set }) => {
+    try {
+      const actor = await resolveMessagingActor(headers, (token) => jwt.verify(token));
+      const created = await createPlatformNotice(actor, body);
+      const payload = {
+        id: created.id, type: created.type, hotelId: null,
+        title: created.title, lastMessageAt: created.lastMessageAt, createdAt: created.createdAt,
+        sourceName: "Ladha Platform",
+        sourceKind: "Platform notice",
+        sourceContext: "Published by Platform Administration",
+        unreadCount: 1, messages: [created.message],
+      };
+      const recipients = await getAnnouncementRecipientIdentityKeys(created.id);
+      wsHub.broadcastToIdentities(recipients, { type: "CONVERSATION_CREATED", payload });
+      wsHub.broadcastToIdentities(recipients, { type: "ANNOUNCEMENT_PUBLISHED", payload: { conversationId: created.id, title: created.title, body: created.message.body, sourceName: "Ladha Platform", senderIdentityKey: messagingActorIdentityKey(actor) } });
+      return { success: true, data: created };
+    } catch (error: any) {
+      set.status = 400;
+      return { success: false, error: error.message || "Unable to publish notice" };
+    }
+  }, { body: PlatformNoticeSchema })
+
+  // ── Community channels ──
+  .post("/community-channels", async ({ headers, jwt, body, set }) => {
+    try {
+      const actor = await resolveMessagingActor(headers, (token) => jwt.verify(token));
+      const created = await createCommunityChannel(actor, body);
+      const hotelId = created.hotelId;
+      const staff = hotelId ? await prisma.adminUser.findMany({ where: { hotelId }, select: { id: true } }) : [];
+      const staffKeys = staff.map((s) => `admin:${s.id}`);
+      // Also notify hotel customers about the new channel
+      const hotelCustomers = hotelId
+        ? await prisma.order.findMany({ where: { hotelId }, select: { customerId: true }, distinct: ["customerId"] })
+        : [];
+      const customerKeys = hotelCustomers.map((o) => o.customerId ? `customer:${o.customerId}` : "").filter(Boolean);
+      wsHub.broadcastToIdentities([...new Set([...staffKeys, ...customerKeys])], { type: "CONVERSATION_CREATED", payload: created });
+      return { success: true, data: created };
+    } catch (error: any) {
+      set.status = 400;
+      return { success: false, error: error.message || "Unable to create channel" };
+    }
+  }, { body: CommunityChannelSchema });

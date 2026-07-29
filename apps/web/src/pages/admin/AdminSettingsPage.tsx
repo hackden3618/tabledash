@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { apiGet, apiPatch, apiPost, apiDelete } from "../../lib/api";
 import { useAdminAuth } from "../../context/AdminAuthContext";
 import { Modal } from "../../components/ui/Modal";
 import { Button } from "../../components/ui/Button";
-import { ArrowLeft, Save, Phone, Store, Clock, Users, UserPlus, Trash2, MessageSquare, Lock } from "lucide-react";
+import { ArrowLeft, Save, Phone, Store, Clock, Users, UserPlus, Trash2, MessageSquare, Lock, Upload, Image } from "lucide-react";
 
 const formatPhone = (raw: string): string => {
     const cleaned = raw.replace(/\D/g, "");
@@ -33,6 +33,8 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ token, onB
     const [hotelIsOpen, setHotelIsOpen] = useState(true);
     const [autoCloseTime, setAutoCloseTime] = useState("");
     const [hotelImageUrl, setHotelImageUrl] = useState("");
+    const [hotelImageUploading, setHotelImageUploading] = useState(false);
+    const hotelImageFileRef = useRef<HTMLInputElement>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [profileName, setProfileName] = useState("");
@@ -219,11 +221,41 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ token, onB
 
                                 <div className="pt-3 border-t border-[#F3F4F6]">
                                     <label className="flex items-center gap-1.5 text-xs font-bold text-[#4B5563] mb-1">
-                                        <Store size={13} /> Hotel Image URL
+                                        <Store size={13} /> Hotel Image
                                     </label>
-                                    <input type="text" placeholder="https://example.com/hotel-image.jpg" value={hotelImageUrl} onChange={(e) => setHotelImageUrl(e.target.value)}
-                                        className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#D1D5DB] outline-none text-sm focus:border-[#114B36] focus:ring-3 focus:ring-[rgba(17,75,54,0.1)]"
-                                    />
+                                    <div className="flex items-center gap-3">
+                                        {hotelImageUrl ? (
+                                            <img src={hotelImageUrl} alt="Hotel" className="w-14 h-14 rounded-xl object-cover border border-[#E5E7EB]" />
+                                        ) : (
+                                            <div className="w-14 h-14 rounded-xl bg-[#F3F4F6] flex items-center justify-center border border-dashed border-[#D1D5DB]">
+                                                <Image size={18} className="text-[#9CA3AF]" />
+                                            </div>
+                                        )}
+                                        <div className="flex-1 flex flex-col gap-1.5">
+                                            <div className="flex items-center gap-2">
+                                                <input type="file" accept="image/*" onChange={async (e) => {
+                                                    const file = e.target.files?.[0];
+                                                    if (!file) return;
+                                                    const formData = new FormData();
+                                                    formData.append("file", file);
+                                                    setHotelImageUploading(true);
+                                                    try {
+                                                        const res = await fetch(`${import.meta.env.VITE_API_BASE ?? "/api/v1"}/upload`, { method: "POST", headers: { "Authorization": `Bearer ${token}`, }, body: formData });
+                                                        const data = await res.json();
+                                                        if (data.success && data.data?.url) setHotelImageUrl(data.data.url);
+                                                    } catch { /* ignore */ }
+                                                    setHotelImageUploading(false);
+                                                }} disabled={hotelImageUploading} ref={hotelImageFileRef} className="hidden" />
+                                                <Button type="button" variant="secondary" size="sm" icon={<Upload size={13} />} onClick={() => hotelImageFileRef.current?.click()} disabled={hotelImageUploading}>
+                                                    {hotelImageUploading ? "Uploading…" : "Upload Image"}
+                                                </Button>
+                                                {hotelImageUploading && <span className="text-[0.65rem] text-[#9CA3AF]">uploading…</span>}
+                                            </div>
+                                            <input type="url" placeholder="https://example.com/hotel-image.jpg" value={hotelImageUrl} onChange={(e) => setHotelImageUrl(e.target.value)}
+                                                className="w-full px-3 py-1.5 rounded-lg border border-[#D1D5DB] outline-none text-xs focus:border-[#114B36] focus:ring-2 focus:ring-[rgba(17,75,54,0.1)]"
+                                            />
+                                        </div>
+                                    </div>
                                     <p className="text-[0.65rem] text-[#9CA3AF] mt-1">Image shown to customers on the hotel selection screen.</p>
                                 </div>
 

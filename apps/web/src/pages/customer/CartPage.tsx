@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { useCart } from "../../context/CartContext";
-import { useWebSocket } from "../../lib/websocket";
 import { apiGet } from "../../lib/api";
 import { AlertTriangle, Building2, X, Trash2, ShoppingBag } from "lucide-react";
 import { Header } from "../../components/ui/Header";
@@ -32,28 +31,33 @@ export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDe
     }).catch(() => {});
   }, []);
 
-  useWebSocket("customer", undefined, (event) => {
-    if (event.type === "MENU_AVAILABILITY_UPDATED") {
-      const updated = event.payload as { id: string; available: boolean; stockQty: number };
-      if (!updated.available || updated.stockQty <= 0) {
-        markItemAvailability(updated.id, false);
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail.type === "MENU_AVAILABILITY_UPDATED") {
+        const updated = detail.payload as { id: string; available: boolean; stockQty: number };
+        if (!updated.available || updated.stockQty <= 0) {
+          markItemAvailability(updated.id, false);
+        }
+      } else if (detail.type === "HOTEL_CLOSING") {
+        const data = detail.payload as { hotelId?: string };
+        if (data.hotelId) {
+          setClosedHotelIds((prev) => prev.includes(data.hotelId!) ? prev : [...prev, data.hotelId!]);
+        }
+      } else if (detail.type === "HOTEL_STATUS_UPDATED") {
+        const status = detail.payload as { isOpen: boolean; hotelId?: string };
+        if (status.hotelId) {
+          setClosedHotelIds((prev) =>
+            status.isOpen
+              ? prev.filter((id) => id !== status.hotelId)
+              : prev.includes(status.hotelId!) ? prev : [...prev, status.hotelId!]
+          );
+        }
       }
-    } else if (event.type === "HOTEL_CLOSING") {
-      const data = event.payload as { hotelId?: string };
-      if (data.hotelId) {
-        setClosedHotelIds((prev) => prev.includes(data.hotelId!) ? prev : [...prev, data.hotelId!]);
-      }
-    } else if (event.type === "HOTEL_STATUS_UPDATED") {
-      const status = event.payload as { isOpen: boolean; hotelId?: string };
-      if (status.hotelId) {
-        setClosedHotelIds((prev) =>
-          status.isOpen
-            ? prev.filter((id) => id !== status.hotelId)
-            : prev.includes(status.hotelId!) ? prev : [...prev, status.hotelId!]
-        );
-      }
-    }
-  });
+    };
+    window.addEventListener("tabledash:realtime", handler);
+    return () => window.removeEventListener("tabledash:realtime", handler);
+  }, [markItemAvailability, setClosedHotelIds]);
 
   const groupedCart = useMemo(() => {
     const groups = new Map<string, { hotelName: string; availableItems: typeof cart; unavailableItems: typeof cart }>();

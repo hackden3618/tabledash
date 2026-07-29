@@ -91,3 +91,18 @@ export async function apiDelete<T>(endpoint: string, token?: string): Promise<Ap
     return { success: false, error: err.message || "Network request failed" };
   }
 }
+
+/** Uploads multipart data while retaining the same auth and guest identity headers as other API calls. */
+export async function apiUpload<T>(endpoint: string, file: File, token?: string): Promise<ApiResponse<T>> {
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch(`${API_BASE}${endpoint}`, { method: "POST", headers: makeHeaders(token), body: formData });
+    const text = await res.text();
+    const data = text ? safeParse(text) : {};
+    if (!res.ok) return { success: false, error: makeError(res, text) };
+    return data;
+  } catch (err: any) {
+    return { success: false, error: err.message || "Image upload failed" };
+  }
+}
