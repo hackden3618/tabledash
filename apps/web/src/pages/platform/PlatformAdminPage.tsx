@@ -748,10 +748,10 @@ function HotelDetail({ hotelId, onBack, onToggle, token: tok }: { hotelId: strin
                         <div style={{ color: T2.textMuted, fontSize: "0.85rem" }}>No staff users.</div>
                     ) : (
                         <div style={{ display: "flex", flexDirection: "column", gap: s(2) }}>
-                            {hotel.staffUsers.map((s: any) => (
-                                <div key={s.id} style={{ background: T2.surface, borderRadius: T2.radius, border: `1px solid ${T2.border}`, padding: s(3), fontSize: "0.85rem" }}>
-                                    <div style={{ fontWeight: 700, color: T2.text }}>{s.name}</div>
-                                    <div style={{ color: T2.textMuted }}>{s.phone}</div>
+                            {hotel.staffUsers.map((staff: any) => (
+                                <div key={staff.id} style={{ background: T2.surface, borderRadius: T2.radius, border: `1px solid ${T2.border}`, padding: s(3), fontSize: "0.85rem" }}>
+                                    <div style={{ fontWeight: 700, color: T2.text }}>{staff.name}</div>
+                                    <div style={{ color: T2.textMuted }}>{staff.phone}</div>
                                 </div>
                             ))}
                         </div>

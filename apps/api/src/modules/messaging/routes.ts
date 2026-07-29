@@ -200,7 +200,8 @@ export const messagingRoute = new Elysia({
         unreadCount: 1, messages: [created.message],
       };
       const recipients = await getAnnouncementRecipientIdentityKeys(created.id);
-      wsHub.broadcastToIdentities(recipients, { type: "CONVERSATION_CREATED", payload });
+      if (created.created) wsHub.broadcastToIdentities(recipients, { type: "CONVERSATION_CREATED", payload });
+      wsHub.broadcastToIdentities(recipients, { type: "MESSAGE_CREATED", payload: { ...created.message, senderIdentityKey: messagingActorIdentityKey(actor) } });
       wsHub.broadcastToIdentities(recipients, { type: "ANNOUNCEMENT_PUBLISHED", payload: { conversationId: created.id, title: created.title, body: created.message.body, sourceName: hotel?.name || "Hotel", senderIdentityKey: messagingActorIdentityKey(actor) } });
       return { success: true, data: created };
     } catch (error: any) {
@@ -223,7 +224,8 @@ export const messagingRoute = new Elysia({
         unreadCount: 1, messages: [created.message],
       };
       const recipients = await getAnnouncementRecipientIdentityKeys(created.id);
-      wsHub.broadcastToIdentities(recipients, { type: "CONVERSATION_CREATED", payload });
+      if (created.created) wsHub.broadcastToIdentities(recipients, { type: "CONVERSATION_CREATED", payload });
+      wsHub.broadcastToIdentities(recipients, { type: "MESSAGE_CREATED", payload: { ...created.message, senderIdentityKey: messagingActorIdentityKey(actor) } });
       wsHub.broadcastToIdentities(recipients, { type: "ANNOUNCEMENT_PUBLISHED", payload: { conversationId: created.id, title: created.title, body: created.message.body, sourceName: "Ladha Platform", senderIdentityKey: messagingActorIdentityKey(actor) } });
       return { success: true, data: created };
     } catch (error: any) {

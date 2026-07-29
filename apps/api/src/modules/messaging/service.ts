@@ -48,7 +48,7 @@ export async function getInbox(actor: MessagingActor) {
     include: { ...conversationInclude, order: { select: { orderNumber: true, status: true, hotel: { select: { name: true } } } } },
     orderBy: [{ lastMessageAt: "desc" }, { createdAt: "desc" }],
   });
-  const enriched = await enrichConversations(all, actor);
+  const enriched = deduplicateAnnouncementThreads(await enrichConversations(all, actor));
   return {
     orderConversations: enriched.filter((c) => c.type === "ORDER"),
     hotelNotices: enriched.filter((c) => c.type === "HOTEL_NOTICE"),
@@ -61,11 +61,12 @@ export async function getInbox(actor: MessagingActor) {
 export async function getUnreadCount(actor: MessagingActor) {
   const conversations = await prisma.conversation.findMany({
     where: await accessibleConversationWhere(actor),
-    select: { id: true },
+    select: { id: true, type: true, hotelId: true },
   });
+  const visibleConversations = deduplicateAnnouncementThreads(conversations);
   const own = actorWhere(actor);
   let total = 0;
-  for (const conversation of conversations) {
+  for (const conversation of visibleConversations) {
     const participant = await prisma.conversationParticipant.findFirst({ where: { conversationId: conversation.id, ...own } });
     if (participant) {
       total += await prisma.message.count({
@@ -74,6 +75,17 @@ export async function getUnreadCount(actor: MessagingActor) {
     }
   }
   return total;
+}
+
+function deduplicateAnnouncementThreads<T extends { id: string; type: string; hotelId: string | null }>(conversations: T[]): T[] {
+  const seen = new Set<string>();
+  return conversations.filter((conversation) => {
+    if (conversation.type !== "HOTEL_NOTICE" && conversation.type !== "PLATFORM_NOTICE") return true;
+    const key = `${conversation.type}:${conversation.hotelId ?? "platform"}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 // ── Conversation access ──
@@ -320,33 +332,62 @@ export async function createPlatformNotice(actor: MessagingActor, input: { title
 }
 
 async function createNotice(actor: MessagingActor, type: "HOTEL_NOTICE" | "PLATFORM_NOTICE", hotelId: string | null, title: string | undefined, body: string) {
-  // Notices are one-way for recipients, but their publisher must be able to
-  // add an official follow-up in the same announcement thread.
-  const sender = participantData(actor, true);
   return prisma.$transaction(async (tx) => {
-    const conversation = await tx.conversation.create({ data: { type, hotelId, title } });
-    const participant = await tx.conversationParticipant.create({ data: { conversationId: conversation.id, ...sender } });
-    const [admins, platforms, customers] = await Promise.all([
-      tx.adminUser.findMany({ where: hotelId ? { hotelId } : undefined, select: { id: true } }),
-      hotelId ? Promise.resolve([] as { id: string }[]) : tx.platformAdmin.findMany({ select: { id: true } }),
-      hotelId
-        ? tx.order.findMany({ where: { hotelId }, select: { customerId: true }, distinct: ["customerId"] })
-        : tx.customer.findMany({ select: { id: true } }),
-    ]);
-    const candidateRows: Array<{ conversationId: string; kind: ParticipantKind; adminUserId?: string; platformAdminId?: string; customerId?: string; canReply: boolean }> = [
-      ...admins.map((admin) => ({ conversationId: conversation.id, kind: "HOTEL_STAFF" as ParticipantKind, adminUserId: admin.id, canReply: false })),
-      ...platforms.map((platform) => ({ conversationId: conversation.id, kind: "PLATFORM_ADMIN" as ParticipantKind, platformAdminId: platform.id, canReply: false })),
-      ...customers.map((customer) => ({ conversationId: conversation.id, kind: "CUSTOMER" as ParticipantKind, customerId: "customerId" in customer ? customer.customerId : customer.id, canReply: false })),
-    ];
-    const recipientRows = candidateRows.filter((row) => !(
-      (actor.kind === "HOTEL_STAFF" && row.adminUserId === actor.adminUserId) ||
-      (actor.kind === "PLATFORM_ADMIN" && row.platformAdminId === actor.platformAdminId) ||
-      (actor.kind === "CUSTOMER" && row.customerId === actor.customerId)
-    ));
-    if (recipientRows.length) await tx.conversationParticipant.createMany({ data: recipientRows });
+    // Keep one durable announcement thread per source. This prevents every
+    // follow-up or repeated announcement from creating another inbox item.
+    const existingConversation = await tx.conversation.findFirst({
+      where: { type, hotelId },
+      orderBy: { createdAt: "asc" },
+      include: { participants: true },
+    });
+    const wasCreated = !existingConversation;
+    let conversation = existingConversation;
+    const publisherData = participantData(actor, true);
+
+    if (!conversation) {
+      const createdConversation = await tx.conversation.create({ data: { type, hotelId, title } });
+      conversation = await tx.conversation.findUniqueOrThrow({ where: { id: createdConversation.id }, include: { participants: true } });
+    } else if (title && conversation.title !== title) {
+      conversation = await tx.conversation.update({ where: { id: conversation.id }, data: { title }, include: { participants: true } });
+    }
+
+    let participant = conversation.participants.find((item) =>
+      Object.entries(actorWhere(actor)).every(([key, value]) => (item as Record<string, unknown>)[key] === value)
+    );
+    if (participant) {
+      if (!participant.canReply) {
+        participant = await tx.conversationParticipant.update({ where: { id: participant.id }, data: { canReply: true } });
+      }
+    } else {
+      participant = await tx.conversationParticipant.create({ data: { conversationId: conversation.id, ...publisherData } });
+    }
+
+    if (conversation.participants.length === 0) {
+      const [admins, platforms, customers] = await Promise.all([
+        tx.adminUser.findMany({ where: hotelId ? { hotelId } : undefined, select: { id: true } }),
+        hotelId ? Promise.resolve([] as { id: string }[]) : tx.platformAdmin.findMany({ select: { id: true } }),
+        hotelId
+          ? tx.order.findMany({ where: { hotelId }, select: { customerId: true }, distinct: ["customerId"] })
+          : tx.customer.findMany({ select: { id: true } }),
+      ]);
+      const recipientRows: Array<{ conversationId: string; kind: ParticipantKind; adminUserId?: string; platformAdminId?: string; customerId?: string; canReply: boolean }> = [
+        ...admins.map((admin) => ({ conversationId: conversation!.id, kind: "HOTEL_STAFF" as ParticipantKind, adminUserId: admin.id, canReply: false })),
+        ...platforms.map((platform) => ({ conversationId: conversation!.id, kind: "PLATFORM_ADMIN" as ParticipantKind, platformAdminId: platform.id, canReply: false })),
+        ...customers.map((customer) => ({ conversationId: conversation!.id, kind: "CUSTOMER" as ParticipantKind, customerId: "customerId" in customer ? customer.customerId : customer.id, canReply: false })),
+      ].filter((row) => {
+        const candidate = row as { adminUserId?: string; platformAdminId?: string; customerId?: string };
+        return !(
+          (actor.kind === "HOTEL_STAFF" && candidate.adminUserId === actor.adminUserId) ||
+          (actor.kind === "PLATFORM_ADMIN" && candidate.platformAdminId === actor.platformAdminId) ||
+          (actor.kind === "CUSTOMER" && candidate.customerId === actor.customerId)
+        );
+      });
+      if (recipientRows.length) await tx.conversationParticipant.createMany({ data: recipientRows });
+    }
+
     const message = await tx.message.create({ data: { conversationId: conversation.id, senderParticipantId: participant.id, body: body.trim() } });
     await tx.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: message.createdAt } });
-    return { ...conversation, message };
+    return { ...conversation, message, created: wasCreated };
   });
 }
 
@@ -444,8 +485,12 @@ export async function deleteConversation(actor: MessagingActor, conversationId: 
 }
 
 export async function markConversationRead(actor: MessagingActor, conversationId: string) {
-  await assertConversationAccess(actor, conversationId);
+  const conversation = await assertConversationAccess(actor, conversationId);
   const participant = await prisma.conversationParticipant.findFirst({ where: { conversationId, ...actorWhere(actor) } });
+  if (!participant && (conversation.type === "HOTEL_NOTICE" || conversation.type === "PLATFORM_NOTICE")) {
+    const created = await prisma.conversationParticipant.create({ data: { conversationId, ...participantData(actor, false) } });
+    return created;
+  }
   if (!participant) throw new Error("Only conversation participants can mark messages read");
   return prisma.conversationParticipant.update({ where: { id: participant.id }, data: { lastReadAt: new Date() } });
 }
