@@ -14,7 +14,7 @@ export type OrderStatus =
   | "DELIVERED"
   | "CANCELLED";
 
-export type PaymentStatus = "UNPAID" | "PARTIAL" | "PAID" | "REFUNDED";
+export type PaymentStatus = "UNPAID" | "PARTIAL" | "PAID";
 
 export interface CustomerData {
   id: string;
@@ -67,7 +67,6 @@ export interface OrderData {
   completedAt?: string | null;
   cancelReason?: string | null;
   cancelledAtStatus?: string | null;
-  refundedAt?: string | null;
   customer?: CustomerData;
   orderItems?: OrderItemData[];
 }
@@ -77,7 +76,6 @@ export interface DashboardMetrics {
   deliveredOrders: number;
   pendingOrders: number;
   cancelledOrders: number;
-  refundsProcessed: number;
   totalSales: number;
   outstandingBalance: number;
   refundsDue: number;

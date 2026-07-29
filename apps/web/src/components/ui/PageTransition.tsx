@@ -4,7 +4,6 @@ import { motion } from "framer-motion";
 interface PageTransitionProps {
   children: React.ReactNode;
   className?: string;
-  style?: React.CSSProperties;
 }
 
 const pageVariants = {
@@ -23,7 +22,6 @@ const pageTransition = {
 export const PageTransition: React.FC<PageTransitionProps> = ({
   children,
   className = "",
-  style,
 }) => {
   return (
     <motion.div
@@ -33,7 +31,6 @@ export const PageTransition: React.FC<PageTransitionProps> = ({
       variants={pageVariants}
       transition={pageTransition}
       className={className}
-      style={style}
     >
       {children}
     </motion.div>

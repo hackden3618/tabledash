@@ -6,7 +6,6 @@ interface QuantitySelectorProps {
   quantity: number;
   onIncrement: () => void;
   onDecrement: () => void;
-  onQuantityChange: (quantity: number) => void;
   max?: number;
   disabled?: boolean;
 }
@@ -15,7 +14,6 @@ export const QuantitySelector: React.FC<QuantitySelectorProps> = ({
   quantity,
   onIncrement,
   onDecrement,
-  onQuantityChange,
   max = 99,
   disabled = false,
 }) => {
@@ -37,19 +35,9 @@ export const QuantitySelector: React.FC<QuantitySelectorProps> = ({
         <Minus size={16} strokeWidth={3} />
       </motion.button>
 
-      <input
-        type="number"
-        inputMode="numeric"
-        min={1}
-        max={max}
-        value={quantity}
-        onChange={(event) => {
-          const nextQuantity = Number(event.target.value);
-          if (Number.isInteger(nextQuantity) && nextQuantity > 0) onQuantityChange(nextQuantity);
-        }}
-        className="w-12 h-9 text-center font-bold text-sm text-[#114B36] tabular-nums bg-transparent border-x border-[#C2E2D3] outline-none"
-        aria-label="Quantity"
-      />
+      <span className="w-10 text-center font-bold text-sm text-[#114B36] tabular-nums">
+        {quantity}
+      </span>
 
       <motion.button
         whileTap={{ scale: 0.9 }}

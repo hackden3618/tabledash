@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
 import { Lock, LogIn, Phone, User, UserPlus, KeyRound, CheckCircle2 } from "lucide-react";
@@ -6,7 +6,6 @@ import { Header } from "../../components/ui/Header";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { PageTransition } from "../../components/ui/PageTransition";
-import { SecureCodeInput } from "../../components/ui/SecureCodeInput";
 
 const formatPhone = (raw: string): string => {
   const cleaned = raw.replace(/\D/g, "");
@@ -24,6 +23,165 @@ interface CustomerAuthPageProps {
   onBack: () => void;
   onSuccess: () => void;
 }
+
+interface PinBoxesProps {
+  value: string;
+  onChange: (v: string) => void;
+}
+
+const PinBoxes: React.FC<PinBoxesProps> = ({ value, onChange }) => {
+  const refs = [
+    useRef<HTMLInputElement>(null),
+    useRef<HTMLInputElement>(null),
+    useRef<HTMLInputElement>(null),
+    useRef<HTMLInputElement>(null),
+  ];
+
+  const digits = value.padEnd(4, "").split("").slice(0, 4);
+
+  const handleChange = (idx: number, raw: string) => {
+    const digit = raw.replace(/\D/g, "").slice(-1);
+    const arr = digits.map((d) => d.trim());
+    arr[idx] = digit;
+    const next = arr.join("").slice(0, 4);
+    onChange(next);
+    if (digit && idx < 3) {
+      refs[idx + 1]!.current?.focus();
+    }
+  };
+
+  const handleKeyDown = (idx: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Backspace") {
+      if (digits[idx]?.trim()) {
+        const arr = digits.map((d) => d.trim());
+        arr[idx] = "";
+        onChange(arr.join(""));
+      } else if (idx > 0) {
+        const arr = digits.map((d) => d.trim());
+        arr[idx - 1] = "";
+        onChange(arr.join(""));
+        refs[idx - 1]!.current?.focus();
+      }
+      e.preventDefault();
+    } else if (e.key === "ArrowLeft" && idx > 0) {
+      refs[idx - 1]!.current?.focus();
+    } else if (e.key === "ArrowRight" && idx < 3) {
+      refs[idx + 1]!.current?.focus();
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 4);
+    onChange(pasted);
+    const lastFilled = Math.min(pasted.length, 3);
+    refs[lastFilled]!.current?.focus();
+  };
+
+  return (
+    <div className="flex gap-3 justify-center mt-1">
+      {[0, 1, 2, 3].map((idx) => {
+        const isFilled = Boolean(digits[idx]?.trim());
+        return (
+          <input
+            key={idx}
+            ref={refs[idx]}
+            type="password"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={1}
+            value={digits[idx]?.trim() || ""}
+            onChange={(e) => handleChange(idx, e.target.value)}
+            onKeyDown={(e) => handleKeyDown(idx, e)}
+            onPaste={handlePaste}
+            onFocus={(e) => e.target.select()}
+            autoComplete="off"
+            className={`
+              w-14 h-16 rounded-xl text-center text-2xl font-bold
+              outline-none transition-all duration-150 cursor-text
+              ${isFilled
+                ? "border-2 border-[#114B36] bg-[#EBF5F0] text-[#1F2937]"
+                : "border-2 border-[#D1D5DB] bg-white text-[#1F2937]"
+              }
+              focus:border-[#114B36] focus:ring-3 focus:ring-[rgba(17,75,54,0.1)]
+            `}
+          />
+        );
+      })}
+    </div>
+  );
+};
+
+const OtpBoxes: React.FC<{ value: string; onChange: (v: string) => void }> = ({ value, onChange }) => {
+  const refs = [
+    useRef<HTMLInputElement>(null),
+    useRef<HTMLInputElement>(null),
+    useRef<HTMLInputElement>(null),
+    useRef<HTMLInputElement>(null),
+  ];
+
+  const digits = value.padEnd(4, "").split("").slice(0, 4);
+
+  const handleChange = (idx: number, raw: string) => {
+    const digit = raw.replace(/\D/g, "").slice(-1);
+    const arr = digits.map((d) => d.trim());
+    arr[idx] = digit;
+    const next = arr.join("").slice(0, 4);
+    onChange(next);
+    if (digit && idx < 3) {
+      refs[idx + 1]!.current?.focus();
+    }
+  };
+
+  const handleKeyDown = (idx: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Backspace") {
+      if (digits[idx]?.trim()) {
+        const arr = digits.map((d) => d.trim());
+        arr[idx] = "";
+        onChange(arr.join(""));
+      } else if (idx > 0) {
+        const arr = digits.map((d) => d.trim());
+        arr[idx - 1] = "";
+        onChange(arr.join(""));
+        refs[idx - 1]!.current?.focus();
+      }
+      e.preventDefault();
+    } else if (e.key === "ArrowLeft" && idx > 0) {
+      refs[idx - 1]!.current?.focus();
+    } else if (e.key === "ArrowRight" && idx < 3) {
+      refs[idx + 1]!.current?.focus();
+    }
+  };
+
+  return (
+    <div className="flex gap-3 justify-center mt-1">
+      {[0, 1, 2, 3].map((idx) => (
+        <input
+          key={idx}
+          ref={refs[idx]}
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          maxLength={1}
+          value={digits[idx]?.trim() || ""}
+          onChange={(e) => handleChange(idx, e.target.value)}
+          onKeyDown={(e) => handleKeyDown(idx, e)}
+          onFocus={(e) => e.target.select()}
+          autoComplete="one-time-code"
+          className={`
+            w-14 h-16 rounded-xl text-center text-2xl font-bold
+            outline-none transition-all duration-150 cursor-text
+            ${digits[idx]?.trim()
+              ? "border-2 border-[#114B36] bg-[#EBF5F0] text-[#1F2937]"
+              : "border-2 border-[#D1D5DB] bg-white text-[#1F2937]"
+            }
+            focus:border-[#114B36] focus:ring-3 focus:ring-[rgba(17,75,54,0.1)]
+          `}
+        />
+      ))}
+    </div>
+  );
+};
 
 export const CustomerAuthPage: React.FC<CustomerAuthPageProps> = ({ onBack, onSuccess }) => {
   const { login, register, forgotPin, resetPin } = useCustomerAuth();
@@ -51,13 +209,13 @@ export const CustomerAuthPage: React.FC<CustomerAuthPageProps> = ({ onBack, onSu
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotSuccess, setForgotSuccess] = useState("");
 
-  const handleLogin = async (e?: React.FormEvent, pinOverride = loginPin) => {
-    e?.preventDefault();
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
     setLoginError("");
     if (!isValidPhone(loginPhone)) { setLoginError("Enter a valid Kenyan phone number (e.g. 0712345678)."); return; }
-    if (pinOverride.length < 4) { setLoginError("Please enter your full 4-digit PIN."); return; }
+    if (loginPin.length < 4) { setLoginError("Please enter your full 4-digit PIN."); return; }
     setLoginLoading(true);
-    const res = await login(loginPhone, pinOverride);
+    const res = await login(loginPhone, loginPin);
     setLoginLoading(false);
     if (res.success) { onSuccess(); }
     else { setLoginError(res.error ?? "Sign in failed"); }
@@ -93,10 +251,10 @@ export const CustomerAuthPage: React.FC<CustomerAuthPageProps> = ({ onBack, onSu
     }
   };
 
-  const handleForgotVerifyOtp = async (e?: React.FormEvent, codeOverride = forgotOtp) => {
-    e?.preventDefault();
+  const handleForgotVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
     setForgotError("");
-    if (codeOverride.length < 4) { setForgotError("Please enter the full 4-digit code."); return; }
+    if (forgotOtp.length < 4) { setForgotError("Please enter the full 4-digit code."); return; }
     setForgotStep("newPin");
   };
 
@@ -208,7 +366,7 @@ export const CustomerAuthPage: React.FC<CustomerAuthPageProps> = ({ onBack, onSu
                   <label className="flex items-center gap-1.5 text-sm font-semibold text-[#374151] mb-1.5">
                     <KeyRound size={14} /> Reset Code
                   </label>
-                  <SecureCodeInput value={forgotOtp} onChange={setForgotOtp} onComplete={(code) => void handleForgotVerifyOtp(undefined, code)} masked={false} autoComplete="one-time-code" label="Reset code" />
+                  <OtpBoxes value={forgotOtp} onChange={setForgotOtp} />
                 </div>
                 <AnimatePresence>
                   {forgotError && (
@@ -243,13 +401,13 @@ export const CustomerAuthPage: React.FC<CustomerAuthPageProps> = ({ onBack, onSu
                   <label className="flex items-center gap-1.5 text-sm font-semibold text-[#374151] mb-1.5">
                     <Lock size={14} /> New 4-Digit PIN
                   </label>
-                  <SecureCodeInput value={forgotNewPin} onChange={setForgotNewPin} label="New PIN" />
+                  <PinBoxes value={forgotNewPin} onChange={setForgotNewPin} />
                 </div>
                 <div>
                   <label className="flex items-center gap-1.5 text-sm font-semibold text-[#374151] mb-1.5">
                     <Lock size={14} /> Confirm New PIN
                   </label>
-                  <SecureCodeInput value={forgotNewPinConfirm} onChange={setForgotNewPinConfirm} label="Confirm new PIN" />
+                  <PinBoxes value={forgotNewPinConfirm} onChange={setForgotNewPinConfirm} />
                 </div>
                 <AnimatePresence>
                   {forgotError && (
@@ -341,7 +499,7 @@ export const CustomerAuthPage: React.FC<CustomerAuthPageProps> = ({ onBack, onSu
                 <label className="flex items-center gap-1.5 text-sm font-semibold text-[#374151] mb-1.5">
                   <Lock size={14} /> 4-Digit PIN
                 </label>
-                <SecureCodeInput value={loginPin} onChange={setLoginPin} onComplete={(pinValue) => void handleLogin(undefined, pinValue)} autoFocus label="Login PIN" />
+                <PinBoxes value={loginPin} onChange={setLoginPin} />
               </div>
 
               <div className="text-right">
@@ -412,14 +570,14 @@ export const CustomerAuthPage: React.FC<CustomerAuthPageProps> = ({ onBack, onSu
                 <label className="flex items-center gap-1.5 text-sm font-semibold text-[#374151] mb-1.5">
                   <Lock size={14} /> Choose 4-Digit PIN
                 </label>
-                <SecureCodeInput value={regPin} onChange={setRegPin} label="New PIN" />
+                <PinBoxes value={regPin} onChange={setRegPin} />
               </div>
 
               <div>
                 <label className="flex items-center gap-1.5 text-sm font-semibold text-[#374151] mb-1.5">
                   <Lock size={14} /> Confirm PIN
                 </label>
-                <SecureCodeInput value={regPinConfirm} onChange={setRegPinConfirm} label="Confirm PIN" />
+                <PinBoxes value={regPinConfirm} onChange={setRegPinConfirm} />
               </div>
 
               <AnimatePresence>

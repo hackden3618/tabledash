@@ -21,7 +21,6 @@ interface ProductCardProps {
   onAdd: () => void;
   onIncrement: () => void;
   onDecrement: () => void;
-  onQuantityChange: (quantity: number) => void;
   disabled?: boolean;
 }
 
@@ -46,7 +45,6 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   onAdd,
   onIncrement,
   onDecrement,
-  onQuantityChange,
   disabled = false,
 }) => {
   const [imgError, setImgError] = useState(false);
@@ -112,7 +110,6 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             quantity={quantity}
             onIncrement={onIncrement}
             onDecrement={onDecrement}
-            onQuantityChange={onQuantityChange}
             max={item.stockQty}
             disabled={disabled}
           />

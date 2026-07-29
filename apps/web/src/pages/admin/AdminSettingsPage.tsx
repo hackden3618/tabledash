@@ -1,9 +1,8 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { apiGet, apiPatch, apiPost, apiDelete } from "../../lib/api";
-import { useAdminAuth } from "../../context/AdminAuthContext";
 import { Modal } from "../../components/ui/Modal";
 import { Button } from "../../components/ui/Button";
-import { ArrowLeft, Save, Phone, Store, Clock, Users, UserPlus, Trash2, MessageSquare, Lock, Upload, Image } from "lucide-react";
+import { ArrowLeft, Save, Phone, Store, Clock, Users, UserPlus, Trash2, MessageSquare } from "lucide-react";
 
 const formatPhone = (raw: string): string => {
     const cleaned = raw.replace(/\D/g, "");
@@ -19,7 +18,6 @@ interface StaffUser {
     name: string;
     phone: string;
     receiveSms: boolean;
-    adminUserId?: string | null;
 }
 
 interface AdminSettingsPageProps {
@@ -28,21 +26,12 @@ interface AdminSettingsPageProps {
 }
 
 export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ token, onBackToOrders }) => {
-    const { login: refreshAdminSession } = useAdminAuth();
     const [staffPhone, setStaffPhone] = useState("");
     const [hotelIsOpen, setHotelIsOpen] = useState(true);
     const [autoCloseTime, setAutoCloseTime] = useState("");
     const [hotelImageUrl, setHotelImageUrl] = useState("");
-    const [hotelImageUploading, setHotelImageUploading] = useState(false);
-    const hotelImageFileRef = useRef<HTMLInputElement>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [profileName, setProfileName] = useState("");
-    const [profileUsername, setProfileUsername] = useState("");
-    const [currentPassword, setCurrentPassword] = useState("");
-    const [newPassword, setNewPassword] = useState("");
-    const [confirmPassword, setConfirmPassword] = useState("");
-    const [profileSaving, setProfileSaving] = useState(false);
 
     const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
     const [newStaffName, setNewStaffName] = useState("");
@@ -56,13 +45,10 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ token, onB
 
     const fetchSettingsAndStaff = async () => {
         setLoading(true);
-        const [settingsRes, staffRes, profileRes] = await Promise.all([
+        const [settingsRes, staffRes] = await Promise.all([
             apiGet<{ staffPhone?: string; hotelIsOpen?: boolean; autoCloseAt?: string | null; hotelImageUrl?: string | null }>("/settings", token),
             apiGet<StaffUser[]>("/settings/staff", token),
-            apiGet<{ name: string; username: string }>("/auth/me", token),
         ]);
-
-        if (profileRes.success && profileRes.data) { setProfileName(profileRes.data.name); setProfileUsername(profileRes.data.username); }
 
         if (settingsRes.success && settingsRes.data) {
             if (settingsRes.data.staffPhone !== undefined) setStaffPhone(settingsRes.data.staffPhone);
@@ -83,16 +69,6 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ token, onB
     };
 
     useEffect(() => { fetchSettingsAndStaff(); }, []);
-
-    const handleSaveProfile = async (event: React.FormEvent) => {
-        event.preventDefault();
-        if (newPassword && newPassword !== confirmPassword) { setModal({ isOpen: true, title: "Password mismatch", message: "The new passwords do not match.", type: "danger" }); return; }
-        setProfileSaving(true);
-        const res = await apiPatch<any>("/auth/me", { name: profileName.trim(), username: profileUsername.trim(), ...(newPassword ? { currentPassword, newPassword } : {}) }, token);
-        setProfileSaving(false);
-        if (res.success) { if (res.data) refreshAdminSession(token, res.data); setCurrentPassword(""); setNewPassword(""); setConfirmPassword(""); setModal({ isOpen: true, title: "Profile Saved", message: "Your profile and password settings have been updated.", type: "success" }); }
-        else setModal({ isOpen: true, title: "Profile Update Failed", message: res.error || "Could not update your profile.", type: "danger" });
-    };
 
     const handleSaveGeneral = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -156,12 +132,6 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ token, onB
         }
     };
 
-    const handleProvisionStaffLogin = async (id: string) => {
-        const res = await apiPost<StaffUser>(`/settings/staff/${id}/credentials`, {}, token);
-        if (res.success && res.data) { setStaffUsers((prev) => prev.map((staff) => staff.id === id ? res.data! : staff)); setModal({ isOpen: true, title: "Login SMS Queued", message: "The staff member has been sent their role, application link, username, and temporary password.", type: "success" }); }
-        else setModal({ isOpen: true, title: "Login Not Created", message: res.error || "Could not create the staff login.", type: "danger" });
-    };
-
     return (
         <div className="admin-container">
             <header className="bg-[#114B36] text-white px-4 py-3 sticky top-0 z-40 shadow-[0_2px_8px_rgba(17,75,54,0.15)]">
@@ -179,13 +149,6 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ token, onB
                         <div className="w-8 h-8 border-4 border-[#E5E7EB] border-t-[#114B36] rounded-full animate-spin" />
                     </div>
                 ) : (
-                    <>
-                    <form onSubmit={handleSaveProfile} className="bg-white rounded-2xl p-5 shadow-[0_2px_8px_rgba(17,75,54,0.06)] mb-5 space-y-3">
-                        <div><h2 className="font-bold text-[#1F2937]">My Profile</h2><p className="text-xs text-[#6B7280] mt-1">Manage your hotel-admin identity and password.</p></div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3"><input value={profileName} onChange={(e) => setProfileName(e.target.value)} placeholder="Display name" className="w-full rounded-xl border-2 border-[#E5E7EB] px-3 py-2.5 text-sm outline-none focus:border-[#114B36]" /><input value={profileUsername} onChange={(e) => setProfileUsername(e.target.value)} placeholder="Username" className="w-full rounded-xl border-2 border-[#E5E7EB] px-3 py-2.5 text-sm outline-none focus:border-[#114B36]" /></div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3"><input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="Current password" className="w-full rounded-xl border-2 border-[#E5E7EB] px-3 py-2.5 text-sm outline-none focus:border-[#114B36]" /><input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="New password (8+ characters)" className="w-full rounded-xl border-2 border-[#E5E7EB] px-3 py-2.5 text-sm outline-none focus:border-[#114B36]" /><input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm new password" className="w-full rounded-xl border-2 border-[#E5E7EB] px-3 py-2.5 text-sm outline-none focus:border-[#114B36]" /></div>
-                        <Button type="submit" size="sm" loading={profileSaving} disabled={!profileName.trim() || !profileUsername.trim() || Boolean(newPassword && (!currentPassword || newPassword.length < 8 || newPassword !== confirmPassword))} icon={<Lock size={14} />}>Save Profile</Button>
-                    </form>
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                         {/* Column 1: Hotel Settings */}
                         <div className="space-y-5">
@@ -221,41 +184,11 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ token, onB
 
                                 <div className="pt-3 border-t border-[#F3F4F6]">
                                     <label className="flex items-center gap-1.5 text-xs font-bold text-[#4B5563] mb-1">
-                                        <Store size={13} /> Hotel Image
+                                        <Store size={13} /> Hotel Image URL
                                     </label>
-                                    <div className="flex items-center gap-3">
-                                        {hotelImageUrl ? (
-                                            <img src={hotelImageUrl} alt="Hotel" className="w-14 h-14 rounded-xl object-cover border border-[#E5E7EB]" />
-                                        ) : (
-                                            <div className="w-14 h-14 rounded-xl bg-[#F3F4F6] flex items-center justify-center border border-dashed border-[#D1D5DB]">
-                                                <Image size={18} className="text-[#9CA3AF]" />
-                                            </div>
-                                        )}
-                                        <div className="flex-1 flex flex-col gap-1.5">
-                                            <div className="flex items-center gap-2">
-                                                <input type="file" accept="image/*" onChange={async (e) => {
-                                                    const file = e.target.files?.[0];
-                                                    if (!file) return;
-                                                    const formData = new FormData();
-                                                    formData.append("file", file);
-                                                    setHotelImageUploading(true);
-                                                    try {
-                                                        const res = await fetch(`${import.meta.env.VITE_API_BASE ?? "/api/v1"}/upload`, { method: "POST", headers: { "Authorization": `Bearer ${token}`, }, body: formData });
-                                                        const data = await res.json();
-                                                        if (data.success && data.data?.url) setHotelImageUrl(data.data.url);
-                                                    } catch { /* ignore */ }
-                                                    setHotelImageUploading(false);
-                                                }} disabled={hotelImageUploading} ref={hotelImageFileRef} className="hidden" />
-                                                <Button type="button" variant="secondary" size="sm" icon={<Upload size={13} />} onClick={() => hotelImageFileRef.current?.click()} disabled={hotelImageUploading}>
-                                                    {hotelImageUploading ? "Uploading…" : "Upload Image"}
-                                                </Button>
-                                                {hotelImageUploading && <span className="text-[0.65rem] text-[#9CA3AF]">uploading…</span>}
-                                            </div>
-                                            <input type="url" placeholder="https://example.com/hotel-image.jpg" value={hotelImageUrl} onChange={(e) => setHotelImageUrl(e.target.value)}
-                                                className="w-full px-3 py-1.5 rounded-lg border border-[#D1D5DB] outline-none text-xs focus:border-[#114B36] focus:ring-2 focus:ring-[rgba(17,75,54,0.1)]"
-                                            />
-                                        </div>
-                                    </div>
+                                    <input type="text" placeholder="https://example.com/hotel-image.jpg" value={hotelImageUrl} onChange={(e) => setHotelImageUrl(e.target.value)}
+                                        className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#D1D5DB] outline-none text-sm focus:border-[#114B36] focus:ring-3 focus:ring-[rgba(17,75,54,0.1)]"
+                                    />
                                     <p className="text-[0.65rem] text-[#9CA3AF] mt-1">Image shown to customers on the hotel selection screen.</p>
                                 </div>
 
@@ -328,7 +261,6 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ token, onB
                                                     <p className="text-xs text-[#9CA3AF]">{staff.phone}</p>
                                                 </div>
                                                 <div className="flex items-center gap-2 shrink-0">
-                                                    {!staff.adminUserId && <button type="button" onClick={() => void handleProvisionStaffLogin(staff.id)} className="px-2.5 py-1 rounded-full text-[0.6rem] font-bold border border-[#C2E2D3] text-[#114B36] bg-[#EBF5F0] cursor-pointer">Send login</button>}
                                                     <button type="button" onClick={() => handleToggleSms(staff.id, staff.receiveSms)}
                                                         className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[0.6rem] font-bold border cursor-pointer transition-colors bg-none ${
                                                             staff.receiveSms
@@ -352,7 +284,6 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ token, onB
                             </div>
                         </div>
                     </div>
-                    </>
                 )}
             </div>
 

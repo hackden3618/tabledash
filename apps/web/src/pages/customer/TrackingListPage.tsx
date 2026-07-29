@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
 import { apiGet } from "../../lib/api";
+import { useWebSocket } from "../../lib/websocket";
 import { Truck, ChevronRight, Package } from "lucide-react";
 import { Header } from "../../components/ui/Header";
 import { EmptyState } from "../../components/ui/EmptyState";
@@ -63,24 +64,19 @@ export const TrackingListPage: React.FC<TrackingListPageProps> = ({ onTrackOrder
     setActiveOrders(merged);
   }, [orders, guestOrder]);
 
-  useEffect(() => {
-    const handler = (event: Event) => {
-      const detail = (event as CustomEvent).detail;
-      if (detail.type === "ORDER_STATUS_UPDATED" || detail.type === "ORDER_CREATED") {
-        const updated = detail.payload;
-        setOrders((prev) => {
-          const exists = prev.some((o) => o.id === updated.id);
-          if (exists) return prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o));
-          return [updated, ...prev];
-        });
-        setLastUpdatedId(updated.id);
-        setTimeout(() => setLastUpdatedId(null), 3000);
-        if (detail.type === "ORDER_STATUS_UPDATED") refreshProfile();
-      }
-    };
-    window.addEventListener("tabledash:realtime", handler);
-    return () => window.removeEventListener("tabledash:realtime", handler);
-  }, [refreshProfile]);
+  useWebSocket("customer", undefined, (event) => {
+    if (event.type === "ORDER_STATUS_UPDATED" || event.type === "ORDER_CREATED") {
+      const updated = event.payload as any;
+      setOrders((prev) => {
+        const exists = prev.some((o) => o.id === updated.id);
+        if (exists) return prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o));
+        return [updated, ...prev];
+      });
+      setLastUpdatedId(updated.id);
+      setTimeout(() => setLastUpdatedId(null), 3000);
+      if (event.type === "ORDER_STATUS_UPDATED") refreshProfile();
+    }
+  });
 
   if (isLoading) {
     return (

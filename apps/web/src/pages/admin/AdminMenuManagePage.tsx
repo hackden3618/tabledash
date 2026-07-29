@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { apiDelete, apiGet, apiPatch, apiPost, apiUpload } from "../../lib/api";
-import { ArrowLeft, Plus, Trash2, Utensils, Upload, Edit, X } from "lucide-react";
+import { apiDelete, apiGet, apiPatch, apiPost } from "../../lib/api";
+import { ArrowLeft, Plus, Trash2, Utensils, X } from "lucide-react";
 import { Modal } from "../../components/ui/Modal";
 import { Button } from "../../components/ui/Button";
 
@@ -35,24 +35,9 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
     const [imageUrl, setImageUrl] = useState("");
     const [category, setCategory] = useState("Meals");
     const [stockQty, setStockQty] = useState("10");
-    const productImageFileRef = useRef<HTMLInputElement>(null);
-    const editImageFileRef = useRef<HTMLInputElement>(null);
     const [showAddForm, setShowAddForm] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [editingStock, setEditingStock] = useState<Record<string, string>>({});
-
-    const [editingItem, setEditingItem] = useState<{
-        id: string;
-        name: string;
-        price: string;
-        imageUrl: string;
-        category: string;
-        available: boolean;
-        stockQty: string;
-    } | null>(null);
-    const [editIsSubmitting, setEditIsSubmitting] = useState(false);
-    const [editingImageFile, setEditingImageFile] = useState<File | null>(null);
-    const [editingImagePreview, setEditingImagePreview] = useState<string | null>(null);
 
     const getFreshnessText = (item: any) => {
       if (item.lastRestockedAt) {
@@ -148,66 +133,6 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
         }
     };
 
-    const handleEditProduct = (item: any) => {
-        setEditingItem({
-            id: item.id,
-            name: item.name,
-            price: String(item.price),
-            imageUrl: item.imageUrl,
-            category: item.category || "Meals",
-            available: item.available,
-            stockQty: String(item.stockQty ?? 0),
-        });
-        setEditingImageFile(null);
-        setEditingImagePreview(null);
-    };
-
-    const handleSubmitEdit = async () => {
-        if (!editingItem) return;
-        setEditIsSubmitting(true);
-        let imageUrl = editingItem.imageUrl;
-        if (editingImageFile) {
-            const upload = await apiUpload<{ url: string }>("/upload", editingImageFile, token);
-            if (!upload.success || !upload.data?.url) {
-                setEditIsSubmitting(false);
-                setModalConfig({
-                    isOpen: true, type: "danger", title: "Image Upload Failed",
-                    message: upload.error || "The image could not be uploaded. Your menu item was not changed.",
-                    primaryAction: { label: "OK", onClick: () => setModalConfig((prev) => ({ ...prev, isOpen: false })) },
-                });
-                return;
-            }
-            imageUrl = upload.data.url;
-        }
-        const res = await apiPatch<any>(`/menu/${editingItem.id}`, {
-            name: editingItem.name,
-            price: Number(editingItem.price),
-            imageUrl,
-            category: editingItem.category,
-        }, token);
-        setEditIsSubmitting(false);
-        if (res.success && res.data) {
-            setProducts((prev) => prev.map((p) => (p.id === editingItem.id ? res.data : p)));
-            setEditingItem(null);
-            if (editingImagePreview) URL.revokeObjectURL(editingImagePreview);
-            setEditingImagePreview(null);
-            setEditingImageFile(null);
-        } else {
-            setModalConfig({
-                isOpen: true, type: "danger", title: "Edit Failed",
-                message: res.error || "Failed to update menu item.",
-                primaryAction: { label: "OK", onClick: () => setModalConfig((prev) => ({ ...prev, isOpen: false })) },
-            });
-        }
-    };
-
-    const handleCancelEdit = () => {
-        if (editingImagePreview) URL.revokeObjectURL(editingImagePreview);
-        setEditingImagePreview(null);
-        setEditingImageFile(null);
-        setEditingItem(null);
-    };
-
     return (
         <div className="admin-container">
             <header className="bg-[#114B36] text-white px-4 py-3 sticky top-0 z-40 shadow-[0_2px_8px_rgba(17,75,54,0.15)]">
@@ -253,16 +178,17 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
                                 <div>
                                     <label className="block text-xs font-semibold text-[#374151] mb-1">Product Image</label>
                                     <div className="space-y-2">
-                                        <input type="file" accept="image/png,image/jpeg,image/webp" onChange={async (e) => {
+                                        <input type="file" accept="image/*" onChange={async (e) => {
                                             const file = e.target.files?.[0];
                                             if (!file) return;
-                                            const upload = await apiUpload<{ url: string }>("/upload", file, token);
-                                            if (upload.success && upload.data?.url) setImageUrl(upload.data.url);
-                                            else setModalConfig({ isOpen: true, type: "danger", title: "Image Upload Failed", message: upload.error || "Please try another image.", primaryAction: { label: "OK", onClick: () => setModalConfig((prev) => ({ ...prev, isOpen: false })) } });
-                                        }} disabled={isSubmitting} ref={productImageFileRef} className="hidden" />
-                                        <Button type="button" variant="secondary" size="sm" icon={<Upload size={13} />} onClick={() => productImageFileRef.current?.click()} disabled={isSubmitting}>
-                                            Upload Image
-                                        </Button>
+                                            const formData = new FormData();
+                                            formData.append("file", file);
+                                            try {
+                                                const res = await fetch(`${import.meta.env.VITE_API_BASE ?? "/api/v1"}/upload`, { method: "POST", body: formData });
+                                                const data = await res.json();
+                                                if (data.success && data.data?.url) setImageUrl(data.data.url);
+                                            } catch { /* ignore */ }
+                                        }} className="text-sm" />
                                         <input type="url" placeholder="or enter Web Image URL" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} required
                                             className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#D1D5DB] outline-none text-sm focus:border-[#114B36] focus:ring-3 focus:ring-[rgba(17,75,54,0.1)]"
                                         />
@@ -327,12 +253,6 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
                                     >
                                         {item.available ? "Avail" : "Off"}
                                     </button>
-                                    <button onClick={() => handleEditProduct(item)}
-                                        className="p-1.5 rounded-lg bg-[#EFF6FF] text-[#2563EB] border-none cursor-pointer hover:bg-[#DBEAFE] transition-colors"
-                                        title="Edit"
-                                    >
-                                        <Edit size={14} />
-                                    </button>
                                     <button onClick={() => handleDeleteProduct(item.id, item.name)}
                                         className="p-1.5 rounded-lg bg-[#FEE2E2] text-[#DC2626] border-none cursor-pointer hover:bg-[#FECACA] transition-colors"
                                     >
@@ -349,36 +269,6 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
                 type={modalConfig.type} title={modalConfig.title} message={modalConfig.message}
                 primaryAction={modalConfig.primaryAction} secondaryAction={modalConfig.secondaryAction}
             />
-            <Modal
-                isOpen={Boolean(editingItem)}
-                onClose={handleCancelEdit}
-                type="info"
-                title="Edit menu item"
-                primaryAction={{ label: "Save changes", onClick: () => void handleSubmitEdit(), loading: editIsSubmitting }}
-                secondaryAction={{ label: "Cancel", onClick: handleCancelEdit }}
-            >
-                {editingItem && <div className="space-y-3">
-                    <input value={editingItem.name} onChange={(event) => setEditingItem({ ...editingItem, name: event.target.value })} placeholder="Item name" className="w-full rounded-xl border-2 border-[#D1D5DB] px-3 py-2.5 text-sm outline-none focus:border-[#114B36]" />
-                    <input type="number" min="0" value={editingItem.price} onChange={(event) => setEditingItem({ ...editingItem, price: event.target.value })} placeholder="Price" className="w-full rounded-xl border-2 border-[#D1D5DB] px-3 py-2.5 text-sm outline-none focus:border-[#114B36]" />
-                    <input value={editingItem.category} onChange={(event) => setEditingItem({ ...editingItem, category: event.target.value })} placeholder="Category" className="w-full rounded-xl border-2 border-[#D1D5DB] px-3 py-2.5 text-sm outline-none focus:border-[#114B36]" />
-                    <div className="space-y-2">
-                        <label className="block text-xs font-semibold text-[#374151]">Menu image</label>
-                        <input ref={editImageFileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(event) => {
-                            const file = event.target.files?.[0];
-                            if (!file) return;
-                            if (editingImagePreview) URL.revokeObjectURL(editingImagePreview);
-                            setEditingImageFile(file);
-                            setEditingImagePreview(URL.createObjectURL(file));
-                        }} />
-                        <div className="flex items-center gap-3">
-                            <img src={editingImagePreview || editingItem.imageUrl} alt="Menu image preview" className="h-16 w-16 rounded-xl border border-[#E5E7EB] object-cover" />
-                            <Button type="button" variant="secondary" size="sm" icon={<Upload size={13} />} onClick={() => editImageFileRef.current?.click()} disabled={editIsSubmitting}>Choose image</Button>
-                        </div>
-                        <p className="text-xs text-[#6B7280]">PNG, JPEG, or WEBP. Preview first; the file uploads when you save changes.</p>
-                        <input value={editingItem.imageUrl} onChange={(event) => { setEditingImageFile(null); if (editingImagePreview) URL.revokeObjectURL(editingImagePreview); setEditingImagePreview(null); setEditingItem({ ...editingItem, imageUrl: event.target.value }); }} placeholder="or enter image URL" className="w-full rounded-xl border-2 border-[#D1D5DB] px-3 py-2.5 text-sm outline-none focus:border-[#114B36]" />
-                    </div>
-                </div>}
-            </Modal>
         </div>
     );
 };

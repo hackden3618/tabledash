@@ -3,7 +3,7 @@ import { Elysia, t } from "elysia";
 import { env } from "../../../../../shared/config";
 import { formatPhone, PHONE_PATTERN } from "../../../../../shared/phone";
 import { getAllHotels, getHotelById } from "../hotels/service";
-import { loginPlatformAdmin, verifyPlatformAdminToken, updatePlatformAdminProfile, changePlatformAdminPassword } from "../auth/service";
+import { loginPlatformAdmin, verifyPlatformAdminToken } from "../auth/service";
 import { prisma } from "../../../../../infrastructure/database/prisma";
 import { AUTH_LIMITER } from "../../lib/rate-limiter";
 
@@ -45,20 +45,6 @@ export const platformRoute = new Elysia({
       }),
     }
   )
-  .patch("/me", async ({ headers, jwt, body, set }) => {
-    const { token, error } = extractToken(headers, jwt);
-    if (error) { set.status = 401; return error; }
-    try {
-      const admin = await verifyPlatformAdminToken(token!, (t) => jwt.verify(t));
-      if (body.username?.trim().toLowerCase() === "hackden" && admin.username.toLowerCase() !== "hackden") { set.status = 403; return { success: false, error: "That protected username is reserved" }; }
-      if (body.currentPassword || body.newPassword) {
-        if (!body.currentPassword || !body.newPassword) throw new Error("Current and new passwords are required");
-        await changePlatformAdminPassword(admin.id, body.currentPassword, body.newPassword);
-      }
-      const profile = body.name !== undefined || body.username !== undefined ? await updatePlatformAdminProfile(admin.id, body) : admin;
-      return { success: true, data: profile };
-    } catch (err: any) { set.status = err.code === "P2002" ? 409 : 400; return { success: false, error: err.code === "P2002" ? "That username is already in use." : err.message || "Unable to update profile" }; }
-  }, { body: t.Object({ name: t.Optional(t.String({ minLength: 1, maxLength: 100 })), username: t.Optional(t.String({ minLength: 3, maxLength: 80 })), currentPassword: t.Optional(t.String({ minLength: 1 })), newPassword: t.Optional(t.String({ minLength: 8, maxLength: 120 })) }) })
   .get(
     "/dashboard",
     async ({ headers, jwt, set }) => {
@@ -79,7 +65,7 @@ export const platformRoute = new Elysia({
           platformAdminCount: admins,
           totalOrders,
           failedOutboxCount: failedOutbox,
-          platformBrand: "Ladha Deliveries",
+          platformBrand: "TableDash Deliveries",
         },
       };
     }
@@ -173,16 +159,6 @@ export const platformRoute = new Elysia({
               name: body.adminName,
               hotelId: hotel.id,
               role: "HOTEL_ADMIN",
-            },
-          });
-
-          await tx.staffUser.create({
-            data: {
-              name: body.adminName,
-              phone: formattedAdminPhone!,
-              receiveSms: true,
-              hotelId: hotel.id,
-              adminUserId: adminUser.id,
             },
           });
 
@@ -292,11 +268,6 @@ export const platformRoute = new Elysia({
       try { creator = await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
       catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
 
-      if (body.username.trim().toLowerCase() === "hackden" && creator.username.toLowerCase() !== "hackden") {
-        set.status = 403;
-        return { success: false, error: "Only the hackden platform owner can reserve this username" };
-      }
-
       const existing = await prisma.platformAdmin.findUnique({ where: { username: body.username } });
       if (existing) { set.status = 409; return { success: false, error: "Username already taken" }; }
 
@@ -348,85 +319,9 @@ export const platformRoute = new Elysia({
       const target = await prisma.platformAdmin.findUnique({ where: { id: params.id } });
       if (!target) { set.status = 404; return { success: false, error: "Platform admin not found" }; }
       if (target.id === remover.id) { set.status = 400; return { success: false, error: "You cannot remove yourself" }; }
-      if (remover.username.toLowerCase() !== "hackden") { set.status = 403; return { success: false, error: "Only the hackden platform owner can remove platform administrators" }; }
 
       await prisma.platformAdmin.delete({ where: { id: params.id } });
       return { success: true, data: { removed: target.name } };
-    },
-    { params: t.Object({ id: t.String({ format: "uuid" }) }) }
-  )
-  .delete(
-    "/hotels/:id",
-    async ({ params, headers, jwt, set }) => {
-      const { token, error } = extractToken(headers, jwt);
-      if (error) { set.status = 401; return error; }
-      try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-      catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
-
-      const hotel = await prisma.hotel.findUnique({ where: { id: params.id } });
-      if (!hotel) { set.status = 404; return { success: false, error: "Hotel not found" }; }
-
-      await prisma.hotel.update({
-        where: { id: params.id },
-        data: { deletedAt: new Date() },
-      });
-
-      return { success: true, data: { deleted: hotel.name } };
-    },
-    { params: t.Object({ id: t.String({ format: "uuid" }) }) }
-  )
-  .patch(
-    "/hotels/:id",
-    async ({ params, body, headers, jwt, set }) => {
-      const { token, error } = extractToken(headers, jwt);
-      if (error) { set.status = 401; return error; }
-      try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-      catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
-
-      const hotel = await prisma.hotel.findUnique({ where: { id: params.id } });
-      if (!hotel) { set.status = 404; return { success: false, error: "Hotel not found" }; }
-
-      const updated = await prisma.hotel.update({
-        where: { id: params.id },
-        data: {
-          name: body.name ?? hotel.name,
-          slug: body.slug ?? hotel.slug,
-          isOpen: body.isOpen !== undefined ? body.isOpen : hotel.isOpen,
-          imageUrl: body.imageUrl !== undefined ? body.imageUrl : hotel.imageUrl,
-          autoCloseAt: body.autoCloseAt !== undefined ? (body.autoCloseAt ? new Date(body.autoCloseAt) : null) : hotel.autoCloseAt,
-        },
-      });
-
-      return { success: true, data: updated };
-    },
-    {
-      params: t.Object({ id: t.String({ format: "uuid" }) }),
-      body: t.Object({
-        name: t.Optional(t.String()),
-        slug: t.Optional(t.String()),
-        isOpen: t.Optional(t.Boolean()),
-        imageUrl: t.Optional(t.String()),
-        autoCloseAt: t.Optional(t.String()),
-      }),
-    }
-  )
-  .patch(
-    "/outbox/:id/retry",
-    async ({ params, headers, jwt, set }) => {
-      const { token, error } = extractToken(headers, jwt);
-      if (error) { set.status = 401; return error; }
-      try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-      catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
-
-      const entry = await prisma.eventOutbox.findUnique({ where: { id: params.id } });
-      if (!entry) { set.status = 404; return { success: false, error: "Outbox entry not found" }; }
-
-      await prisma.eventOutbox.update({
-        where: { id: params.id },
-        data: { status: "initialized", attempts: 0, lastError: null },
-      });
-
-      return { success: true, data: { retried: entry.id } };
     },
     { params: t.Object({ id: t.String({ format: "uuid" }) }) }
   )

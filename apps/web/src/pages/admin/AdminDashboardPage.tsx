@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { apiGet } from "../../lib/api";
+import { useWebSocket } from "../../lib/websocket";
 import {
   ArrowLeft, CheckCircle2, Clock, Settings,
   ShoppingBag, TrendingUp, Utensils, Wallet, XCircle, Calendar
@@ -46,17 +47,12 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [loading, setLoading] = useState(true);
   const [newOrderAlert, setNewOrderAlert] = useState(false);
 
-  useEffect(() => {
-    const handler = (event: Event) => {
-      const detail = (event as CustomEvent).detail;
-      if (detail.type === "ORDER_CREATED") {
-        setNewOrderAlert(true);
-        setTimeout(() => setNewOrderAlert(false), 10000);
-      }
-    };
-    window.addEventListener("tabledash:realtime", handler);
-    return () => window.removeEventListener("tabledash:realtime", handler);
-  }, []);
+  useWebSocket("admin", undefined, (event) => {
+    if (event.type === "ORDER_CREATED") {
+      setNewOrderAlert(true);
+      setTimeout(() => setNewOrderAlert(false), 10000);
+    }
+  });
 
   const fetchMetrics = async () => {
     setLoading(true);

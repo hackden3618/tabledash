@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { apiGet } from "../../lib/api";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
+import { useWebSocket } from "../../lib/websocket";
 import { ClipboardList, Package, RefreshCw, ChevronRight, Settings } from "lucide-react";
 import { Header } from "../../components/ui/Header";
 import { EmptyState } from "../../components/ui/EmptyState";
@@ -67,31 +68,26 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
     }
   };
 
-  useEffect(() => {
-    const handler = (event: Event) => {
-      const detail = (event as CustomEvent).detail;
-      if (detail.type === "ORDER_STATUS_UPDATED") {
-        const updated = detail.payload;
-        setOrders((prev) => {
-          const exists = prev.some((o) => o.id === updated.id);
-          if (exists) return prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o));
-          return [updated, ...prev];
-        });
-        setLastUpdatedId(updated.id);
-        setTimeout(() => setLastUpdatedId(null), 3000);
-      } else if (detail.type === "ORDER_CREATED") {
-        const newOrder = detail.payload;
-        setOrders((prev) => {
-          if (prev.some((o) => o.id === newOrder.id)) return prev;
-          return [newOrder, ...prev];
-        });
-        setLastUpdatedId(newOrder.id);
-        setTimeout(() => setLastUpdatedId(null), 3000);
-      }
-    };
-    window.addEventListener("tabledash:realtime", handler);
-    return () => window.removeEventListener("tabledash:realtime", handler);
-  }, []);
+  useWebSocket("customer", undefined, (event) => {
+    if (event.type === "ORDER_STATUS_UPDATED") {
+      const updated = event.payload as any;
+      setOrders((prev) => {
+        const exists = prev.some((o) => o.id === updated.id);
+        if (exists) return prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o));
+        return [updated, ...prev];
+      });
+      setLastUpdatedId(updated.id);
+      setTimeout(() => setLastUpdatedId(null), 3000);
+    } else if (event.type === "ORDER_CREATED") {
+      const newOrder = event.payload as any;
+      setOrders((prev) => {
+        if (prev.some((o) => o.id === newOrder.id)) return prev;
+        return [newOrder, ...prev];
+      });
+      setLastUpdatedId(newOrder.id);
+      setTimeout(() => setLastUpdatedId(null), 3000);
+    }
+  });
 
   if (isLoading) {
     return (

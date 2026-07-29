@@ -6,9 +6,9 @@
  * When to modify: When adding new application views or changing top-level route flows.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { CartProvider } from "./context/CartContext";
-import { CustomerAuthProvider, useCustomerAuth } from "./context/CustomerAuthContext";
+import { CustomerAuthProvider } from "./context/CustomerAuthContext";
 import { AdminAuthProvider, useAdminAuth } from "./context/AdminAuthContext";
 import { PlatformAdminAuthProvider, usePlatformAdminAuth } from "./context/PlatformAdminAuthContext";
 import { NotificationsProvider, useNotifications } from "./context/NotificationsContext";
@@ -25,9 +25,6 @@ import { OrderTrackingPage } from "./pages/customer/OrderTrackingPage";
 import { SearchPage } from "./pages/customer/SearchPage";
 import { TrackingListPage } from "./pages/customer/TrackingListPage";
 import { CustomerProfilePage } from "./pages/customer/CustomerProfilePage";
-import { InboxPage } from "./pages/InboxPage";
-import { decodeJwt } from "./lib/jwt";
-import { useWebSocket, type WsEventPayload } from "./lib/websocket";
 
 // Admin Views
 import { AdminBottomNavBar, type AdminTab } from "./components/AdminBottomNavBar";
@@ -53,7 +50,6 @@ type ViewState =
   | "customer_auth"
   | "customer_my_orders"
   | "customer_profile"
-  | "customer_conversations"
   | "customer_tracker_list"
   | "admin_login"
   | "admin_orders"
@@ -63,16 +59,14 @@ type ViewState =
   | "admin_menu_manage"
   | "admin_settings"
   | "admin_order_history"
-  | "admin_conversations"
   | "platform_admin";
 
 export function AppContent() {
-  const { toasts, dismissToast, setScope, clearScope, pushNotification } = useNotifications();
-  const { token: customerToken, customer } = useCustomerAuth();
-  const { token: adminToken, user: adminUser, isLoggedIn: isAdminLoggedIn, hydrating: adminHydrating, login: adminLogin, logout: adminLogout } = useAdminAuth();
-  const { token: platformToken } = usePlatformAdminAuth();
+  const { toasts, dismissToast, setScope, clearScope } = useNotifications();
+  const { token: adminToken, isLoggedIn: isAdminLoggedIn, hydrating: adminHydrating, login: adminLogin, logout: adminLogout } = useAdminAuth();
+  usePlatformAdminAuth();
 
-  const [currentView, setCurrentViewState] = useState<ViewState>(() => {
+  const [currentView, setCurrentView] = useState<ViewState>(() => {
     const path = window.location.pathname;
     if (path === "/kitchen") {
       const stored = localStorage.getItem("ladha_token");
@@ -84,19 +78,6 @@ export function AppContent() {
     }
     return "customer_menu";
   });
-
-  // Keep the browser history aligned with the in-app state-machine so Back
-  // returns to the screen the user actually visited.
-  const setCurrentView = useCallback((nextView: ViewState) => {
-    window.history.pushState({ view: nextView }, "", window.location.href);
-    setCurrentViewState(nextView);
-  }, []);
-
-  useEffect(() => {
-    if (!window.history.state?.view) {
-      window.history.replaceState({ view: currentView }, "", window.location.href);
-    }
-  }, []);
 
   // Auto-redirect admin to/from login based on auth state
   useEffect(() => {
@@ -132,16 +113,14 @@ export function AppContent() {
 
   // Listen for URL changes (pop state / back/forward)
   useEffect(() => {
-    const handlePopState = (event: PopStateEvent) => {
+    const handlePopState = () => {
       const path = window.location.pathname;
       if (path === "/kitchen") {
-        setCurrentViewState(isAdminLoggedIn ? "admin_orders" : "admin_login");
+        setCurrentView(isAdminLoggedIn ? "admin_orders" : "admin_login");
       } else if (path === "/platform") {
-        setCurrentViewState("platform_admin");
-      } else if (event.state?.view) {
-        setCurrentViewState(event.state.view as ViewState);
+        setCurrentView("platform_admin");
       } else if (currentView.startsWith("admin_") || currentView === "platform_admin") {
-        setCurrentViewState("customer_menu");
+        setCurrentView("customer_menu");
       }
     };
     window.addEventListener("popstate", handlePopState);
@@ -150,49 +129,6 @@ export function AppContent() {
 
   const isCustomerView = currentView.startsWith("customer_");
   const isAdminView = currentView.startsWith("admin_");
-  const realtimeRole = isAdminView || currentView === "platform_admin" ? "admin" : "customer";
-  const realtimeToken = isAdminView ? adminToken : currentView === "platform_admin" ? platformToken : customerToken;
-  const currentIdentityKey = currentView === "platform_admin" ? (platformToken ? `platform:${decodeJwt(platformToken)?.sub ?? ""}` : "") : isAdminView ? (adminUser?.id ? `admin:${adminUser.id}` : "") : (customer?.id ? `customer:${customer.id}` : `guest:${localStorage.getItem("tableDash_guest_id") || ""}`);
-  const rootSocket = useWebSocket(realtimeRole, undefined, (event: WsEventPayload) => {
-    window.dispatchEvent(new CustomEvent("tabledash:realtime", { detail: event }));
-    if (event.type === "MESSAGE_CREATED") {
-      const message = event.payload as { body?: string; senderIdentityKey?: string };
-      if (message.senderIdentityKey !== currentIdentityKey) pushNotification("info", "New message", message.body || "You have a new message.", { scope: isCustomerView ? "customer" : currentView === "platform_admin" ? "platform" : "admin" });
-    } else if (event.type === "ANNOUNCEMENT_PUBLISHED") {
-      const announcement = event.payload as { title?: string; body?: string; sourceName?: string };
-      if ((announcement as { senderIdentityKey?: string }).senderIdentityKey !== currentIdentityKey) pushNotification("info", announcement.title || "New announcement", `${announcement.sourceName ? `${announcement.sourceName}: ` : ""}${announcement.body || "A new announcement is available."}`, { scope: isCustomerView ? "customer" : currentView === "platform_admin" ? "platform" : "admin" });
-    } else if (event.type === "NOTIFICATION") {
-      const notification = event.payload as { category?: string; title?: string; message?: string };
-      const categoryMap: Record<string, "info" | "danger" | "success" | "warning"> = {
-        dispatch: "info",
-        cancellation: "warning",
-      };
-      pushNotification(categoryMap[notification.category || ""] || "info", notification.title || "", notification.message || "", { scope: isCustomerView ? "customer" : currentView === "platform_admin" ? "platform" : "admin" });
-    } else if (event.type === "ORDER_PAYMENT_UPDATED") {
-      const payment = event.payload as { paymentStatus?: string; amountPaid?: number; totalAmount?: number; orderNumber?: number };
-      if (currentView.startsWith("admin_") || currentView === "platform_admin") {
-        const statusLabel = payment.paymentStatus === "REFUNDED" ? "Refunded" : payment.paymentStatus === "PAID" ? "Paid" : payment.paymentStatus === "PARTIAL" ? "Partial" : "Unpaid";
-        pushNotification("info", "Payment Updated", `Order #${payment.orderNumber} — ${statusLabel} (KSh ${Number(payment.amountPaid ?? 0).toFixed(2)} / ${Number(payment.totalAmount ?? 0).toFixed(2)})`, { scope: currentView === "platform_admin" ? "platform" : "admin" });
-      }
-    } else if (event.type === "HOTEL_CLOSING") {
-      const closing = event.payload as { hotelId?: string; hotelName?: string; closingIn?: number };
-      if (closing.closingIn !== undefined && closing.closingIn <= 0) {
-        pushNotification("warning", "Hotel Closed", `${closing.hotelName || "A hotel"} is now closed for new orders.`, { scope: isCustomerView ? "customer" : currentView === "platform_admin" ? "platform" : "admin" });
-      } else if (closing.closingIn !== undefined) {
-        pushNotification("warning", "Hotel Closing", `${closing.hotelName || "A hotel"} will close in ${closing.closingIn}s — place your order soon.`, { scope: isCustomerView ? "customer" : currentView === "platform_admin" ? "platform" : "admin", duration: 10000 });
-      }
-    } else if (event.type === "HOTEL_STATUS_UPDATED") {
-      const status = event.payload as { hotelId?: string; hotelName?: string; isOpen?: boolean };
-      if (status.hotelName) {
-        pushNotification(status.isOpen ? "info" : "warning", status.isOpen ? "Hotel Open" : "Hotel Closed", `${status.hotelName} is now ${status.isOpen ? "open" : "closed"}.`, { scope: isCustomerView ? "customer" : currentView === "platform_admin" ? "platform" : "admin" });
-      }
-    }
-  }, undefined, realtimeToken);
-  useEffect(() => {
-    const handleSend = (event: Event) => rootSocket.send((event as CustomEvent).detail);
-    window.addEventListener("tabledash:send", handleSend);
-    return () => window.removeEventListener("tabledash:send", handleSend);
-  }, [rootSocket.send]);
 
   const getAdminTab = (): AdminTab => {
     switch (currentView) {
@@ -200,7 +136,6 @@ export function AppContent() {
       case "admin_menu_manage": return "menu";
       case "admin_settings": return "settings";
       case "admin_order_history": return "history";
-      case "admin_conversations": return "messages";
       default: return "orders";
     }
   };
@@ -211,13 +146,11 @@ export function AppContent() {
     else if (tab === "menu") setCurrentView("admin_menu_manage");
     else if (tab === "settings") setCurrentView("admin_settings");
     else if (tab === "history") setCurrentView("admin_order_history");
-    else if (tab === "messages") setCurrentView("admin_conversations");
   };
 
   const getActiveTab = (): CustomerTab => {
     if (currentView === "customer_cart") return "cart";
     if (currentView === "customer_tracker_list" || currentView === "customer_tracking" || currentView === "customer_confirmation") return "tracking";
-    if (currentView === "customer_conversations") return "conversations";
     if (currentView === "customer_auth" || currentView === "customer_my_orders" || currentView === "customer_profile") return "account";
     return "menu";
   };
@@ -226,7 +159,6 @@ export function AppContent() {
     if (tab === "menu") setCurrentView("customer_menu");
     if (tab === "cart") setCurrentView("customer_cart");
     if (tab === "tracking") setCurrentView("customer_tracker_list");
-    if (tab === "conversations") setCurrentView("customer_conversations");
     if (tab === "account") setCurrentView("customer_my_orders");
     return "menu";
   };
@@ -241,12 +173,7 @@ export function AppContent() {
         <MenuListPage
           onNavigateToCart={() => setCurrentView("customer_cart")}
           onNavigateToAccount={() => setCurrentView("customer_my_orders")}
-          onNavigateToConversations={() => setCurrentView("customer_conversations")}
         />
-      )}
-
-      {currentView === "customer_conversations" && (
-        <InboxPage token={customerToken} actorId={customer?.id} onBack={() => setCurrentView("customer_menu")} />
       )}
 
       {currentView === "customer_cart" && (
@@ -300,7 +227,6 @@ export function AppContent() {
          <SearchPage
            onBack={() => setCurrentView("customer_menu")}
            onNavigateToMenu={() => setCurrentView("customer_menu")}
-           onNavigateToConversations={() => setCurrentView("customer_conversations")}
          />
        )}
 
@@ -413,13 +339,11 @@ export function AppContent() {
         />
       )}
 
-      {currentView === "admin_conversations" && (
-        <InboxPage token={adminToken} actorId={adminUser?.id} mode="hotel" hotelId={adminToken ? String(decodeJwt(adminToken)?.hotelId ?? "") : undefined} title="Inbox" onBack={() => setCurrentView("admin_orders")} />
-      )}
-
       {/* ─── Platform Admin Panel (self-contained auth) ──────────────── */}
       {currentView === "platform_admin" && (
-        <PlatformAdminPage onBack={() => window.location.href = "/"} />
+        <PlatformAdminPage
+          onBack={() => setCurrentView("customer_menu")}
+        />
       )}
 
       {/* Admin Bottom Navigation — persistent across all admin views (except login and order details) */}

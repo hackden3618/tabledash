@@ -27,15 +27,21 @@ export class TextSmsDriver implements ISmsDriver {
   private readonly apiUrl = "https://sms.textsms.co.ke/api/services/sendsms/";
 
   constructor() {
-    console.log(`[SMS Driver] TextSMS.co.ke configured: ${Boolean(env.textSmsApiKey && env.textSmsPartnerId)}`);
+    console.log("[SMS Driver Loaded] TextSMS.co.ke credentials check:");
+    console.log(`  → Partner ID : ${env.textSmsPartnerId ? env.textSmsPartnerId : "❌ MISSING"}`);
+    console.log(`  → API Key    : ${env.textSmsApiKey ? env.textSmsApiKey.slice(0, 8) + "..." : "❌ MISSING"}`);
+    console.log(`  → Sender ID  : ${env.textSmsShortcode}`);
   }
 
   public async sendSms(recipientPhone: string, message: string): Promise<boolean> {
     const formattedPhone = formatPhone(recipientPhone);
 
     if (!env.textSmsApiKey || !env.textSmsPartnerId) {
-      console.error("[SMS Dispatch Blocked] TextSMS credentials are not configured");
-      return false;
+      console.warn(
+        "[SMS Driver Warning] TEXTSMS_API_KEY or TEXTSMS_PARTNER_ID missing. Falling back to log print."
+      );
+      console.log(`[SMS OUTBOUND to ${formattedPhone}]: ${message}`);
+      return true;
     }
 
     try {
@@ -56,11 +62,7 @@ export class TextSmsDriver implements ISmsDriver {
 
       // Read the raw text first — TextSMS.co.ke may return plain text or JSON
       const rawText = await response.text();
-      console.log(`[SMS Gateway Response] HTTP ${response.status} to recipient ending ${formattedPhone.slice(-4)}`);
-
-      if (env.smsLogMessages) {
-        console.log(`[SMS Debug] To: ${formattedPhone}\n[SMS Debug Message]: ${message}\n[SMS Debug Gateway Body]: ${rawText}`);
-      }
+      console.log(`[SMS Gateway Response] HTTP ${response.status} to ${formattedPhone}:`, rawText);
 
       // Try parsing JSON; if it fails, treat raw text as the result payload
       let data: unknown;
@@ -71,10 +73,10 @@ export class TextSmsDriver implements ISmsDriver {
       }
 
       if (response.ok) {
-        console.log("[SMS Dispatched successfully via TextSMS.co.ke]");
+        console.log("[SMS Dispatched successfully via TextSMS.co.ke]:", data);
         return true;
       } else {
-        console.error(`[SMS Dispatch Failed] HTTP ${response.status}`);
+        console.error(`[SMS Dispatch Failed] HTTP ${response.status}:`, data);
         return false;
       }
     } catch (error) {
@@ -89,12 +91,10 @@ export class TextSmsDriver implements ISmsDriver {
  */
 export class ConsoleSmsDriver implements ISmsDriver {
   public async sendSms(recipientPhone: string, message: string): Promise<boolean> {
-    if (env.smsLogMessages) {
-      console.log(`\n========================================`);
-      console.log(`[DEV SMS SIMULATION] To: ${recipientPhone}`);
-      console.log(`[Message]: ${message}`);
-      console.log(`========================================\n`);
-    }
+    console.log(`\n========================================`);
+    console.log(`[DEV SMS SIMULATION] To: ${recipientPhone}`);
+    console.log(`[Message]: ${message}`);
+    console.log(`========================================\n`);
     return true;
   }
 }

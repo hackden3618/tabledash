@@ -10,7 +10,6 @@
 import { prisma } from "../../../../../infrastructure/database/prisma";
 import { formatPhone } from "../../../../../shared/phone";
 import { smsService } from "../notifications/sms.service";
-import { linkGuestIdentity } from "./guest-identity";
 
 const CUSTOMER_TOKEN_EXPIRY_SEC = 7 * 24 * 60 * 60; // 7 days
 
@@ -26,8 +25,7 @@ export const registerCustomer = async (
     phone: string;
     pin: string;
   },
-  jwtSign: (payload: Record<string, any>) => Promise<string>,
-  guestId?: string,
+  jwtSign: (payload: Record<string, any>) => Promise<string>
 ) => {
   const formattedPhone = formatPhone(input.phone);
   const existing = await prisma.customer.findUnique({ where: { phone: formattedPhone } });
@@ -50,8 +48,6 @@ export const registerCustomer = async (
       data: { firstName: input.firstName, lastName: input.lastName, phone: formattedPhone, pinHash },
     });
   }
-
-  await linkGuestIdentity(guestId, customer.id);
 
   const token = await jwtSign({
     sub: customer.id,
@@ -155,16 +151,6 @@ export const getCustomerProfile = async (customerId: string) => {
       })),
     })),
   };
-};
-
-export const updateCustomerProfile = async (customerId: string, input: { firstName?: string; lastName?: string; phone?: string; knownName?: string | null }) => {
-  const data: Record<string, string | null> = {};
-  if (input.firstName !== undefined) data.firstName = input.firstName.trim();
-  if (input.lastName !== undefined) data.lastName = input.lastName?.trim() || null;
-  if (input.phone !== undefined) data.phone = formatPhone(input.phone);
-  if (input.knownName !== undefined) data.knownName = input.knownName?.trim() || null;
-  const customer = await prisma.customer.update({ where: { id: customerId }, data, select: { id: true, firstName: true, lastName: true, phone: true, knownName: true, stallNumber: true, marketSection: true, locationDescription: true, pinHash: true } });
-  return { ...customer, hasPin: Boolean(customer.pinHash), pinHash: undefined };
 };
 
 /**

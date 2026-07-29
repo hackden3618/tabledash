@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { apiGet, apiPost } from "../../lib/api";
+import { useWebSocket } from "../../lib/websocket";
 import { useNotifications } from "../../context/NotificationsContext";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
-import { Truck, XCircle, Send } from "lucide-react";
+import { Truck, XCircle } from "lucide-react";
 import { Modal } from "../../components/ui/Modal";
 import { Header } from "../../components/ui/Header";
 import { Button } from "../../components/ui/Button";
@@ -23,126 +24,287 @@ const STATUSES = [
   { key: "DELIVERED", label: "Delivered" },
 ];
 
-interface ChatMessage { id: string; body: string; createdAt: string; senderParticipantId: string; }
-
-export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({ orderId, onBackToHome }) => {
+export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({
+  orderId,
+  onBackToHome,
+}) => {
   const [order, setOrder] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [cancelReason, setCancelReason] = useState("");
   const [isCancelling, setIsCancelling] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
-  const [convId, setConvId] = useState<string | null>(null);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [chatBody, setChatBody] = useState("");
-  const [sending, setSending] = useState(false);
   const { pushNotification } = useNotifications();
   const { token: customerToken, isLoggedIn } = useCustomerAuth();
-  const chatEndRef = useRef<HTMLDivElement>(null);
 
   const fetchOrder = async () => {
-    const res = await apiGet<any>(`/orders/${orderId}`, customerToken || undefined);
-    if (res.success && res.data) setOrder(res.data);
+    const res = await apiGet<any>(`/orders/${orderId}`);
+    if (res.success && res.data) {
+      setOrder(res.data);
+    }
     setLoading(false);
   };
 
-  const fetchConversation = async () => {
-    const res = await apiGet<{ id: string }>(`/messaging/orders/${orderId}/conversation`, customerToken || undefined);
-    if (res.success && res.data) {
-      setConvId(res.data.id);
-      const msgs = await apiGet<{ messages: ChatMessage[] }>(`/messaging/conversations/${res.data.id}/messages`, customerToken || undefined);
-      if (msgs.success && msgs.data) setChatMessages(msgs.data.messages);
-    }
-  };
-
-  useEffect(() => { fetchOrder(); }, [orderId, customerToken]);
-  useEffect(() => { if (customerToken || isLoggedIn) fetchConversation(); }, [orderId, customerToken, isLoggedIn]);
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages]);
-
   useEffect(() => {
-    const handler = (event: Event) => {
-      const detail = (event as CustomEvent).detail;
-      if (detail.type === "ORDER_STATUS_UPDATED" && detail.payload?.id === orderId) {
-        setOrder(detail.payload);
-        const status = detail.payload.status;
-        if (status === "OUT_FOR_DELIVERY") pushNotification("delivery", "🚀 Order Out for Delivery!", "Your meal is on its way!", { duration: 7000 });
-        else if (status === "DELIVERED") pushNotification("success", "🎉 Delivered!", "Enjoy your meal!", { duration: 7000 });
-        else if (status === "PREPARING") pushNotification("info", "👨‍🍳 Cooking!", "Your meal is being prepared.", { duration: 5000 });
-      }
-      if (detail.type === "MESSAGE_CREATED" && convId && detail.payload?.conversationId === convId) {
-        setChatMessages((prev) => prev.some((m) => m.id === detail.payload.id) ? prev : [...prev, detail.payload as ChatMessage]);
-      }
-    };
-    window.addEventListener("tabledash:realtime", handler);
-    return () => window.removeEventListener("tabledash:realtime", handler);
-  }, [orderId, convId, pushNotification]);
+    fetchOrder();
+  }, [orderId]);
 
-  const sendChat = async () => {
-    if (!chatBody.trim() || sending || !convId) return;
-    setSending(true);
-    const result = await apiPost<ChatMessage>(`/messaging/conversations/${convId}/messages`, { body: chatBody.trim() }, customerToken || undefined);
-    if (result.success && result.data) {
-      setChatMessages((prev) => [...prev, result.data!]);
-      setChatBody("");
+  useWebSocket("customer", orderId, (event) => {
+    if (event.type === "ORDER_STATUS_UPDATED" && (event.payload as any)?.id === orderId) {
+      const updated = event.payload as any;
+      setOrder(updated);
+
+      if (updated.status === "OUT_FOR_DELIVERY") {
+        pushNotification("delivery", "🚀 Order Out for Delivery!", "Your meal is on its way!", { duration: 7000 });
+      } else if (updated.status === "DELIVERED") {
+        pushNotification("success", "🎉 Delivered!", "Enjoy your meal!", { duration: 7000 });
+      } else if (updated.status === "PREPARING") {
+        pushNotification("info", "👨‍🍳 Preparing", "Kitchen is preparing your order.");
+      } else if (updated.status === "CANCELLED") {
+        pushNotification("danger", "⚠️ Cancelled", updated.cancelReason || "Order was cancelled.");
+      }
+    } else if (event.type === "ORDER_PAYMENT_UPDATED" && (event.payload as any)?.id === orderId) {
+      const p = event.payload as any;
+      pushNotification("success", "💰 Payment Updated",
+        p.paymentStatus === "PAID" ? "Fully paid! ✅" : `Payment: ${p.paymentStatus} (KSh ${p.amountPaid})`,
+        { duration: 5000 });
+    } else if (event.type === "NOTIFICATION" && (event.payload as any)?.orderId === orderId) {
+      const n = event.payload as any;
+      pushNotification(n.category === "cancellation" ? "danger" : "info", n.title, n.message, { duration: 6000 });
     }
-    setSending(false);
-  };
+  });
 
   const handleCancelOrder = async () => {
+    if (!cancelReason.trim()) return;
     setIsCancelling(true);
-    const res = await apiPost(`/orders/${orderId}/cancel`, { reason: cancelReason || undefined }, customerToken || undefined);
+    const res = await apiPost<any>(`/orders/${orderId}/cancel`, { reason: cancelReason.trim() }, customerToken);
     setIsCancelling(false);
-    if (res.success) { setShowCancelModal(false); pushNotification("info", "Order Cancelled", "Your order has been cancelled."); fetchOrder(); }
-    else pushNotification("danger", "Error", res.error || "Unable to cancel order");
+    setShowCancelModal(false);
+    if (res.success) {
+      pushNotification("info", "✅ Cancelled", "Your order has been cancelled.");
+      setOrder(res.data);
+    } else {
+      pushNotification("danger", "Cancellation Failed", res.error || "Please try again.");
+    }
   };
 
-  if (loading) return <div className="app-container"><Header title="Order Tracking" onBack={onBackToHome} /><div className="flex-1 flex items-center justify-center"><p className="text-sm text-[#6B7280]">Loading order...</p></div></div>;
-  if (!order) return <div className="app-container"><Header title="Order Tracking" onBack={onBackToHome} /><div className="flex-1 flex items-center justify-center"><p className="text-sm text-[#6B7280]">Order not found</p></div></div>;
+  const isCancelled = order?.status === "CANCELLED";
 
-  const currentIndex = STATUSES.findIndex((s) => s.key === order.status);
-  const isTerminal = order.status === "DELIVERED" || order.status === "CANCELLED";
+  const getStatusIndex = (status: string) => STATUSES.findIndex((s) => s.key === status);
+
+  const cancelledAtIdx = isCancelled && order?.cancelledAtStatus
+    ? getStatusIndex(order.cancelledAtStatus)
+    : -1;
+  const currentIndex = order && !isCancelled ? getStatusIndex(order.status) : cancelledAtIdx;
+
+  if (loading) {
+    return (
+      <div className="app-container">
+        <Header title="Live Order Tracker" onBack={onBackToHome} />
+        <div className="flex items-center justify-center py-24">
+          <div className="text-center">
+            <div className="w-12 h-12 border-4 border-[#E5E7EB] border-t-[#114B36] rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-sm text-[#6B7280]">Connecting live tracker...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!order) {
+    return (
+      <div className="app-container">
+        <Header title="Live Order Tracker" onBack={onBackToHome} />
+        <div className="flex flex-col items-center justify-center py-24">
+          <p className="text-sm text-[#6B7280] mb-4">Order not found.</p>
+          <Button onClick={onBackToHome} variant="secondary" size="sm">Back to Home</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app-container">
-      <Header title={order.status === "CANCELLED" ? "Order Cancelled" : "Order Tracking"} subtitle={`Order #${order.orderNumber}`} onBack={onBackToHome} />
-      <PageTransition className="flex-1 px-4 py-5 overflow-y-auto" style={{ height: `calc(100dvh - 64px - 56px)` }}>
-        {order.status === "CANCELLED" ? (
-          <div className="rounded-2xl bg-[#FEF2F2] border-2 border-[#FCA5A5] p-5 mb-5">
-            <div className="flex items-center gap-3 mb-3"><div className="w-10 h-10 rounded-full bg-[#FEE2E2] flex items-center justify-center text-[#EF4444]"><XCircle size={20} /></div><div><p className="font-bold text-[#991B1B]">Order Cancelled</p><p className="text-xs text-[#B91C1C]">This order has been cancelled.</p></div></div>
-            {order.cancelReason && <div className="bg-white rounded-xl p-3 mt-3"><p className="text-xs font-bold text-[#6B7280]">Reason</p><p className="text-sm text-[#1F2937] mt-1">{order.cancelReason}</p></div>}
-          </div>
-        ) : (
-          <>
-            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-[#EBF5F0] rounded-2xl p-5 border-2 border-[#114B36] mb-6 text-center relative overflow-hidden">
-              {order.status === "OUT_FOR_DELIVERY" && <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[rgba(17,75,54,0.03)] to-transparent animate-pulse" />}
-              <p className="text-xs font-bold text-[#114B36]">ORDER #{order.orderNumber}</p>
-              <p className="text-xl font-extrabold text-[#1F2937] mt-1">{STATUSES.find((s) => s.key === order.status)?.label || order.status}</p>
-              <p className="text-xs text-[#6B7280] mt-1">Location: {order.marketSection}{order.locationDescription ? ` — ${order.locationDescription}` : ""}</p>
-            </motion.div>
+      <Header title="Live Order Tracker" onBack={onBackToHome} />
 
-            {order.status === "OUT_FOR_DELIVERY" && <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-[#EFF6FF] border-2 border-[#60A5FA] rounded-2xl p-4 mb-5 flex items-center gap-3"><div className="w-10 h-10 rounded-xl bg-[#DBEAFE] flex items-center justify-center text-[#1D4ED8] shrink-0"><Truck size={20} /></div><div><p className="font-bold text-sm text-[#1E40AF]">🚀 Out for Delivery!</p><p className="text-xs text-[#1D4ED8] mt-0.5">An SMS update was sent. Keep your phone handy!</p></div></motion.div>}
+      <PageTransition>
+        <div className="px-4 py-5">
+          {isCancelled ? (
+            <>
+              {/* Cancelled Banner */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="bg-[#FEE2E2] border-2 border-[#EF4444] rounded-2xl p-5 mb-5 text-center"
+              >
+                <div className="text-3xl mb-2">⚠️</div>
+                <h2 className="text-lg font-extrabold text-[#DC2626]">Order Cancelled</h2>
+                {order.cancelReason && (
+                  <p className="text-sm text-[#991B1B] mt-1">Reason: {order.cancelReason}</p>
+                )}
+              </motion.div>
 
-            <div className="space-y-4 pl-2">
-              {STATUSES.map((step, idx) => {
-                const isCompleted = idx <= currentIndex;
-                const isCurrent = idx === currentIndex;
-                return <div key={step.key} className="flex items-center gap-4 relative"><motion.div initial={isCurrent ? { scale: 0 } : undefined} animate={isCurrent ? { scale: 1 } : undefined} transition={{ type: "spring", damping: 10, stiffness: 200 }} className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm z-10 shrink-0 ${isCompleted ? "bg-[#114B36] text-white" : "bg-[#E5E7EB] text-[#9CA3AF]"} ${isCurrent ? "shadow-[0_0_0_4px_rgba(17,75,54,0.15)]" : ""}`}>{isCompleted ? "✓" : idx + 1}</motion.div><div><p className={`font-semibold text-sm ${isCompleted ? "text-[#1F2937]" : "text-[#9CA3AF]"}`}>{step.label}</p>{isCurrent && <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-xs font-bold text-[#22C55E] mt-0.5 flex items-center gap-1"><span className="w-1.5 h-1.5 bg-[#22C55E] rounded-full inline-block animate-pulse" /> Current Status</motion.p>}</div></div>;
-              })}
-            </div>
+              <div className="bg-[#F3F4F6] rounded-2xl p-4 mb-6 text-center">
+                <p className="text-xs font-bold text-[#114B36]">ORDER #{order.orderNumber}</p>
+                <p className="text-xs text-[#6B7280] mt-1">
+                  Location: {order.marketSection}{order.locationDescription ? ` — ${order.locationDescription}` : ""}
+                </p>
+              </div>
 
-            {(order.status === "NEW" || order.status === "ACCEPTED" || order.status === "PREPARING") && isLoggedIn && (
-              <Button onClick={() => setShowCancelModal(true)} variant="danger" fullWidth size="md" icon={<XCircle size={18} />} className="mt-6">Cancel Order</Button>
-            )}
-          </>
-        )}
+              {/* Cancelled Timeline */}
+              <div className="space-y-4 pl-2">
+                {STATUSES.map((step, idx) => {
+                  const isCompleted = idx <= currentIndex;
+                  const isCutoff = idx === currentIndex;
+                  return (
+                    <div key={step.key} className="flex items-center gap-4 relative">
+                      <div
+                        className={`
+                          w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm z-10 shrink-0
+                          ${isCompleted ? "bg-[#DC2626] text-white" : "bg-[#E5E7EB] text-[#9CA3AF]"}
+                          ${isCutoff ? "shadow-[0_0_0_4px_rgba(239,68,68,0.2)]" : ""}
+                        `}
+                      >
+                        {isCompleted ? "✕" : idx + 1}
+                      </div>
+                      <div>
+                        <p className={`font-semibold text-sm ${isCompleted ? "text-[#DC2626]" : "text-[#9CA3AF]"}`}>
+                          {step.label}
+                        </p>
+                        {isCutoff && (
+                          <p className="text-xs font-bold text-[#DC2626] mt-0.5">✕ Cancelled at this stage</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Active Order Banner */}
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-[#EBF5F0] rounded-2xl p-5 border-2 border-[#114B36] mb-6 text-center relative overflow-hidden"
+              >
+                {order.status === "OUT_FOR_DELIVERY" && (
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[rgba(17,75,54,0.03)] to-transparent animate-pulse" />
+                )}
+                <p className="text-xs font-bold text-[#114B36]">ORDER #{order.orderNumber}</p>
+                <p className="text-xl font-extrabold text-[#1F2937] mt-1">
+                  {STATUSES.find((s) => s.key === order.status)?.label || order.status}
+                </p>
+                <p className="text-xs text-[#6B7280] mt-1">
+                  Location: {order.marketSection}{order.locationDescription ? ` — ${order.locationDescription}` : ""}
+                </p>
+              </motion.div>
 
-        {/* Inline order chat */}
-        {convId && !isTerminal && <div className="mt-6 border border-[#E5E7EB] rounded-2xl overflow-hidden"><div className="bg-[#EBF5F0] px-4 py-2.5 border-b border-[#D1E4D8]"><p className="text-[0.6rem] font-bold text-[#114B36]">ORDER CHAT</p><p className="text-xs text-[#6B7280]">Chat with the kitchen about this order</p></div><div className="max-h-48 overflow-y-auto px-4 py-3 space-y-2 bg-white">{chatMessages.length === 0 ? <p className="text-xs text-[#9CA3AF] text-center py-4">No messages yet. Send a note to the kitchen.</p> : chatMessages.map((msg) => <div key={msg.id} className="text-xs"><span className="text-[#9CA3AF]">{new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span><p className="text-sm text-[#1F2937] mt-0.5">{msg.body}</p></div>)}<div ref={chatEndRef} /></div><div className="flex gap-2 p-3 bg-[#FFF8F0] border-t border-[#E5E7EB]"><input value={chatBody} onChange={(e) => setChatBody(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void sendChat(); } }} placeholder="Type a message..." className="flex-1 rounded-xl border-2 border-[#E5E7EB] bg-white px-3 py-2 text-sm outline-none focus:border-[#114B36]" /><Button size="sm" onClick={() => void sendChat()} loading={sending} disabled={!chatBody.trim()} icon={<Send size={14} />}>Send</Button></div></div>}
+              {/* Out for Delivery special banner */}
+              {order.status === "OUT_FOR_DELIVERY" && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-[#EFF6FF] border-2 border-[#60A5FA] rounded-2xl p-4 mb-5 flex items-center gap-3"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-[#DBEAFE] flex items-center justify-center text-[#1D4ED8] shrink-0">
+                    <Truck size={20} />
+                  </div>
+                  <div>
+                    <p className="font-bold text-sm text-[#1E40AF]">🚀 Out for Delivery!</p>
+                    <p className="text-xs text-[#1D4ED8] mt-0.5">An SMS update was sent. Keep your phone handy!</p>
+                  </div>
+                </motion.div>
+              )}
 
-        <Button onClick={onBackToHome} variant="secondary" fullWidth size="md" className="mt-3">Back to Menu</Button>
+              {/* Timeline */}
+              <div className="space-y-4 pl-2">
+                {STATUSES.map((step, idx) => {
+                  const isCompleted = idx <= currentIndex;
+                  const isCurrent = idx === currentIndex;
+                  return (
+                    <div key={step.key} className="flex items-center gap-4 relative">
+                      <motion.div
+                        initial={isCurrent ? { scale: 0 } : undefined}
+                        animate={isCurrent ? { scale: 1 } : undefined}
+                        transition={{ type: "spring", damping: 10, stiffness: 200 }}
+                        className={`
+                          w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm z-10 shrink-0
+                          ${isCompleted ? "bg-[#114B36] text-white" : "bg-[#E5E7EB] text-[#9CA3AF]"}
+                          ${isCurrent ? "shadow-[0_0_0_4px_rgba(17,75,54,0.15)]" : ""}
+                        `}
+                      >
+                        {isCompleted ? "✓" : idx + 1}
+                      </motion.div>
+                      <div>
+                        <p className={`font-semibold text-sm ${isCompleted ? "text-[#1F2937]" : "text-[#9CA3AF]"}`}>
+                          {step.label}
+                        </p>
+                        {isCurrent && (
+                          <motion.p
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            className="text-xs font-bold text-[#22C55E] mt-0.5 flex items-center gap-1"
+                          >
+                            <span className="w-1.5 h-1.5 bg-[#22C55E] rounded-full inline-block animate-pulse" />
+                            Current Status
+                          </motion.p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Cancel Button */}
+              {(order.status === "NEW" || order.status === "ACCEPTED" || order.status === "PREPARING") && isLoggedIn && (
+                <Button
+                  onClick={() => setShowCancelModal(true)}
+                  variant="danger"
+                  fullWidth
+                  size="md"
+                  icon={<XCircle size={18} />}
+                  className="mt-6"
+                >
+                  Cancel Order
+                </Button>
+              )}
+            </>
+          )}
+
+          <Button onClick={onBackToHome} variant="secondary" fullWidth size="md" className="mt-3">
+            Back to Menu
+          </Button>
+        </div>
       </PageTransition>
 
-      <Modal isOpen={showCancelModal} onClose={() => setShowCancelModal(false)} type="danger" title="Cancel Order?" message="Please tell us why you'd like to cancel so we can improve." primaryAction={{ label: isCancelling ? "Cancelling..." : "Yes, Cancel Order", onClick: handleCancelOrder, variant: "danger", loading: isCancelling }} secondaryAction={{ label: "Keep Order", onClick: () => setShowCancelModal(false), variant: "secondary" }}>
-        <div className="mb-4"><textarea placeholder="e.g. Changed my mind, wrong items..." value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} className="w-full bg-[#F3F4F6] rounded-xl px-4 py-3 text-sm text-[#1F2937] placeholder:text-[#9CA3AF] outline-none resize-none border-2 border-transparent focus:border-[#EF4444] focus:bg-white transition-all" rows={3} /></div>
+      {/* Cancel Modal */}
+      <Modal
+        isOpen={showCancelModal}
+        onClose={() => setShowCancelModal(false)}
+        type="danger"
+        title="Cancel Order?"
+        message="Please tell us why you'd like to cancel so we can improve."
+        primaryAction={{
+          label: isCancelling ? "Cancelling..." : "Yes, Cancel Order",
+          onClick: handleCancelOrder,
+          variant: "danger",
+          loading: isCancelling,
+        }}
+        secondaryAction={{
+          label: "Keep Order",
+          onClick: () => setShowCancelModal(false),
+          variant: "secondary",
+        }}
+      >
+        <div className="mb-4">
+          <textarea
+            placeholder="e.g. Changed my mind, wrong items..."
+            value={cancelReason}
+            onChange={(e) => setCancelReason(e.target.value)}
+            className="w-full bg-[#F3F4F6] rounded-xl px-4 py-3 text-sm text-[#1F2937] placeholder:text-[#9CA3AF] outline-none resize-none border-2 border-transparent focus:border-[#EF4444] focus:bg-white transition-all"
+            rows={3}
+          />
+        </div>
       </Modal>
     </div>
   );

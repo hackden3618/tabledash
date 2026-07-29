@@ -58,7 +58,7 @@ export const getHotelIsOpen = async (hotelId?: string): Promise<HotelStatusResul
       wsHub.broadcastMenuUpdate({
         type: "HOTEL_CLOSING",
         payload: { closingIn: 0, isOpen: false, hotelId: hotel.id },
-      }, hotel.id);
+      });
       await prisma.hotel.update({
         where: { id: hotel.id },
         data: { isOpen: false, autoCloseAt: null },
@@ -66,7 +66,7 @@ export const getHotelIsOpen = async (hotelId?: string): Promise<HotelStatusResul
       wsHub.broadcastMenuUpdate({
         type: "HOTEL_STATUS_UPDATED",
         payload: { isOpen: false, autoCloseAt: null, hotelId: hotel.id },
-      }, hotel.id);
+      });
       return { isOpen: false, autoCloseAt: null };
     }
   }
@@ -95,7 +95,7 @@ export const updateHotelIsOpen = async (
       data: { isOpen: true, autoCloseAt: autoCloseAt ? new Date(autoCloseAt) : null },
     });
     const result = { isOpen: true, autoCloseAt: autoCloseAt ?? null, hotelId: hotel.id };
-    wsHub.broadcastMenuUpdate({ type: "HOTEL_STATUS_UPDATED", payload: result }, hotel.id);
+    wsHub.broadcastMenuUpdate({ type: "HOTEL_STATUS_UPDATED", payload: result });
     return result;
   }
 
@@ -109,7 +109,7 @@ export const updateHotelIsOpen = async (
   wsHub.broadcastMenuUpdate({
     type: "HOTEL_CLOSING",
     payload: { closingIn: 5, isOpen: false, hotelId: hotelUuid },
-  }, hotelUuid);
+  });
 
   // After the countdown, broadcast final status update (DB is already closed)
   pendingCloseTimeout = setTimeout(async () => {
@@ -118,7 +118,7 @@ export const updateHotelIsOpen = async (
       wsHub.broadcastMenuUpdate({
         type: "HOTEL_STATUS_UPDATED",
         payload: { isOpen: false, autoCloseAt: null, hotelId: hotelUuid },
-      }, hotelUuid);
+      });
     } catch (err) {
       console.error("[Hotel Close Timer Error]:", err);
     }
@@ -129,7 +129,7 @@ export const updateHotelIsOpen = async (
 
 export const getHotelName = async (hotelId?: string): Promise<string> => {
   const hotel = hotelId ? await prisma.hotel.findUnique({ where: { id: hotelId } }) : await getDefaultHotel();
-  return hotel?.name ?? "Ladha Deliveries";
+  return hotel?.name ?? "TableDash Deliveries";
 };
 
 export interface StaffUserPayload {
@@ -155,26 +155,13 @@ export const addStaffUser = async (data: StaffUserPayload, hotelId?: string) => 
     throw new Error("A staff member with this phone number already exists.");
   }
 
-  if (!hotelId) throw new Error("A hotel is required before adding staff");
-  const existingLogin = await prisma.adminUser.findUnique({ where: { username: formattedPhone } });
-  if (existingLogin) throw new Error("A login already exists for this phone number.");
-  const hotel = await prisma.hotel.findUnique({ where: { id: hotelId }, select: { name: true } });
-  if (!hotel) throw new Error("Hotel not found");
-  const tempPassword = crypto.randomUUID().split("-")[0]!;
-  const passwordHash = await Bun.password.hash(tempPassword);
-
-  return prisma.$transaction(async (tx) => {
-    const adminUser = await tx.adminUser.create({ data: { username: formattedPhone, passwordHash, name: data.name, role: "HOTEL_STAFF", hotelId } });
-    const staff = await tx.staffUser.create({ data: { name: data.name, phone: formattedPhone, receiveSms: data.receiveSms, hotelId, adminUserId: adminUser.id } });
-    await tx.eventOutbox.create({
-      data: {
-        eventName: "hotel_staff_created",
-        hotelId,
-        payload: JSON.stringify({ staffName: data.name, staffPhone: formattedPhone, hotelName: hotel.name, username: formattedPhone, tempPassword, role: "HOTEL_STAFF", appLink: "https://tabledash.up.railway.app/kitchen" }),
-        status: "initialized",
-      },
-    });
-    return staff;
+  return await prisma.staffUser.create({
+    data: {
+      name: data.name,
+      phone: formattedPhone,
+      receiveSms: data.receiveSms,
+      hotelId: hotelId || null,
+    },
   });
 };
 
@@ -196,34 +183,9 @@ export const updateStaffUser = async (id: string, data: Partial<StaffUserPayload
     }
   }
 
-  return prisma.$transaction(async (tx) => {
-    const updated = await tx.staffUser.update({
-      where: { id },
-      data: { ...data, phone: formatted ?? data.phone },
-    });
-    if (formatted && existing.adminUserId) {
-      await tx.adminUser.update({ where: { id: existing.adminUserId }, data: { username: formatted } });
-    }
-    return updated;
-  });
-};
-
-export const provisionStaffLogin = async (id: string, hotelId?: string) => {
-  const existing = await prisma.staffUser.findUnique({ where: { id } });
-  if (!existing) throw new Error("Staff member not found");
-  if (hotelId && existing.hotelId !== hotelId) throw new Error("Staff member does not belong to your hotel");
-  if (existing.adminUserId) throw new Error("This staff member already has a login");
-  if (!existing.hotelId) throw new Error("Staff member is not assigned to a hotel");
-  if (await prisma.adminUser.findUnique({ where: { username: existing.phone } })) throw new Error("A login already exists for this phone number");
-  const hotel = await prisma.hotel.findUnique({ where: { id: existing.hotelId }, select: { name: true } });
-  if (!hotel) throw new Error("Hotel not found");
-  const tempPassword = crypto.randomUUID().split("-")[0]!;
-  const passwordHash = await Bun.password.hash(tempPassword);
-  return prisma.$transaction(async (tx) => {
-    const adminUser = await tx.adminUser.create({ data: { username: existing.phone, passwordHash, name: existing.name, role: "HOTEL_STAFF", hotelId: existing.hotelId! } });
-    const staff = await tx.staffUser.update({ where: { id }, data: { adminUserId: adminUser.id } });
-    await tx.eventOutbox.create({ data: { eventName: "hotel_staff_created", hotelId: existing.hotelId, payload: JSON.stringify({ staffName: existing.name, staffPhone: existing.phone, hotelName: hotel.name, username: existing.phone, tempPassword, role: "HOTEL_STAFF", appLink: "https://tabledash.up.railway.app/kitchen" }), status: "initialized" } });
-    return staff;
+  return await prisma.staffUser.update({
+    where: { id },
+    data: { ...data, phone: formatted ?? data.phone },
   });
 };
 
@@ -234,9 +196,8 @@ export const deleteStaffUser = async (id: string, hotelId?: string) => {
     throw new Error("Staff member does not belong to your hotel");
   }
 
-  return prisma.$transaction(async (tx) => {
-    if (existing.adminUserId) await tx.adminUser.delete({ where: { id: existing.adminUserId } });
-    return tx.staffUser.delete({ where: { id } });
+  return await prisma.staffUser.delete({
+    where: { id },
   });
 };
 
@@ -256,13 +217,6 @@ export const getSmsRecipients = async (hotelId?: string): Promise<string[]> => {
 
   if (staff.length > 0) {
     return staff.map((s) => s.phone);
-  }
-
-  // The legacy setting is only safe for the original single-tenant/default flow.
-  // Never route a tenant-scoped event to a process-wide fallback recipient.
-  if (hotelId) {
-    const defaultHotel = await getDefaultHotel();
-    if (!defaultHotel || defaultHotel.id !== hotelId) return [];
   }
 
   // Fallback to legacy single setting if no specific staff users are configured

@@ -65,30 +65,20 @@
 
 @layer base {
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html {
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    min-height: 100%;
-    overflow-x: hidden;
-  }
+  html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
   body {
     font-family: var(--font-family-base);
     background-color: var(--color-cream);
     color: var(--color-text);
     line-height: 1.5;
-    overflow-x: hidden;
-    overflow-y: auto;
-    min-height: 100%;
-    min-width: 0;
-    width: 100%;
-    overscroll-behavior-x: none;
+    overflow: hidden;
+    height: 100vh;
   }
-  #root { min-height: 100dvh; min-width: 0; width: 100%; overflow-x: clip; }
   input, textarea, button, select { font-family: inherit; }
   img { display: block; max-width: 100%; }
   a { color: inherit; text-decoration: none; }
   ul { list-style: none; padding: 0; margin: 0; }
-  h1, h2, h3, h4, h5, h6 { font-family: var(--font-family-display); }
+  h1, h2, h3, h4, h5, h6 { font-family: var(--font-family-base); }
 
   /* Reduced motion */
   @media (prefers-reduced-motion: reduce) {
@@ -112,94 +102,38 @@
 .app-container {
   max-width: 480px;
   margin: 0 auto;
-  height: 100dvh;
-  min-height: 0;
+  height: 100vh;
   overflow-y: auto;
   overflow-x: hidden;
-  overscroll-behavior-y: contain;
-  -webkit-overflow-scrolling: touch;
   background: #FFF8F0;
   position: relative;
-  padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: 120px;
 }
 
 .admin-container {
   max-width: 1000px;
   margin: 0 auto;
-  height: 100dvh;
-  min-height: 0;
+  height: 100vh;
   overflow-y: auto;
   overflow-x: hidden;
-  overscroll-behavior-y: contain;
-  -webkit-overflow-scrolling: touch;
   background: #FFFFFF;
   box-shadow: 0 0 40px rgba(0, 0, 0, 0.06);
   position: relative;
-  padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: 72px;
 }
-
-.platform-shell {
-  min-height: 100dvh !important;
-  width: 100%;
-  max-width: 100%;
-  overflow-x: hidden;
-  overflow-wrap: anywhere;
-}
-
-.safe-area-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
 
 @media (min-width: 1024px) {
   .app-container {
     margin: 24px auto;
-    height: calc(100dvh - 48px);
+    height: calc(100vh - 48px);
     border-radius: 1.25rem;
     border: 1px solid #E5E7EB;
   }
   .admin-container {
     margin: 24px auto;
-    height: calc(100dvh - 48px);
+    height: calc(100vh - 48px);
     border-radius: 1.25rem;
     border: 1px solid #E5E7EB;
     padding-bottom: 80px;
   }
-}
-
-/* Platform console: keep navigation useful on phones without covering the workspace. */
-.platform-main { width: 100%; }
-.platform-sidebar-overlay { backdrop-filter: blur(2px); }
-.platform-shell input:not([type="checkbox"]) {
-  min-height: 44px;
-  border: 1px solid #EADFD3;
-  border-radius: 14px;
-  background: #FFFFFF;
-  color: #1F2937;
-  font-size: 0.9rem;
-  outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-.platform-shell input:not([type="checkbox"]):focus {
-  border-color: #94CCB5;
-  box-shadow: 0 0 0 3px rgba(148, 204, 181, 0.22);
-}
-.platform-shell button:disabled { cursor: not-allowed; }
-.admin-container input,
-.admin-container textarea,
-.admin-container select { max-width: 100%; min-width: 0; box-sizing: border-box; }
-
-@media (min-width: 900px) {
-  .platform-sidebar { transform: translateX(0) !important; }
-  .platform-sidebar-overlay { display: none; }
-  .platform-main { max-width: 1120px !important; padding-left: 280px !important; }
-}
-
-@media (max-width: 899px) {
-  .platform-main { padding: 5rem 1rem 2rem !important; }
-}
-
-@media (max-width: 640px) {
-  .admin-container { width: 100%; max-width: 100%; }
-  .admin-container .flex.gap-2 > input,
-  .admin-container .flex.gap-3 > input { width: 100%; min-width: 0; }
-  .admin-container .flex.gap-2:has(> input),
-  .admin-container .flex.gap-3:has(> input) { flex-wrap: wrap; }
 }

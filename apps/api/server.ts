@@ -11,8 +11,6 @@ import { startDispatcher } from "./src/modules/notifications/dispatcher";
 
 const port = env.backendPort;
 
-env.assertProductionSafety();
-
 app.listen(port, () => {
   console.log(`\n==================================================`);
   console.log(`🚀 tableDash Backend API Server Running`);

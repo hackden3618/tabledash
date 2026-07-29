@@ -21,7 +21,6 @@ import {
   cancelOrderByCustomer,
   getDashboardMetrics,
   getDailyOrders,
-  getOrderForCustomer,
   getOrderById,
   getOrders,
   placeOrder,
@@ -30,7 +29,6 @@ import {
 } from "./service";
 import { verifyAdminToken } from "../auth/service";
 import { verifyCustomerToken } from "../customers/auth.service";
-import { ensureGuestIdentity, isGuestId } from "../customers/guest-identity";
 
 export const ordersRoute = new Elysia({
   prefix: `${env.apiPrefix}/orders`,
@@ -47,10 +45,9 @@ export const ordersRoute = new Elysia({
   )
   .post(
     "/",
-    async ({ body, set, headers }) => {
+    async ({ body, set }) => {
       try {
-        const guestId = headers["x-guest-id"];
-        const order = await placeOrder({ ...body, guestId });
+        const order = await placeOrder(body);
         set.status = 201;
         return { success: true, data: order };
       } catch (err: any) {
@@ -66,19 +63,21 @@ export const ordersRoute = new Elysia({
     "/",
     async ({ query, set, headers, jwt }) => {
       const authHeader = headers["authorization"];
-      if (!authHeader?.startsWith("Bearer ")) {
-        set.status = 401;
-        return { success: false, error: "Hotel staff authentication is required" };
+      let adminHotelId: string | undefined;
+      if (authHeader?.startsWith("Bearer ")) {
+        const token = authHeader.split(" ")[1] ?? "";
+        try {
+          const admin = await verifyAdminToken(token, (t) => jwt.verify(t));
+          adminHotelId = admin.hotelId ?? undefined;
+        } catch {}
       }
       try {
-        const admin = await verifyAdminToken(authHeader.split(" ")[1] ?? "", (t) => jwt.verify(t));
-        if (!admin.hotelId) throw new Error("This account is not assigned to a hotel");
         const statusFilter = query.status as OrderStatus | undefined;
-        const orders = await getOrders(statusFilter, admin.hotelId);
+        const orders = await getOrders(statusFilter, adminHotelId);
         return { success: true, data: orders };
       } catch (err: any) {
-        set.status = 403;
-        return { success: false, error: err.message || "Unable to load orders" };
+        set.status = 500;
+        return { success: false, error: "Failed to load orders" };
       }
     },
     {
@@ -102,11 +101,7 @@ export const ordersRoute = new Elysia({
       set.status = 401;
       return { success: false, error: "Invalid or expired session token" };
     }
-    if (!admin.hotelId) {
-      set.status = 403;
-      return { success: false, error: "This account is not assigned to a hotel" };
-    }
-    const metrics = await getDashboardMetrics(admin.hotelId);
+    const metrics = await getDashboardMetrics(admin.hotelId ?? undefined);
     return { success: true, data: metrics };
   })
   .get("/daily", async ({ query, headers, jwt, set }) => {
@@ -123,45 +118,22 @@ export const ordersRoute = new Elysia({
       set.status = 401;
       return { success: false, error: "Invalid or expired session token" };
     }
-    if (!admin.hotelId) {
-      set.status = 403;
-      return { success: false, error: "This account is not assigned to a hotel" };
-    }
     const date = (query.date ?? new Date().toISOString().split("T")[0]) as string;
-    const orders = await getDailyOrders(date, admin.hotelId);
+    const orders = await getDailyOrders(date, admin.hotelId ?? undefined);
     return { success: true, data: orders };
   }, {
     query: t.Object({
       date: t.Optional(t.String()),
     }),
   })
-.get(
+  .get(
     "/:id",
-    async ({ params, headers, jwt, set }) => {
+    async ({ params, set }) => {
       try {
-        const authHeader = headers["authorization"];
-        if (authHeader?.startsWith("Bearer ")) {
-          const token = authHeader.slice(7);
-          try {
-            const admin = await verifyAdminToken(token, (t) => jwt.verify(t));
-            if (!admin.hotelId) throw new Error("This account is not assigned to a hotel");
-            const order = await getOrderById(params.id, admin.hotelId);
-            return { success: true, data: order };
-          } catch (adminError) {
-            const customerId = await verifyCustomerToken(token, (t) => jwt.verify(t));
-            if (!customerId) throw adminError;
-            const order = await getOrderForCustomer(params.id, customerId);
-            return { success: true, data: order };
-          }
-        }
-        const guestId = headers["x-guest-id"];
-        if (!isGuestId(guestId)) throw new Error("Sign in or use the original guest session to track this order");
-        const guest = await ensureGuestIdentity(guestId);
-        if (!guest.customerId) throw new Error("Order not found");
-        const order = await getOrderForCustomer(params.id, guest.customerId);
+        const order = await getOrderById(params.id);
         return { success: true, data: order };
       } catch (err: any) {
-        set.status = err.message?.includes("Sign in") ? 401 : 404;
+        set.status = 404;
         return { success: false, error: err.message };
       }
     },
@@ -186,8 +158,7 @@ export const ordersRoute = new Elysia({
         return { success: false, error: "Invalid or expired session token" };
       }
       try {
-        if (!admin.hotelId) throw new Error("This account is not assigned to a hotel");
-        const updated = await updateOrderStatus(params.id, body.status as OrderStatus, body.cancelReason, admin.hotelId);
+        const updated = await updateOrderStatus(params.id, body.status as OrderStatus, body.cancelReason, admin.hotelId ?? undefined);
         return { success: true, data: updated };
       } catch (err: any) {
         set.status = 400;
@@ -216,11 +187,10 @@ export const ordersRoute = new Elysia({
         return { success: false, error: "Invalid or expired session token" };
       }
       try {
-        if (!admin.hotelId) throw new Error("This account is not assigned to a hotel");
         const updated = await updateOrderPayment(params.id, {
           paymentStatus: body.paymentStatus as PaymentStatus | undefined,
           amountPaid: body.amountPaid,
-        }, admin.hotelId);
+        }, admin.hotelId ?? undefined);
         return { success: true, data: updated };
       } catch (err: any) {
         set.status = 400;

@@ -25,7 +25,7 @@ export const getAllCustomers = async (hotelId?: string) => {
 
   const orderIds = await prisma.order.findMany({
     where: { hotelId },
-    select: { customerId: true },
+    select: { id: true },
   });
 
   const customerIds = [...new Set(orderIds.map((o) => o.customerId))];
