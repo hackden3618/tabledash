@@ -724,6 +724,25 @@ export const updateOrderPayment = async (id: string, data: { paymentStatus?: Pay
       data: { paymentStatus, amountPaid, ...(refundedAt ? { refundedAt } : {}) },
       include: { customer: true, orderItems: true },
     });
+
+    // Create auditable ledger entry for every payment change
+    const delta = amountPaid - Number(existing.amountPaid);
+    if (delta !== 0) {
+      const ledgerType = existing.status === "CANCELLED" && paymentStatus === "REFUNDED" ? "REFUND" : paymentStatus === "PAID" ? "CASH_PAYMENT" : paymentStatus === "PARTIAL" ? "PARTIAL_PAYMENT" : "MANUAL_ADJUSTMENT";
+      await tx.ledgerEntry.create({
+        data: {
+          hotelId: updatedOrder.hotelId || hotel?.id || "",
+          customerId: updatedOrder.customerId,
+          orderId: updatedOrder.id,
+          type: ledgerType as any,
+          amount: ledgerType === "REFUND" ? -amountPaid : delta,
+          balance: 0,
+          description: `${ledgerType === "REFUND" ? "Refund" : "Payment"} for Order #${updatedOrder.orderNumber}. Status: ${paymentStatus}`,
+          reference: `order-${updatedOrder.orderNumber}`,
+        },
+      });
+    }
+
     await tx.eventOutbox.create({
       data: {
         eventName: "order_payment_updated",

@@ -1,10 +1,10 @@
 import React from "react";
 import { motion } from "framer-motion";
-import { LayoutDashboard, ShoppingBag, Utensils, Settings, Calendar, Inbox } from "lucide-react";
+import { LayoutDashboard, ShoppingBag, Utensils, Settings, Calendar, Inbox, Wallet } from "lucide-react";
 import { apiGet } from "../lib/api";
 import { useAdminAuth } from "../context/AdminAuthContext";
 
-export type AdminTab = "orders" | "dashboard" | "menu" | "settings" | "history" | "messages";
+export type AdminTab = "orders" | "dashboard" | "menu" | "settings" | "history" | "messages" | "finance";
 
 interface AdminBottomNavBarProps {
   activeTab: AdminTab;
@@ -15,6 +15,7 @@ const tabs: { key: AdminTab; label: string; icon: React.ElementType }[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { key: "menu", label: "Menu", icon: Utensils },
   { key: "orders", label: "Orders", icon: ShoppingBag },
+  { key: "finance", label: "Finance", icon: Wallet },
   { key: "settings", label: "Settings", icon: Settings },
   { key: "history", label: "History", icon: Calendar },
   { key: "messages", label: "Inbox", icon: Inbox },

@@ -39,6 +39,7 @@ import { AdminOrderDetailsPage } from "./pages/admin/AdminOrderDetailsPage";
 import { AdminOrderHistoryPage } from "./pages/admin/AdminOrderHistoryPage";
 import { AdminOrdersPage } from "./pages/admin/AdminOrdersPage";
 import { AdminSettingsPage } from "./pages/admin/AdminSettingsPage";
+import { FinanceDashboardPage } from "./pages/admin/FinanceDashboardPage";
 import { PlatformAdminPage } from "./pages/platform/PlatformAdminPage";
 
 
@@ -64,6 +65,7 @@ type ViewState =
   | "admin_settings"
   | "admin_order_history"
   | "admin_conversations"
+  | "admin_finance"
   | "platform_admin";
 
 export function AppContent() {
@@ -201,6 +203,7 @@ export function AppContent() {
       case "admin_settings": return "settings";
       case "admin_order_history": return "history";
       case "admin_conversations": return "messages";
+      case "admin_finance": return "finance";
       default: return "orders";
     }
   };
@@ -212,6 +215,7 @@ export function AppContent() {
     else if (tab === "settings") setCurrentView("admin_settings");
     else if (tab === "history") setCurrentView("admin_order_history");
     else if (tab === "messages") setCurrentView("admin_conversations");
+    else if (tab === "finance") setCurrentView("admin_finance");
   };
 
   const getActiveTab = (): CustomerTab => {
@@ -389,6 +393,7 @@ export function AppContent() {
           onNavigateToMenu={() => setCurrentView("admin_menu_manage")}
           onNavigateToSettings={() => setCurrentView("admin_settings")}
           onNavigateToHistory={() => setCurrentView("admin_order_history")}
+          onNavigateToFinance={() => setCurrentView("admin_finance")}
         />
       )}
 
@@ -415,6 +420,10 @@ export function AppContent() {
 
       {currentView === "admin_conversations" && (
         <InboxPage token={adminToken} actorId={adminUser?.id} mode="hotel" hotelId={adminToken ? String(decodeJwt(adminToken)?.hotelId ?? "") : undefined} title="Inbox" onBack={() => setCurrentView("admin_orders")} />
+      )}
+
+      {currentView === "admin_finance" && (
+        <FinanceDashboardPage token={adminToken} onBackToDashboard={() => setCurrentView("admin_dashboard")} />
       )}
 
       {/* ─── Platform Admin Panel (self-contained auth) ──────────────── */}

@@ -20,6 +20,7 @@ import { ordersRoute } from "./src/modules/orders/route";
 import { platformRoute } from "./src/modules/platform/routes";
 import { settingsRoute } from "./src/modules/settings/route";
 import { uploadRoute } from "./src/modules/upload/route";
+import { financeRoute } from "./src/modules/finance/route";
 import { messagingRoute } from "./src/modules/messaging/routes";
 import { resolveMessagingActorFromWebSocketTicket } from "./src/modules/messaging/controller";
 import { assertConversationAccess, getConversationIdentityKeys, getInbox } from "./src/modules/messaging/service";
@@ -166,6 +167,7 @@ export const app = new Elysia()
   .use(uploadRoute)
   .use(platformRoute)
   .use(messagingRoute)
+  .use(financeRoute)
 
   // Serve the built frontend SPA for any non-API route
   .get("/*", ({ params }) => {

@@ -97,6 +97,7 @@ model Hotel {
     orders        Order[]
     staffUsers    StaffUser[]
     media         Media[]
+    ledgerEntries LedgerEntry[]
 
     @@map("hotels")
 }
@@ -146,6 +147,7 @@ model Customer {
 
     orders Order[]
     guestIdentities GuestIdentity[]
+    ledgerEntries LedgerEntry[]
 
     @@map("customers")
 }
@@ -266,6 +268,7 @@ model Order {
     hotel      Hotel?       @relation(fields: [hotelId], references: [id])
     orderItems OrderItem[]
     conversations Conversation[]
+    ledgerEntries LedgerEntry[]
 
     @@map("orders")
 }
@@ -333,6 +336,38 @@ model Setting {
     updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
 
     @@map("settings")
+}
+
+enum LedgerEntryType {
+    ORDER_CHARGE
+    CASH_PAYMENT
+    PARTIAL_PAYMENT
+    REFUND
+    CREDIT_ADJUSTMENT
+    MANUAL_ADJUSTMENT
+    FUTURE_ONLINE_PAYMENT
+}
+
+model LedgerEntry {
+    id          String          @id @default(uuid()) @db.Uuid
+    hotelId     String          @map("hotel_id") @db.Uuid
+    customerId  String          @map("customer_id") @db.Uuid
+    orderId     String?         @map("order_id") @db.Uuid
+    type        LedgerEntryType
+    amount      Decimal         @db.Decimal(10, 2)
+    balance     Decimal         @db.Decimal(10, 2)
+    description String?
+    reference   String?         @map("reference")
+    createdBy   String?         @map("created_by")
+    createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz()
+
+    hotel    Hotel    @relation(fields: [hotelId], references: [id])
+    customer Customer @relation(fields: [customerId], references: [id])
+    order    Order?   @relation(fields: [orderId], references: [id])
+
+    @@index([hotelId, customerId])
+    @@index([createdAt])
+    @@map("ledger_entries")
 }
 
 model StaffUser {

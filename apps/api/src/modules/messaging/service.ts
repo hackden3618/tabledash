@@ -126,7 +126,8 @@ export async function getConversationMessages(actor: MessagingActor, conversatio
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     include: { replyTo: { select: { id: true, body: true, deletedAt: true, senderParticipantId: true } } },
   });
-  return { conversation, messages: messages.reverse(), nextCursor: messages.length === 50 ? messages[0]?.id : null };
+  const enriched = await enrichMessagesWithSender(messages, conversation.participants);
+  return { conversation, messages: enriched.reverse(), nextCursor: messages.length === 50 ? messages[0]?.id : null };
 }
 
 export async function assertConversationAccess(actor: MessagingActor, conversationId: string) {
@@ -441,11 +442,12 @@ async function sendMessageToConversation(actor: MessagingActor, conversation: { 
     await tx.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: created.createdAt } });
     return created;
   });
+  const enriched = await enrichMessageWithSender(message, conversation.participants);
   if (replyToId) {
     const replyTo = await prisma.message.findUnique({ where: { id: replyToId }, select: { body: true, deletedAt: true, senderParticipantId: true } });
-    return { ...message, replyTo: replyTo ? { body: replyTo.body, deletedAt: replyTo.deletedAt, senderParticipantId: replyTo.senderParticipantId } : null };
+    return { ...enriched, replyTo: replyTo ? { body: replyTo.body, deletedAt: replyTo.deletedAt, senderParticipantId: replyTo.senderParticipantId } : null };
   }
-  return message;
+  return enriched;
 }
 
 export async function updateMessage(actor: MessagingActor, conversationId: string, messageId: string, body: string) {
@@ -497,6 +499,38 @@ export async function markConversationRead(actor: MessagingActor, conversationId
 
 // ── Helpers ──
 
+async function resolveSenderDisplayName(participant: { kind: string; customerId: string | null; adminUserId: string | null; platformAdminId: string | null }): Promise<string> {
+  if (participant.kind === "CUSTOMER" && participant.customerId) {
+    const c = await prisma.customer.findUnique({ where: { id: participant.customerId }, select: { firstName: true, knownName: true } });
+    return c?.knownName || c?.firstName || "Customer";
+  }
+  if (participant.kind === "HOTEL_STAFF" && participant.adminUserId) {
+    const a = await prisma.adminUser.findUnique({ where: { id: participant.adminUserId }, select: { name: true } });
+    return a?.name || "Staff";
+  }
+  if (participant.kind === "PLATFORM_ADMIN" && participant.platformAdminId) {
+    const p = await prisma.platformAdmin.findUnique({ where: { id: participant.platformAdminId }, select: { name: true } });
+    return p?.name || "Admin";
+  }
+  if (participant.kind === "GUEST") return "Guest";
+  return "Unknown";
+}
+
+type ParticipantSummary = { id: string; kind: string; customerId: string | null; adminUserId: string | null; platformAdminId: string | null; guestIdentityId: string | null };
+
+async function enrichMessageWithSender(message: any, participants: ParticipantSummary[]) {
+  const sender = participants.find((p) => p.id === message.senderParticipantId);
+  if (!sender) return { ...message, sender: { kind: "UNKNOWN", name: "Unknown" } };
+  return {
+    ...message,
+    sender: { kind: sender.kind, name: await resolveSenderDisplayName(sender) },
+  };
+}
+
+async function enrichMessagesWithSender(messages: any[], participants: ParticipantSummary[]) {
+  return Promise.all(messages.map((msg) => enrichMessageWithSender(msg, participants)));
+}
+
 function identityKeyForParticipant(participant: { kind: ParticipantKind; customerId: string | null; guestIdentityId: string | null; adminUserId: string | null; platformAdminId: string | null }) {
   if (participant.kind === "CUSTOMER" && participant.customerId) return `customer:${participant.customerId}`;
   if (participant.kind === "GUEST" && participant.guestIdentityId) return `guest:${participant.guestIdentityId}`;
@@ -530,15 +564,15 @@ async function accessibleConversationWhere(actor: MessagingActor) {
     return { type: "PLATFORM_NOTICE" as const, hotelId: null };
   }
   const hotelIds = await customerHotelIds(actor);
-  const communityWhere = actor.kind === "CUSTOMER"
-    ? [{ type: "HOTEL_COMMUNITY" as const }]
-    : hotelIds.length ? [{ type: "HOTEL_COMMUNITY" as const, hotelId: { in: hotelIds } }] : [];
   return {
     OR: [
       { participants: { some: actorWhere(actor) } },
       { type: "PLATFORM_NOTICE" as const, hotelId: null },
-      ...(hotelIds.length ? [{ type: "HOTEL_NOTICE" as const, hotelId: { in: hotelIds } }] : []),
-      ...communityWhere,
+      ...(hotelIds.length ? [
+        { type: "HOTEL_NOTICE" as const, hotelId: { in: hotelIds } },
+        { type: "HOTEL_COMMUNITY" as const, hotelId: { in: hotelIds } },
+        { type: "TALK_TO_STAFF" as const, hotelId: { in: hotelIds } },
+      ] : []),
     ],
   };
 }
