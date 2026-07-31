@@ -14,6 +14,7 @@ interface AccountData {
   balance: number;
   totalOwed: number;
   totalPaid: number;
+  status: "DUE" | "SETTLED" | "CREDIT";
   lastUpdated: string;
 }
 
@@ -148,9 +149,9 @@ export const WalletPage: React.FC<WalletPageProps> = ({ onBack, onSelectHotel, o
                       <div className="text-left">
                         <p className="font-semibold text-[#1F2937] text-sm">{account.hotelName}</p>
                         <p className="text-xs text-[#6B7280] mt-0.5">
-                          {account.balance === 0 ? (
+                          {account.status === "SETTLED" ? (
                             <span className="text-[#22C55E] font-medium">All settled</span>
-                          ) : account.balance > 0 ? (
+                          ) : account.status === "DUE" ? (
                             `Owes ${formatKsh(account.balance)}`
                           ) : (
                             `${formatKsh(Math.abs(account.balance))} in credit`
@@ -159,7 +160,7 @@ export const WalletPage: React.FC<WalletPageProps> = ({ onBack, onSelectHotel, o
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className={`font-semibold text-sm ${account.balance > 0 ? "text-[#D64045]" : "text-[#22C55E]"}`}>
+                      <span className={`font-semibold text-sm ${account.status === "DUE" ? "text-[#D64045]" : "text-[#22C55E]"}`}>
                         {maskAmount(account.balance)}
                       </span>
                       <ChevronRight size={16} className="text-[#9CA3AF]" />

@@ -21,6 +21,18 @@ export const seedDatabase = async () => {
         );
     }
 
+    const defaultZone = await prisma.zone.upsert({
+        where: { id: "00000000-0000-0000-0000-000000000001" },
+        update: {},
+        create: {
+            id: "00000000-0000-0000-0000-000000000001",
+            name: "General delivery area",
+            type: "OTHER",
+            locationLabel: "Delivery point",
+            locationPlaceholder: "e.g. building, landmark or shop name",
+        },
+    });
+
     // ── Default Hotel ──
     let hotel = await prisma.hotel.findFirst({ where: { deletedAt: null } });
     if (!hotel) {
@@ -29,6 +41,7 @@ export const seedDatabase = async () => {
                 name: "Wambu's Corner Hotel",
                 slug: "wambus-corner-hotel",
                 isOpen: true,
+                zoneId: defaultZone.id,
             },
         });
         console.log(`[Seeder] Created default hotel: ${hotel.name}`);

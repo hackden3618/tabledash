@@ -34,6 +34,7 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
     const [price, setPrice] = useState("");
     const [imageUrl, setImageUrl] = useState("");
     const [category, setCategory] = useState("Meals");
+    const [mealCategory, setMealCategory] = useState("OTHER");
     const [stockQty, setStockQty] = useState("10");
     const productImageFileRef = useRef<HTMLInputElement>(null);
     const editImageFileRef = useRef<HTMLInputElement>(null);
@@ -47,6 +48,7 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
         price: string;
         imageUrl: string;
         category: string;
+        mealCategory: string;
         available: boolean;
         stockQty: string;
     } | null>(null);
@@ -123,12 +125,13 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
         if (!name || !price || !imageUrl) return;
 
         setIsSubmitting(true);
-        const res = await apiPost<any>("/menu", { name, price: Number(price), imageUrl, category, available: true, stockQty: Number(stockQty) || 0 }, token);
+        const res = await apiPost<any>("/menu", { name, price: Number(price), imageUrl, category, mealCategory, available: true, stockQty: Number(stockQty) || 0 }, token);
         setIsSubmitting(false);
 
         if (res.success && res.data) {
             setProducts((prev) => [...prev, res.data]);
             setName(""); setPrice(""); setImageUrl(""); setStockQty("10");
+            setMealCategory("OTHER");
             setShowAddForm(false);
         } else {
             setModalConfig({
@@ -155,6 +158,7 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
             price: String(item.price),
             imageUrl: item.imageUrl,
             category: item.category || "Meals",
+            mealCategory: item.mealCategory || "OTHER",
             available: item.available,
             stockQty: String(item.stockQty ?? 0),
         });
@@ -184,6 +188,7 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
             price: Number(editingItem.price),
             imageUrl,
             category: editingItem.category,
+            mealCategory: editingItem.mealCategory,
         }, token);
         setEditIsSubmitting(false);
         if (res.success && res.data) {
@@ -247,6 +252,11 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
                                     <option value="Sides">Sides</option>
                                     <option value="Beverages">Beverages</option>
                                 </select>
+                                <select value={mealCategory} onChange={(e) => setMealCategory(e.target.value)} aria-label="Meal category"
+                                    className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#D1D5DB] outline-none text-sm bg-white focus:border-[#114B36] focus:ring-3 focus:ring-[rgba(17,75,54,0.1)]"
+                                >
+                                    <option value="BREAKFAST">Breakfast</option><option value="LUNCH">Lunch</option><option value="DRINKS">Drinks</option><option value="DESSERTS">Desserts</option><option value="DINNER">Dinner</option><option value="OTHER">Other</option>
+                                </select>
                                 <input type="number" placeholder="Price in KSh (e.g. 120)" value={price} onChange={(e) => setPrice(e.target.value)} required
                                     className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#D1D5DB] outline-none text-sm focus:border-[#114B36] focus:ring-3 focus:ring-[rgba(17,75,54,0.1)]"
                                 />
@@ -303,6 +313,7 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
                                     <div className="min-w-0">
                                         <h3 className="font-bold text-sm text-[#1F2937] truncate">{item.name}</h3>
                                         <p className="font-bold text-sm text-[#114B36]">KSh {item.price}</p>
+                                        <span className="mt-1 inline-block rounded-full bg-[#EBF5F0] px-2 py-0.5 text-[0.58rem] font-bold uppercase tracking-wide text-[#114B36]">{String(item.mealCategory || "OTHER").replace("_", " ")}</span>
                                         {getFreshnessText(item) && (
                                             <p className="text-[0.6rem] font-semibold text-[#6B7280] mt-0.5">{getFreshnessText(item)}</p>
                                         )}
@@ -361,6 +372,7 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
                     <input value={editingItem.name} onChange={(event) => setEditingItem({ ...editingItem, name: event.target.value })} placeholder="Item name" className="w-full rounded-xl border-2 border-[#D1D5DB] px-3 py-2.5 text-sm outline-none focus:border-[#114B36]" />
                     <input type="number" min="0" value={editingItem.price} onChange={(event) => setEditingItem({ ...editingItem, price: event.target.value })} placeholder="Price" className="w-full rounded-xl border-2 border-[#D1D5DB] px-3 py-2.5 text-sm outline-none focus:border-[#114B36]" />
                     <input value={editingItem.category} onChange={(event) => setEditingItem({ ...editingItem, category: event.target.value })} placeholder="Category" className="w-full rounded-xl border-2 border-[#D1D5DB] px-3 py-2.5 text-sm outline-none focus:border-[#114B36]" />
+                    <select value={editingItem.mealCategory} onChange={(event) => setEditingItem({ ...editingItem, mealCategory: event.target.value })} className="w-full rounded-xl border-2 border-[#D1D5DB] px-3 py-2.5 text-sm outline-none focus:border-[#114B36]"><option value="BREAKFAST">Breakfast</option><option value="LUNCH">Lunch</option><option value="DRINKS">Drinks</option><option value="DESSERTS">Desserts</option><option value="DINNER">Dinner</option><option value="OTHER">Other</option></select>
                     <div className="space-y-2">
                         <label className="block text-xs font-semibold text-[#374151]">Menu image</label>
                         <input ref={editImageFileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(event) => {

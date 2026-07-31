@@ -15,6 +15,7 @@ import { toPublicMediaUrl } from "../media/service";
 export interface CreateProductInput {
   name: string;
   category?: string;
+  mealCategory?: "BREAKFAST" | "LUNCH" | "DRINKS" | "DESSERTS" | "DINNER" | "OTHER";
   imageUrl: string;
   price: number;
   available?: boolean;
@@ -35,11 +36,26 @@ export const getAllMenuItems = async (hotelId?: string) => {
     where,
     orderBy: { createdAt: "asc" },
   });
+  let ratings: { productId: string; _avg: { rating: number | null }; _count: { _all: number } }[] = [];
+  try {
+    const ratingRows: any = await prisma.productReview.groupBy({
+      by: ["productId"],
+      where: { ...(hotelId ? { hotelId } : {}) },
+      _avg: { rating: true },
+      _count: { _all: true },
+    });
+    ratings = ratingRows;
+  } catch {
+    // Ratings are an enrichment layer. A pending ratings migration must not
+    // make the core menu unavailable during a rolling deployment.
+  }
 
   return products.map((p) => ({
     ...p,
     price: Number(p.price),
     imageUrl: toPublicMediaUrl(p.imageUrl) ?? p.imageUrl,
+    rating: ratings.find((rating) => rating.productId === p.id)?._avg.rating ?? null,
+    ratingCount: ratings.find((rating) => rating.productId === p.id)?._count._all ?? 0,
   }));
 };
 
@@ -58,6 +74,7 @@ export const createMenuItem = async (input: CreateProductInput, hotelIdFromJwt?:
     data: {
       name: input.name,
       category: input.category ?? "General",
+      mealCategory: input.mealCategory ?? "OTHER",
       imageUrl: input.imageUrl,
       price: input.price,
       available: isAvailable,
@@ -152,7 +169,7 @@ export const updateProductStock = async (id: string, stockQty: number, hotelId?:
   return formattedProduct;
 };
 
-export const updateProduct = async (id: string, input: { name?: string; category?: string; imageUrl?: string; price?: number; available?: boolean }, hotelId?: string) => {
+export const updateProduct = async (id: string, input: { name?: string; category?: string; mealCategory?: "BREAKFAST" | "LUNCH" | "DRINKS" | "DESSERTS" | "DINNER" | "OTHER"; imageUrl?: string; price?: number; available?: boolean }, hotelId?: string) => {
   const existing = await prisma.product.findUnique({ where: { id } });
   if (!existing) throw new Error("Product not found");
   if (hotelId && existing.hotelId !== hotelId) {
@@ -162,6 +179,7 @@ export const updateProduct = async (id: string, input: { name?: string; category
   const updateData: any = {};
   if (input.name !== undefined) updateData.name = input.name;
   if (input.category !== undefined) updateData.category = input.category;
+  if (input.mealCategory !== undefined) updateData.mealCategory = input.mealCategory;
   if (input.imageUrl !== undefined) updateData.imageUrl = input.imageUrl;
   if (input.price !== undefined) updateData.price = input.price;
   if (input.available !== undefined) updateData.available = input.available;

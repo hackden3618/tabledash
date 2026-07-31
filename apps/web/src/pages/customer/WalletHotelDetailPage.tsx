@@ -20,7 +20,7 @@ interface SalesRecord {
 interface HotelWalletData {
   hotelId: string;
   hotelName: string;
-  account: { totalOwed: number; totalPaid: number };
+  account: { totalOwed: number; totalPaid: number; status: "DUE" | "SETTLED" | "CREDIT" };
   salesRecords: SalesRecord[];
 }
 
@@ -93,9 +93,10 @@ export const WalletHotelDetailPage: React.FC<WalletHotelDetailPageProps> = ({ ho
                   </div>
                   <div>
                     <p className="text-xs text-[#6B7280] font-medium">Current Balance</p>
-                    <p className={`text-2xl font-bold font-['League_Spartan'] tracking-tight ${balance > 0 ? "text-[#D64045]" : balance < 0 ? "text-[#22C55E]" : "text-[#1F2937]"}`}>
+                    <p className={`text-2xl font-bold font-['League_Spartan'] tracking-tight ${data.account.status === "DUE" ? "text-[#D64045]" : "text-[#22C55E]"}`}>
                       {formatKsh(balance)}
                     </p>
+                    <p className={`mt-1 text-xs font-bold ${data.account.status === "DUE" ? "text-[#D64045]" : "text-[#15803D]"}`}>{data.account.status === "DUE" ? "Balance due" : data.account.status === "CREDIT" ? "Credit available" : "Account settled"}</p>
                   </div>
                 </div>
                 <div className="flex gap-4 mt-3 pt-3 border-t border-[#E5E7EB]">

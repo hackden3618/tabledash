@@ -525,6 +525,9 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus, canc
       `Cannot move order from "${existing.status}" to "${newStatus}". Allowed: ${(allowed || []).join(", ") || "(none)"}`
     );
   }
+  if (newStatus === "DELIVERED" && existing.utensilsIssued && !existing.utensilsReturnedAt) {
+    throw new Error("Reusable utensils must be returned before this order can be completed.");
+  }
 
   const updated = await prisma.$transaction(async (tx) => {
     const updateData: any = {
@@ -763,7 +766,7 @@ export const markUtensilsIssued = async (id: string, hotelId: string, issued: bo
   if (!order) throw new Error("Order not found");
   return formatOrderResponse(await prisma.order.update({
     where: { id },
-    data: { utensilsIssued: issued },
+    data: { utensilsIssued: issued, utensilsRequired: issued ? true : false },
     include: { customer: true, orderItems: true },
   }));
 };
@@ -816,6 +819,7 @@ export const getPendingCollection = async (hotelId: string) => {
       utensilsOutstanding,
       outstandingAmount: Math.max(0, totalAmount - amountPaid),
       utensilsIssued: order.utensilsIssued,
+      utensilsRequired: order.utensilsRequired,
       utensilsReturnedAt: order.utensilsReturnedAt,
       customer: order.customer
         ? {

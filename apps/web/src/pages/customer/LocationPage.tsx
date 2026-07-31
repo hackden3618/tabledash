@@ -25,6 +25,13 @@ interface LocationPageProps {
   onNavigateToVerify?: () => void;
 }
 
+interface DeliveryZone {
+  id: string;
+  name: string;
+  locationLabel: string;
+  locationPlaceholder: string;
+}
+
 export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrderPlaced, onNavigateToVerify }) => {
   const { cart, totalAmount, clearCart, closedHotelIds, setClosedHotelIds } = useCart();
   const { customer, isLoggedIn, login } = useCustomerAuth();
@@ -54,6 +61,7 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
   const [orderError, setOrderError] = useState("");
   const [showVerifyPrompt, setShowVerifyPrompt] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"PAY_LATER" | "PAY_ON_DELIVERY">("PAY_ON_DELIVERY");
+  const [deliveryZone, setDeliveryZone] = useState<DeliveryZone | null>(null);
 
   // ── Ordering on behalf of someone else ──
   const [orderingForOther, setOrderingForOther] = useState(false);
@@ -87,6 +95,15 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
   const canPayLater = orderingForOther ? recipient?.isVerified === true : isVerified;
   const lockName = orderingForOther && recipientLookupState === "found";
   const lockPhone = orderingForOther && (recipientLookupState === "found" || recipientLookupState === "guest");
+
+  useEffect(() => {
+    const zoneId = localStorage.getItem("ladha_zone_id");
+    if (!zoneId) return;
+    void apiGet<DeliveryZone[]>("/discovery/zones").then((result) => {
+      const zone = result.success ? result.data?.find((item) => item.id === zoneId) : undefined;
+      if (zone) setDeliveryZone(zone);
+    });
+  }, []);
 
   useEffect(() => {
     if (isLoggedIn && customer && !orderingForOther) {
@@ -661,8 +678,8 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
               disabled={lockPhone || (isLoggedIn && !orderingForOther)}
               hint={lockPhone ? "This phone number was used to identify the recipient." : isLoggedIn && !orderingForOther ? "Your account phone number identifies this order." : undefined}
             />
-            <Input label="Stall Number / Shop Name" placeholder="e.g. Stall 42" value={stallNumber} onChange={(e) => setStallNumber(e.target.value)} />
-            <Textarea label="Describe your location" placeholder="e.g. Near Mama Jane's stall, Food section" value={locationDescription} onChange={(e) => setLocationDescription(e.target.value)} rows={3} />
+            <Input label={deliveryZone?.locationLabel ?? "Delivery point"} placeholder={deliveryZone?.locationPlaceholder ?? "e.g. building, landmark or shop name"} value={stallNumber} onChange={(e) => setStallNumber(e.target.value)} />
+            <Textarea label="Add directions" placeholder="e.g. near the main entrance or reception" value={locationDescription} onChange={(e) => setLocationDescription(e.target.value)} rows={3} />
           </div>
 
           {orderError && (

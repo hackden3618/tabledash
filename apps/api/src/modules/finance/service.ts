@@ -289,14 +289,19 @@ export async function recordRefund(
       },
     });
 
-    // A refund returns money already paid; if paid is insufficient the remainder
-    // is forgiven against what is owed. Either way the ledger explains it.
+    // A cancelled order is fully settled by reversing both sides of its
+    // financial position: the charge and the payment are both removed from
+    // the customer's running account. For a live order, a refund only reverses
+    // money actually paid; the charge remains outstanding.
     const account = await tx.customerAccount.findUnique({
       where: { hotelId_customerId: { hotelId, customerId } },
     });
     const currentPaid = Number(account?.totalPaid ?? 0);
+    const currentOwed = Number(account?.totalOwed ?? 0);
     const paidDelta = -Math.min(currentPaid, amount);
-    const owedDelta = -Math.max(0, amount - currentPaid);
+    const owedDelta = order.status === "CANCELLED"
+      ? -Math.min(currentOwed, amount)
+      : -Math.max(0, amount - currentPaid);
     const updatedAccount = await adjustAccountTx(tx, hotelId, customerId, owedDelta, paidDelta);
 
     const updatedOrder = await recomputeOrderCacheTx(tx, orderId);
@@ -451,7 +456,7 @@ export async function getFinanceDashboard(hotelId: string) {
     include: { customer: { select: { id: true, firstName: true, knownName: true } } },
   });
 
-  const outstandingBalance = accounts.reduce((sum, a) => sum + Number(a.totalOwed) - Number(a.totalPaid), 0);
+  const outstandingBalance = accounts.reduce((sum, a) => sum + Math.max(0, Number(a.totalOwed) - Number(a.totalPaid)), 0);
 
   const topCustomers = accounts
     .map((a) => ({
@@ -459,7 +464,7 @@ export async function getFinanceDashboard(hotelId: string) {
       name: a.customer?.knownName || a.customer?.firstName || "Unknown",
       totalSpent: Number(a.totalPaid),
       totalOwed: Number(a.totalOwed),
-      outstandingBalance: Number(a.totalOwed) - Number(a.totalPaid),
+      outstandingBalance: Math.max(0, Number(a.totalOwed) - Number(a.totalPaid)),
       orderCount: orders.filter((o) => o.status !== "CANCELLED").length,
     }))
     .sort((a, b) => b.totalSpent - a.totalSpent)
@@ -596,6 +601,7 @@ export async function getWallet(customerId: string) {
     balance: Number(a.totalOwed) - Number(a.totalPaid),
     totalOwed: Number(a.totalOwed),
     totalPaid: Number(a.totalPaid),
+    status: Number(a.totalOwed) - Number(a.totalPaid) > 0 ? "DUE" : Number(a.totalOwed) - Number(a.totalPaid) < 0 ? "CREDIT" : "SETTLED",
     lastUpdated: a.lastUpdated.toISOString(),
   }));
 
@@ -652,7 +658,7 @@ export async function getHotelWalletDetail(customerId: string, hotelId: string) 
   return {
     hotelId: hotel?.id || hotelId,
     hotelName: hotel?.name || "Unknown",
-    account: account || { totalOwed: 0, totalPaid: 0 },
+    account: account ? { ...account, status: Number(account.totalOwed) - Number(account.totalPaid) > 0 ? "DUE" : Number(account.totalOwed) - Number(account.totalPaid) < 0 ? "CREDIT" : "SETTLED" } : { totalOwed: 0, totalPaid: 0, status: "SETTLED" },
     salesRecords: records.map((r) => ({
       id: r.id,
       type: r.type,

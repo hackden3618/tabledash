@@ -25,6 +25,7 @@ function getStatusBadge(status: string): { bg: string; color: string } {
 
 function getFinancialStatus(order: any): { bg: string; color: string; label: string } {
   if (order.status === "CANCELLED") {
+    if (order.refundedAt) return { bg: "#DCFCE7", color: "#15803D", label: "Account settled" };
     if (Number(order.amountPaid ?? 0) >= Number(order.totalAmount)) return { bg: "#FEE2E2", color: "#DC2626", label: "Refund pending" };
     return { bg: "#F3F4F6", color: "#6B7280", label: "Cancelled" };
   }

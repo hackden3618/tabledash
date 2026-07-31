@@ -45,7 +45,7 @@ export const AdminBottomNavBar: React.FC<AdminBottomNavBarProps> = ({
     return () => window.removeEventListener("tabledash:realtime", handleRealtime);
   }, [refreshMessageCount, user?.id]);
   return (
-    <nav className="safe-area-bottom fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[1000px] bg-white/96 backdrop-blur-lg border-t border-[#E5E7EB] z-40 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+    <nav className="glass-nav safe-area-bottom fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[1000px] border-t z-40">
       <div className="flex items-center justify-around py-1 px-2">
         {tabs.map(({ key, label, icon: Icon }) => {
           const isActive = activeTab === key;

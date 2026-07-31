@@ -1,0 +1,2 @@
+CREATE TYPE "MealCategory" AS ENUM ('BREAKFAST', 'LUNCH', 'DRINKS', 'DESSERTS', 'DINNER', 'OTHER');
+ALTER TABLE "products" ADD COLUMN "meal_category" "MealCategory" NOT NULL DEFAULT 'OTHER';

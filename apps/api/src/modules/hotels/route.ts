@@ -2,6 +2,8 @@ import { Elysia, t } from "elysia";
 import { prisma } from "../../../../../infrastructure/database/prisma";
 import { env } from "../../../../../shared/config";
 import { getAllHotels } from "./service";
+import { jwt } from "@elysiajs/jwt";
+import { verifyCustomerToken } from "../customers/auth.service";
 
 const normalize = (value: string) => value.toLowerCase().normalize("NFKD").replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
 
@@ -50,6 +52,7 @@ export const hotelsRoute = new Elysia({
     tags: ["Hotels"],
   },
 })
+  .use(jwt({ name: "jwt", secret: env.jwtSecret }))
   .get("/", async ({ set }) => {
     try {
       const hotels = await getAllHotels();
@@ -64,6 +67,8 @@ export const hotelsRoute = new Elysia({
             slug: h.slug,
             isOpen: h.isOpen,
             imageUrl: h.imageUrl,
+            location: h.zone,
+            locationName: h.zone.name,
             productCount,
           };
         })
@@ -74,6 +79,55 @@ export const hotelsRoute = new Elysia({
       return { success: false, error: "Failed to load hotels" };
     }
   })
+  .get("/rating/:hotelId", async ({ params, set }) => {
+    try {
+      const aggregate = await prisma.restaurantReview.aggregate({
+        where: { hotelId: params.hotelId },
+        _avg: { rating: true },
+        _count: { _all: true },
+      });
+      return { success: true, data: { average: aggregate._avg.rating ?? null, count: aggregate._count._all } };
+    } catch {
+      set.status = 500;
+      return { success: false, error: "Ratings are temporarily unavailable" };
+    }
+  }, { params: t.Object({ hotelId: t.String({ format: "uuid" }) }) })
+  .post("/rating/:hotelId", async ({ params, body, headers, jwt, set }) => {
+    const authorization = headers.authorization ?? "";
+    const token = authorization.replace("Bearer ", "").trim();
+    const customerId = await verifyCustomerToken(token, (value) => jwt.verify(value));
+    if (!customerId) { set.status = 401; return { success: false, error: "Sign in to rate a completed order" }; }
+    try {
+      const order = await prisma.order.findFirst({ where: { id: body.orderId, hotelId: params.hotelId, customerId, status: "DELIVERED" } });
+      if (!order) throw new Error("Only your delivered orders can be rated");
+      const review = await prisma.restaurantReview.create({ data: { customerId, hotelId: params.hotelId, orderId: order.id, rating: body.rating, comment: body.comment?.trim() || null } });
+      return { success: true, data: review };
+    } catch (err: any) {
+      set.status = 400;
+      return { success: false, error: err.code === "P2002" ? "This order has already been rated" : err.message };
+    }
+  }, {
+    params: t.Object({ hotelId: t.String({ format: "uuid" }) }),
+    body: t.Object({ orderId: t.String({ format: "uuid" }), rating: t.Integer({ minimum: 1, maximum: 5 }), comment: t.Optional(t.String({ maxLength: 500 })) }),
+  })
+  .post("/rating/:hotelId/items/:productId", async ({ params, body, headers, jwt, set }) => {
+    const authorization = headers.authorization ?? "";
+    const token = authorization.replace("Bearer ", "").trim();
+    const customerId = await verifyCustomerToken(token, (value) => jwt.verify(value));
+    if (!customerId) { set.status = 401; return { success: false, error: "Sign in to rate a completed order" }; }
+    try {
+      const order = await prisma.order.findFirst({ where: { id: body.orderId, hotelId: params.hotelId, customerId, status: "DELIVERED", orderItems: { some: { productId: params.productId } } } });
+      if (!order) throw new Error("Only meals from your delivered order can be rated");
+      const review = await prisma.productReview.create({ data: { customerId, hotelId: params.hotelId, productId: params.productId, orderId: order.id, rating: body.rating } });
+      return { success: true, data: review };
+    } catch (err: any) {
+      set.status = 400;
+      return { success: false, error: err.code === "P2002" ? "This meal has already been rated for this order" : err.message };
+    }
+  }, {
+    params: t.Object({ hotelId: t.String({ format: "uuid" }), productId: t.String({ format: "uuid" }) }),
+    body: t.Object({ orderId: t.String({ format: "uuid" }), rating: t.Integer({ minimum: 1, maximum: 5 }) }),
+  })
   .get(
     "/search",
     async ({ query, set }) => {
@@ -83,7 +137,7 @@ export const hotelsRoute = new Elysia({
         return { success: false, error: "Search query is required" };
       }
       try {
-        const hotels = await getAllHotels();
+        const hotels = await getAllHotels(query.zoneId as string | undefined);
         const hotelIds = hotels.map((h) => h.id);
 
         const products = await prisma.product.findMany({
@@ -91,12 +145,12 @@ export const hotelsRoute = new Elysia({
             hotelId: { in: hotelIds },
             deleted: false,
           },
-          include: { hotel: true },
+          include: { hotel: { select: { id: true, name: true, slug: true, imageUrl: true, isOpen: true } } },
         });
 
         const results = products.map((p) => {
           const hotel = p.hotel;
-          const productScore = fuzzyScore(q, p.name) * 3 + fuzzyScore(q, p.category) * 2;
+          const productScore = fuzzyScore(q, p.name) * 3 + fuzzyScore(q, p.category) * 2 + fuzzyScore(q, p.mealCategory) * 3;
           const hotelScore = hotel ? fuzzyScore(q, hotel.name) : 0;
           return {
           id: p.id,
@@ -107,6 +161,7 @@ export const hotelsRoute = new Elysia({
           hotelIsOpen: hotel?.isOpen ?? true,
           hotelImageUrl: hotel?.imageUrl ?? null,
           category: p.category,
+          mealCategory: p.mealCategory,
           imageUrl: p.imageUrl,
           price: Number(p.price),
           available: p.available,
@@ -144,8 +199,9 @@ export const hotelsRoute = new Elysia({
       }
     },
     {
-      query: t.Object({
+        query: t.Object({
         q: t.String(),
+        zoneId: t.Optional(t.String({ format: "uuid" })),
       }),
     }
   );

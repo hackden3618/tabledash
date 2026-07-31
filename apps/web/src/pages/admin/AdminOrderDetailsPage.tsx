@@ -74,6 +74,8 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
   const [adjustBusy, setAdjustBusy] = useState(false);
 
   const [utensilBusy, setUtensilBusy] = useState(false);
+  const [showDispatchCheck, setShowDispatchCheck] = useState(false);
+  const [dispatchBusy, setDispatchBusy] = useState(false);
   const [accountModal, setAccountModal] = useState<null | { loading: boolean; data: any }>(null);
 
   // ── Order chat (lazily created on the first message from either side) ──
@@ -96,10 +98,14 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
   const utensilsIssued = order.utensilsIssued === true;
   const utensilsReturnedAt = order.utensilsReturnedAt || null;
 
-  const handleStatusChange = async (newStatus: string, reason?: string) => {
+  const handleStatusChange = async (newStatus: string, reason?: string, dispatchConfirmed = false) => {
     if (updating || isTerminal) return;
     const newRank = STATUS_RANK[newStatus] ?? 0;
     if (newStatus !== "CANCELLED" && newRank <= currentRank) return;
+    if (newStatus === "OUT_FOR_DELIVERY" && !dispatchConfirmed) {
+      setShowDispatchCheck(true);
+      return;
+    }
 
     setError(null);
     setUpdating(true);
@@ -119,6 +125,22 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
     } else {
       setError(res.error ?? "Status update failed. Please try again.");
     }
+  };
+
+  const confirmDispatch = async (utensilsAreIncluded: boolean) => {
+    if (dispatchBusy) return;
+    setDispatchBusy(true);
+    setError(null);
+    const utensilRes = await apiPatch<any>(`/orders/${order.id}/utensils-issued`, { issued: utensilsAreIncluded }, token);
+    if (!utensilRes.success || !utensilRes.data) {
+      setDispatchBusy(false);
+      setError(utensilRes.error ?? "Could not record the utensil decision.");
+      return;
+    }
+    onOrderUpdated(utensilRes.data);
+    setShowDispatchCheck(false);
+    await handleStatusChange("OUT_FOR_DELIVERY", undefined, true);
+    setDispatchBusy(false);
   };
 
   const handleConfirmCancel = () => {
@@ -303,56 +325,89 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
 
         {/* Payment status — read-through of the ledger; recording goes through finance */}
         <div className="bg-white rounded-2xl p-4 shadow-[0_2px_8px_rgba(17,75,54,0.06)]">
-          <div className="flex items-center justify-between mb-3">
-            <p className="font-bold text-xs text-[#6B7280] uppercase tracking-wider flex items-center gap-1.5">
-              <Wallet size={14} /> Payment
-            </p>
-            <span
-              className="text-[0.65rem] font-bold px-2.5 py-1 rounded-full"
-              style={{ background: paymentMeta.bg, color: paymentMeta.color }}
-            >
-              {paymentMeta.label}
-            </span>
-          </div>
-          <div className="flex items-end justify-between mb-3">
-            <div>
-              <p className="text-2xl font-extrabold text-[#114B36]">{formatKsh(amountPaid)}</p>
-              <p className="text-xs text-[#6B7280]">of {formatKsh(totalAmount)} collected</p>
-            </div>
-            {outstanding > 0 && (
-              <div className="text-right">
-                <p className="text-lg font-bold text-[#DC2626]">{formatKsh(outstanding)}</p>
-                <p className="text-xs text-[#6B7280]">outstanding</p>
+          {isTerminal && currentStatus === "CANCELLED" ? (
+            <>
+              <div className="flex items-center justify-between mb-3">
+                <p className="font-bold text-xs text-[#6B7280] uppercase tracking-wider flex items-center gap-1.5">
+                  <Wallet size={14} /> Payment
+                </p>
+                <span
+                  className="text-[0.65rem] font-bold px-2.5 py-1 rounded-full"
+                  style={{
+                    background: amountPaid >= totalAmount ? "#FEE2E2" : "#F3F4F6",
+                    color: amountPaid >= totalAmount ? "#DC2626" : "#6B7280",
+                  }}
+                >
+                  {amountPaid >= totalAmount ? "Refund pending" : "Cancelled"}
+                </span>
               </div>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="primary"
-              disabled={paymentStatus === "PAID" || paymentStatus === "REFUNDED" || isTerminal && currentStatus === "CANCELLED"}
-              onClick={() => { setPaymentAmount(outstanding ? String(outstanding) : ""); setShowPaymentModal(true); }}
-            >
-              <CreditCard size={14} className="mr-1" /> Record Payment
-            </Button>
-            {canRefund ? (
-              <Button
-                size="sm"
-                variant="danger"
-                disabled={paymentStatus === "REFUNDED" || (amountPaid <= 0 && outstanding <= 0)}
-                onClick={() => setShowAdjustModal(true)}
-              >
-                <Undo2 size={14} className="mr-1" /> Refund / Adjust
-              </Button>
-            ) : (
-              <span
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gray-50 text-xs font-semibold text-[#9CA3AF]"
-                title="Only hotel administrators can issue refunds or adjustments."
-              >
-                <Lock size={14} /> Admin only
-              </span>
-            )}
-          </div>
+              <div className="flex items-end justify-between mb-3">
+                <div>
+                  <p className="text-2xl font-extrabold text-[#114B36]">{formatKsh(amountPaid)}</p>
+                  <p className="text-xs text-[#6B7280]">of {formatKsh(totalAmount)} collected</p>
+                </div>
+                {amountPaid < totalAmount && (
+                  <div className="text-right">
+                    <p className="text-lg font-bold text-[#DC2626]">{formatKsh(outstanding)}</p>
+                    <p className="text-xs text-[#6B7280]">outstanding</p>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-3">
+                <p className="font-bold text-xs text-[#6B7280] uppercase tracking-wider flex items-center gap-1.5">
+                  <Wallet size={14} /> Payment
+                </p>
+                <span
+                  className="text-[0.65rem] font-bold px-2.5 py-1 rounded-full"
+                  style={{ background: paymentMeta.bg, color: paymentMeta.color }}
+                >
+                  {paymentMeta.label}
+                </span>
+              </div>
+              <div className="flex items-end justify-between mb-3">
+                <div>
+                  <p className="text-2xl font-extrabold text-[#114B36]">{formatKsh(amountPaid)}</p>
+                  <p className="text-xs text-[#6B7280]">of {formatKsh(totalAmount)} collected</p>
+                </div>
+                {outstanding > 0 && (
+                  <div className="text-right">
+                    <p className="text-lg font-bold text-[#DC2626]">{formatKsh(outstanding)}</p>
+                    <p className="text-xs text-[#6B7280]">outstanding</p>
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={paymentStatus === "PAID" || paymentStatus === "REFUNDED"}
+                  onClick={() => { setPaymentAmount(outstanding ? String(outstanding) : ""); setShowPaymentModal(true); }}
+                >
+                  <CreditCard size={14} className="mr-1" /> Record Payment
+                </Button>
+                {canRefund ? (
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    disabled={paymentStatus === "REFUNDED" || (amountPaid <= 0 && outstanding <= 0)}
+                    onClick={() => setShowAdjustModal(true)}
+                  >
+                    <Undo2 size={14} className="mr-1" /> Refund / Adjust
+                  </Button>
+                ) : (
+                  <span
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gray-50 text-xs font-semibold text-[#9CA3AF]"
+                    title="Only hotel administrators can issue refunds or adjustments."
+                  >
+                    <Lock size={14} /> Admin only
+                  </span>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
         {/* Utensils — independent of payment */}
@@ -531,7 +586,7 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
                       <button
                         onClick={() => handleStatusChange(step.key)}
                         disabled={updating}
-                        className="mt-1.5 px-4 py-1.5 bg-[#114B36] text-white rounded-lg text-xs font-bold border-none cursor-pointer hover:bg-[#0D3D2B] transition-colors disabled:opacity-50"
+                        className="mx-auto mt-1.5 block px-4 py-1.5 bg-[#114B36] text-white rounded-lg text-xs font-bold border-none cursor-pointer hover:bg-[#0D3D2B] transition-colors disabled:opacity-50"
                       >
                         Mark as {step.label} →
                       </button>
@@ -572,6 +627,28 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
       </div>
 
       {/* Cancellation Reason Modal */}
+      <Modal
+        isOpen={showDispatchCheck}
+        onClose={() => { if (!dispatchBusy) setShowDispatchCheck(false); }}
+        title="Confirm dispatch contents"
+        message="Before this order leaves the kitchen, confirm whether reusable utensils are travelling with it. This keeps the return workflow from being missed."
+        type="confirm"
+      >
+        <div className="grid gap-3 sm:grid-cols-2">
+          <button type="button" onClick={() => void confirmDispatch(true)} disabled={dispatchBusy} className="rounded-2xl border border-[#B9DCCB] bg-[#EBF5F0] p-4 text-left transition hover:bg-[#D9F0E3] disabled:opacity-60">
+            <UtensilsCrossed size={22} className="mb-3 text-[#114B36]" />
+            <span className="block text-sm font-extrabold text-[#114B36]">Yes, utensils included</span>
+            <span className="mt-1 block text-xs leading-relaxed text-[#49715F]">Track them as issued and collect them after delivery.</span>
+          </button>
+          <button type="button" onClick={() => void confirmDispatch(false)} disabled={dispatchBusy} className="rounded-2xl border border-[#E8DED2] bg-[#FFFDF9] p-4 text-left transition hover:border-[#B9DCCB] disabled:opacity-60">
+            <CheckCircle size={22} className="mb-3 text-[#6B7280]" />
+            <span className="block text-sm font-extrabold text-[#1F2937]">No utensils included</span>
+            <span className="mt-1 block text-xs leading-relaxed text-[#6B7280]">Continue dispatch without a utensil return task.</span>
+          </button>
+        </div>
+        {dispatchBusy && <p className="mt-4 text-center text-xs font-semibold text-[#114B36]">Recording dispatch contents…</p>}
+      </Modal>
+
       <Modal
         isOpen={showCancelModal}
         onClose={() => setShowCancelModal(false)}

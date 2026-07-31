@@ -127,4 +127,20 @@ describe("Order service tenant isolation", () => {
     // The update must never run for an order the staff member cannot see.
     expect(mockOrderUpdate.mock.calls.length).toBe(0);
   });
+
+  test("blocks completion while issued utensils remain unreturned", async () => {
+    await resetMocks();
+    mockOrderFindFirst.mockResolvedValueOnce({
+      id: "order-X",
+      hotelId: "hotel-A",
+      status: "OUT_FOR_DELIVERY",
+      utensilsIssued: true,
+      utensilsReturnedAt: null,
+      orderItems: [],
+    } as any);
+
+    const service = await import("./service");
+    await expect(service.updateOrderStatus("order-X", "DELIVERED", undefined, "hotel-A")).rejects.toThrow("Reusable utensils must be returned");
+    expect(mockTransaction.mock.calls.length).toBe(0);
+  });
 });

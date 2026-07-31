@@ -222,6 +222,7 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
 
 function getFinancialStatus(order: any): { bg: string; color: string; label: string } | null {
   if (!order.paymentStatus) return null;
+  if (order.status === "CANCELLED" && order.refundedAt) return { bg: "#DCFCE7", color: "#15803D", label: "Account settled" };
   if (order.paymentStatus === "REFUNDED") return { bg: "#F3F4F6", color: "#6B7280", label: "Refunded" };
   if (Number(order.amountPaid ?? 0) >= Number(order.totalAmount)) return { bg: "#DCFCE7", color: "#15803D", label: "Fully settled" };
   return { bg: "#FEF3C7", color: "#D97706", label: "Balance due" };
