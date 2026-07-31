@@ -4,6 +4,7 @@ import { apiGet, apiPost, apiPatch, apiDelete } from "../lib/api";
 import { Header } from "../components/ui/Header";
 import { Button } from "../components/ui/Button";
 import { EmptyState } from "../components/ui/EmptyState";
+import { Modal } from "../components/ui/Modal";
 
 interface Conversation {
     id: string;
@@ -78,6 +79,8 @@ export const InboxPage: React.FC<{ token?: string; actorId?: string; onBack: () 
     const [startingSupport, setStartingSupport] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [activeFilter, setActiveFilter] = useState<InboxSection | "all">("all");
+    const [deleteMessageId, setDeleteMessageId] = useState<string | null>(null);
+    const [showDeleteConversationModal, setShowDeleteConversationModal] = useState(false);
 
     const ownParticipants = useMemo(() => (selected?.participants || []).filter((participant) => actorId ? (mode === "customer" ? participant.customerId === actorId : mode === "hotel" ? participant.adminUserId === actorId : participant.platformAdminId === actorId) : mode === "customer" ? participant.kind === "GUEST" : false), [selected?.participants, actorId, mode]);
     const ownParticipantIds = useMemo(() => new Set(ownParticipants.map((participant) => participant.id)), [ownParticipants]);
@@ -205,18 +208,28 @@ export const InboxPage: React.FC<{ token?: string; actorId?: string; onBack: () 
 
     const handleDeleteMessage = async (messageId: string) => {
         if (!selected) return;
-        if (!window.confirm("Delete this message?")) return;
-        const result = await apiDelete(`/messaging/conversations/${selected.id}/messages/${messageId}`, token);
-        if (result.success) setMessages((current) => current.filter((msg) => msg.id !== messageId));
+        setDeleteMessageId(messageId);
+    };
+
+    const confirmDeleteMessage = async () => {
+        if (!selected || !deleteMessageId) return;
+        const result = await apiDelete(`/messaging/conversations/${selected.id}/messages/${deleteMessageId}`, token);
+        if (result.success) setMessages((current) => current.filter((msg) => msg.id !== deleteMessageId));
         else setActionError(result.error || "Unable to delete message");
+        setDeleteMessageId(null);
     };
 
     const handleDeleteConversation = async () => {
         if (!selected) return;
-        if (!window.confirm("Delete this entire conversation?")) return;
+        setShowDeleteConversationModal(true);
+    };
+
+    const confirmDeleteConversation = async () => {
+        if (!selected) return;
         const result = await apiDelete(`/messaging/conversations/${selected.id}`, token);
         if (result.success) { setSelected(null); setMessages([]); void loadInbox(); }
         else setActionError(result.error || "Unable to delete conversation");
+        setShowDeleteConversationModal(false);
     };
 
     const send = async () => {
@@ -420,6 +433,28 @@ export const InboxPage: React.FC<{ token?: string; actorId?: string; onBack: () 
 
             {/* Error toast */}
             {actionError && <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-red-600 text-white text-sm font-bold px-4 py-2 rounded-2xl shadow-lg">⚠️ {actionError} <button onClick={() => setActionError("")} className="ml-2 border-none bg-transparent text-white cursor-pointer"><X size={14} /></button></div>}
+
+            {/* Delete message confirmation */}
+            <Modal
+                isOpen={deleteMessageId !== null}
+                onClose={() => setDeleteMessageId(null)}
+                type="danger"
+                title="Delete this message?"
+                message="This action cannot be undone. The message will be removed from the conversation."
+                primaryAction={{ label: "Delete", variant: "danger", onClick: () => void confirmDeleteMessage() }}
+                secondaryAction={{ label: "Cancel", onClick: () => setDeleteMessageId(null) }}
+            />
+
+            {/* Delete conversation confirmation */}
+            <Modal
+                isOpen={showDeleteConversationModal}
+                onClose={() => setShowDeleteConversationModal(false)}
+                type="danger"
+                title="Delete this entire conversation?"
+                message="This action cannot be undone. All messages in this conversation will be permanently removed."
+                primaryAction={{ label: "Delete", variant: "danger", onClick: () => void confirmDeleteConversation() }}
+                secondaryAction={{ label: "Cancel", onClick: () => setShowDeleteConversationModal(false) }}
+            />
 
             {/* Create Channel modal */}
             {showPlatformSupport && <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4"><div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl bg-[#FFF8F0] p-5 shadow-2xl"><div className="flex items-center justify-between mb-4"><div><p className="text-xs font-bold uppercase tracking-wider text-[#114B36]">Ladha Support</p><h3 className="text-lg font-black text-[#1F2937]">How can we help?</h3></div><button onClick={() => setShowPlatformSupport(false)} className="w-9 h-9 rounded-full border-none bg-white text-[#6B7280] flex items-center justify-center cursor-pointer"><X size={18} /></button></div><p className="text-sm text-[#6B7280] mb-3">This private conversation is visible only to you and Platform Administration.</p><textarea value={supportBody} onChange={(event) => setSupportBody(event.target.value)} rows={5} placeholder="Describe the problem, what you expected, and what happened…" className="w-full resize-none rounded-2xl border-2 border-[#E5E7EB] bg-white px-4 py-3 text-sm outline-none focus:border-[#114B36]" /><div className="flex gap-2 mt-4"><button onClick={() => setShowPlatformSupport(false)} className="flex-1 rounded-xl bg-white border-2 border-[#E5E7EB] text-[#6B7280] py-3 font-bold text-sm border-none cursor-pointer">Cancel</button><button onClick={() => void startPlatformSupport()} disabled={!supportBody.trim() || startingSupport} className="flex-1 rounded-xl bg-[#114B36] text-white py-3 font-bold text-sm border-none cursor-pointer disabled:opacity-50">{startingSupport ? "Starting…" : "Contact support"}</button></div></div></div>}

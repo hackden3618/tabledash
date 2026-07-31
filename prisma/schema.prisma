@@ -42,6 +42,26 @@ enum HotelRole {
     HOTEL_STAFF
 }
 
+enum SalesRecordType {
+    ORDER_CHARGE
+    ORDER_PAYMENT
+    REFUND
+    ADJUSTMENT
+}
+
+enum PaymentMethod {
+    CASH
+    MPESA
+    CREDIT
+}
+
+enum NotificationType {
+    WALLET_CREDIT
+    WALLET_PAYMENT
+    WALLET_REFUND
+    WALLET_ADJUSTMENT
+}
+
 enum EventName {
     order_created
     order_status_updated
@@ -52,6 +72,10 @@ enum EventName {
     hotel_admin_created
     hotel_staff_created
     platform_admin_created
+    customer_account_credited
+    customer_account_payment_recorded
+    customer_account_refund_recorded
+    customer_account_adjusted
 }
 
 enum EventStatus {
@@ -97,7 +121,8 @@ model Hotel {
     orders        Order[]
     staffUsers    StaffUser[]
     media         Media[]
-    ledgerEntries LedgerEntry[]
+    salesRecords  SalesRecord[]
+    customerAccounts CustomerAccount[]
 
     @@map("hotels")
 }
@@ -132,6 +157,7 @@ model AdminUser {
 
 model Customer {
     id                  String   @id @default(uuid()) @db.Uuid
+    accountId           String   @unique @map("account_id")
     firstName           String   @map("first_name")
     lastName            String?  @map("last_name")
     phone               String   @unique
@@ -141,13 +167,20 @@ model Customer {
     marketSection       String?  @map("market_section")
     knownName           String?  @map("known_name")
     isDiscoverable      Boolean  @default(false) @map("is_discoverable")
+    verifiedAt          DateTime? @map("verified_at") @db.Timestamptz()
     pinResetCode        String?  @map("pin_reset_code")
     pinResetCodeExpires DateTime? @map("pin_reset_code_expires") @db.Timestamptz()
+    registrationOtp     String?  @map("registration_otp")
+    registrationOtpExpires DateTime? @map("registration_otp_expires") @db.Timestamptz()
+    phoneChangeOtp      String?  @map("phone_change_otp")
+    phoneChangeOtpExpires DateTime? @map("phone_change_otp_expires") @db.Timestamptz()
+    phoneChangePending  String?  @map("phone_change_pending")
     createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
     orders Order[]
     guestIdentities GuestIdentity[]
-    ledgerEntries LedgerEntry[]
+    customerAccounts CustomerAccount[]
+    notifications Notification[]
 
     @@map("customers")
 }
@@ -236,10 +269,10 @@ model Product {
     deleted          Boolean   @default(false)
     lastRestockedAt  DateTime? @map("last_restocked_at") @db.Timestamptz()
     outOfStockSince  DateTime? @map("out_of_stock_since") @db.Timestamptz()
-    hotelId          String?   @map("hotel_id") @db.Uuid
+    hotelId          String   @map("hotel_id") @db.Uuid
     createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz()
 
-    hotel      Hotel?       @relation(fields: [hotelId], references: [id])
+    hotel      Hotel       @relation(fields: [hotelId], references: [id])
     orderItems OrderItem[]
 
     @@map("products")
@@ -257,18 +290,21 @@ model Order {
     locationDescription String?       @map("location_description")
     stallNumber         String?       @map("stall_number")
     knownName           String?       @map("known_name")
-    hotelId             String?       @map("hotel_id") @db.Uuid
+    hotelId             String       @map("hotel_id") @db.Uuid
     orderedAt           DateTime      @default(now()) @map("ordered_at") @db.Timestamptz()
     completedAt         DateTime?     @map("completed_at") @db.Timestamptz()
     cancelReason        String?       @map("cancel_reason")
     cancelledAtStatus   String?       @map("cancelled_at_status")
     refundedAt          DateTime?     @map("refunded_at") @db.Timestamptz()
+    utensilsIssued           Boolean   @default(false) @map("utensils_issued")
+    utensilsReturnedAt       DateTime? @map("utensils_returned_at") @db.Timestamptz()
+    utensilsReturnedByAdminUserId String? @map("utensils_returned_by_admin_user_id") @db.Uuid
 
-    customer   Customer    @relation(fields: [customerId], references: [id])
-    hotel      Hotel?       @relation(fields: [hotelId], references: [id])
-    orderItems OrderItem[]
+    customer    Customer     @relation(fields: [customerId], references: [id])
+    hotel       Hotel        @relation(fields: [hotelId], references: [id])
+    orderItems  OrderItem[]
     conversations Conversation[]
-    ledgerEntries LedgerEntry[]
+    salesRecords SalesRecord[]
 
     @@map("orders")
 }
@@ -320,12 +356,12 @@ model Media {
     width        Int?
     height       Int?
     status       MediaStatus @default(UPLOADING)
-    hotelId      String?   @map("hotel_id") @db.Uuid
+    hotelId      String   @map("hotel_id") @db.Uuid
     createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz()
     updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
     deletedAt    DateTime? @map("deleted_at") @db.Timestamptz()
 
-    hotel Hotel? @relation(fields: [hotelId], references: [id])
+    hotel Hotel @relation(fields: [hotelId], references: [id])
 
     @@map("media")
 }
@@ -338,36 +374,55 @@ model Setting {
     @@map("settings")
 }
 
-enum LedgerEntryType {
-    ORDER_CHARGE
-    CASH_PAYMENT
-    PARTIAL_PAYMENT
-    REFUND
-    CREDIT_ADJUSTMENT
-    MANUAL_ADJUSTMENT
-    FUTURE_ONLINE_PAYMENT
+model SalesRecord {
+    id                  String          @id @default(uuid()) @db.Uuid
+    hotelId             String          @map("hotel_id") @db.Uuid
+    orderId             String          @map("order_id") @db.Uuid
+    type                SalesRecordType
+    paymentMethod       PaymentMethod
+    amount              Decimal         @db.Decimal(10, 2)
+    note                String?
+    createdByAdminUserId String?        @map("created_by_admin_user_id") @db.Uuid
+    createdAt           DateTime        @default(now()) @map("created_at") @db.Timestamptz()
+
+    hotel Hotel @relation(fields: [hotelId], references: [id])
+    order Order @relation(fields: [orderId], references: [id])
+
+    @@index([hotelId, createdAt])
+    @@index([orderId])
+    @@map("sales_records")
 }
 
-model LedgerEntry {
-    id          String          @id @default(uuid()) @db.Uuid
-    hotelId     String          @map("hotel_id") @db.Uuid
-    customerId  String          @map("customer_id") @db.Uuid
-    orderId     String?         @map("order_id") @db.Uuid
-    type        LedgerEntryType
-    amount      Decimal         @db.Decimal(10, 2)
-    balance     Decimal         @db.Decimal(10, 2)
-    description String?
-    reference   String?         @map("reference")
-    createdBy   String?         @map("created_by")
-    createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz()
+model CustomerAccount {
+    id          String   @id @default(uuid()) @db.Uuid
+    hotelId     String   @map("hotel_id") @db.Uuid
+    customerId  String   @map("customer_id") @db.Uuid
+    totalOwed   Decimal  @default(0) @db.Decimal(10, 2) @map("total_owed")
+    totalPaid   Decimal  @default(0) @db.Decimal(10, 2) @map("total_paid")
+    lastUpdated DateTime @updatedAt @map("last_updated") @db.Timestamptz()
 
     hotel    Hotel    @relation(fields: [hotelId], references: [id])
     customer Customer @relation(fields: [customerId], references: [id])
-    order    Order?   @relation(fields: [orderId], references: [id])
 
-    @@index([hotelId, customerId])
-    @@index([createdAt])
-    @@map("ledger_entries")
+    @@unique([hotelId, customerId])
+    @@map("customer_accounts")
+}
+
+model Notification {
+    id         String           @id @default(uuid()) @db.Uuid
+    customerId String           @map("customer_id") @db.Uuid
+    hotelId    String           @map("hotel_id") @db.Uuid
+    orderId    String?          @map("order_id") @db.Uuid
+    type       NotificationType
+    title      String
+    body       String
+    read       Boolean          @default(false)
+    createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz()
+
+    customer Customer @relation(fields: [customerId], references: [id])
+
+    @@index([customerId, read])
+    @@map("notifications")
 }
 
 model StaffUser {
@@ -376,11 +431,11 @@ model StaffUser {
     phone      String   @unique
     receiveSms Boolean  @default(true) @map("receive_sms")
     isDiscoverable Boolean @default(false) @map("is_discoverable")
-    hotelId    String?  @map("hotel_id") @db.Uuid
+    hotelId    String   @map("hotel_id") @db.Uuid
     adminUserId String? @unique @map("admin_user_id") @db.Uuid
     createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
-    hotel Hotel? @relation(fields: [hotelId], references: [id])
+    hotel Hotel @relation(fields: [hotelId], references: [id])
     adminUser AdminUser? @relation(fields: [adminUserId], references: [id], onDelete: SetNull)
 
     @@map("staff_users")

@@ -32,10 +32,22 @@ export function useWebSocket<T = unknown>(
   const onMessageRef = useRef(onMessage);
   onMessageRef.current = onMessage;
 
+  const INITIAL_BACKOFF_MS = 1_000;
+  const MAX_BACKOFF_MS = 30_000;
+  const backoffRef = useRef(INITIAL_BACKOFF_MS);
+  const lastSeqRef = useRef(0);
+
   useEffect(() => {
     let timerId: ReturnType<typeof setTimeout> | null = null;
     let heartbeatId: ReturnType<typeof setInterval> | null = null;
     let isDisposed = false;
+
+    function scheduleReconnect() {
+      const delay = backoffRef.current;
+      console.log(`[WS Client] Reconnecting in ${delay}ms...`);
+      timerId = setTimeout(connect, delay);
+      backoffRef.current = Math.min(delay * 2, MAX_BACKOFF_MS);
+    }
 
     function connect() {
       if (isDisposed) return;
@@ -58,7 +70,7 @@ export function useWebSocket<T = unknown>(
           const socket = new WebSocket(`${base}/ws?${query}`);
           attachSocket(socket);
         } catch {
-          if (!isDisposed) timerId = setTimeout(connect, 3000);
+          if (!isDisposed) scheduleReconnect();
         }
       })();
     }
@@ -75,6 +87,7 @@ export function useWebSocket<T = unknown>(
           return;
         }
         if (!isDisposed) {
+          backoffRef.current = INITIAL_BACKOFF_MS;
           // Never log wsUrl: it contains the bearer token used by the legacy
           // WebSocket handshake and must not appear in browser logs.
           console.log(`[WS Client] Connected (${role})`);
@@ -84,14 +97,22 @@ export function useWebSocket<T = unknown>(
           }, 20_000);
           const pending = pendingMessagesRef.current.splice(0);
           pending.forEach((payload) => socket.send(payload));
+
+          // Request missed events since last known seq
+          if (lastSeqRef.current > 0) {
+            socket.send(JSON.stringify({ type: "RESYNC", lastSeq: lastSeqRef.current }));
+          }
         }
       };
 
       socket.onmessage = (event) => {
         try {
-          const parsed: WsEventPayload<T> = JSON.parse(event.data);
+          const data = JSON.parse(event.data);
+          if (typeof data.seq === "number" && data.seq > lastSeqRef.current) {
+            lastSeqRef.current = data.seq;
+          }
           if (onMessageRef.current && !isDisposed) {
-            onMessageRef.current(parsed);
+            onMessageRef.current(data);
           }
         } catch (err) {
           console.error("[WS Client] Error parsing incoming message:", err);
@@ -102,9 +123,8 @@ export function useWebSocket<T = unknown>(
         if (!isDisposed) {
           if (heartbeatId) clearInterval(heartbeatId);
           heartbeatId = null;
-          console.log("[WS Client] Connection closed. Retrying in 3 seconds...");
           setIsConnected(false);
-          timerId = setTimeout(connect, 3000);
+          scheduleReconnect();
         }
       };
 
@@ -119,6 +139,7 @@ export function useWebSocket<T = unknown>(
 
     return () => {
       isDisposed = true;
+      backoffRef.current = INITIAL_BACKOFF_MS;
       pendingMessagesRef.current = [];
       if (timerId) clearTimeout(timerId);
       if (heartbeatId) clearInterval(heartbeatId);

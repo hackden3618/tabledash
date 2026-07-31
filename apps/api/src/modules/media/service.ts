@@ -39,7 +39,7 @@ function validateImage(buffer: Buffer): { valid: boolean; mimeType: string; erro
 export async function uploadMedia(
   buffer: Buffer,
   originalName: string,
-  options: MediaUploadOptions = {}
+  options: MediaUploadOptions
 ): Promise<MediaUploadResult> {
   if (buffer.length > MAX_FILE_SIZE) {
     throw new Error(`File size (${(buffer.length / 1024 / 1024).toFixed(1)} MB) exceeds the 10 MB limit`);

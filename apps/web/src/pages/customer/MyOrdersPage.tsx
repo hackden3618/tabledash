@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { apiGet } from "../../lib/api";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
-import { ClipboardList, Package, RefreshCw, ChevronRight, Settings } from "lucide-react";
+import { ClipboardList, Package, RefreshCw, ChevronRight, Settings, Wallet } from "lucide-react";
 import { Header } from "../../components/ui/Header";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { PageTransition } from "../../components/ui/PageTransition";
@@ -11,6 +11,7 @@ interface MyOrdersPageProps {
   onGoToAuth: () => void;
   onTrackOrder: (orderId: string) => void;
   onGoToProfile?: () => void;
+  onNavigateToWallet?: () => void;
 }
 
 const TERMINAL_CONFIG: Record<string, { label: string; variant: "success" | "danger" }> = {
@@ -18,10 +19,11 @@ const TERMINAL_CONFIG: Record<string, { label: string; variant: "success" | "dan
   CANCELLED: { label: "✕ Cancelled", variant: "danger" },
 };
 
-export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackOrder, onGoToProfile }) => {
+export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackOrder, onGoToProfile, onNavigateToWallet }) => {
   const { customer, isLoggedIn, isLoading, logout, refreshProfile } = useCustomerAuth();
   const [orders, setOrders] = useState<any[]>([]);
   const [guestOrders, setGuestOrders] = useState<any[]>([]);
+  const [guestOrderId, setGuestOrderId] = useState<string | null>(null);
   const [lastUpdatedId, setLastUpdatedId] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -32,22 +34,27 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
       if (raw) {
         const parsed = JSON.parse(raw);
         setGuestOrders([parsed]);
+        setGuestOrderId(parsed.id);
       }
     } catch { /* ignore */ }
   }, []);
 
-  // Keep guest order data fresh by fetching latest
+  // Keep guest order data fresh by fetching latest. If the order no longer
+  // exists (e.g. dev DB reset), drop the stale card instead of persisting it.
   useEffect(() => {
-    if (!isLoggedIn && guestOrders.length > 0) {
-      const gid = guestOrders[0].id;
-      apiGet<any>(`/orders/${gid}`).then((res) => {
+    if (!isLoggedIn && guestOrderId) {
+      apiGet<any>(`/orders/${guestOrderId}`).then((res) => {
         if (res.success && res.data) {
           setGuestOrders([res.data]);
           localStorage.setItem("ladha_last_order", JSON.stringify(res.data));
+        } else {
+          localStorage.removeItem("ladha_last_order");
+          setGuestOrders([]);
+          setGuestOrderId(null);
         }
       });
     }
-  }, [isLoggedIn]);
+  }, [guestOrderId, isLoggedIn]);
 
   useEffect(() => {
     if (customer?.recentOrders) {
@@ -150,13 +157,22 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
                   <p className="font-bold text-sm text-[#1F2937]">Hi, {customer?.firstName}!</p>
                   <p className="text-xs text-[#6B7280]">{customer?.phone}</p>
                 </div>
-                {onGoToProfile && (
-                  <button onClick={onGoToProfile}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/60 text-xs font-bold text-[#114B36] border border-[#C2E2D3] cursor-pointer bg-none transition-colors hover:bg-white"
-                  >
-                    <Settings size={13} /> Profile
-                  </button>
-                )}
+                <div className="flex items-center gap-1.5">
+                  {onNavigateToWallet && (
+                    <button onClick={onNavigateToWallet}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#114B36] text-xs font-bold text-white border-none cursor-pointer transition-colors hover:bg-[#0D3D2B]"
+                    >
+                      <Wallet size={13} /> Wallet
+                    </button>
+                  )}
+                  {onGoToProfile && (
+                    <button onClick={onGoToProfile}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/60 text-xs font-bold text-[#114B36] border border-[#C2E2D3] cursor-pointer bg-none transition-colors hover:bg-white"
+                    >
+                      <Settings size={13} /> Profile
+                    </button>
+                  )}
+                </div>
               </div>
             </motion.div>
           )}

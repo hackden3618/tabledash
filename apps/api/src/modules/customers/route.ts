@@ -12,12 +12,13 @@ import { env } from "../../../../../shared/config";
 import {
   CustomerLoginSchema,
   CustomerRegisterSchema,
+  CustomerSendOtpSchema,
   CustomerForgotPinSchema,
   CustomerResetPinSchema,
   IdParamSchema,
 } from "../../../../../shared/schemas";
 import { getAllCustomers, getCustomerHistory } from "./service";
-import { getCustomerProfile, loginCustomer, registerCustomer, verifyCustomerToken, generatePinResetCode, resetCustomerPin, updateCustomerProfile } from "./auth.service";
+import { getCustomerProfile, loginCustomer, registerCustomer, sendRegistrationOtp, verifyCustomerToken, generatePinResetCode, resetCustomerPin, updateCustomerProfile, verifyPhoneChangeOtp } from "./auth.service";
 import { verifyAdminToken } from "../auth/service";
 import { AUTH_LIMITER } from "../../lib/rate-limiter";
 
@@ -89,7 +90,29 @@ export const customersRoute = new Elysia({
     { params: IdParamSchema }
   )
 
-  // ─── Customer: Register (phone + PIN) ────────────────────────────────────────
+  // ─── Customer: Send registration OTP ────────────────────────────────────────
+  .post(
+    "/send-registration-otp",
+    async ({ body, set, request }) => {
+      const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+      const { allowed, resetIn } = AUTH_LIMITER(`customer-otp:${ip}`);
+      if (!allowed) {
+        set.status = 429;
+        set.headers["retry-after"] = String(Math.ceil(resetIn / 1000));
+        return { success: false, error: `Too many attempts. Try again in ${Math.ceil(resetIn / 1000)}s.` };
+      }
+      try {
+        const result = await sendRegistrationOtp(body.phone);
+        return { success: true, data: result };
+      } catch (err: any) {
+        set.status = 400;
+        return { success: false, error: err.message };
+      }
+    },
+    { body: CustomerSendOtpSchema }
+  )
+
+  // ─── Customer: Register (phone + OTP + PIN) ─────────────────────────────────
   .post(
     "/register",
     async ({ body, jwt, set, request, headers }) => {
@@ -165,12 +188,46 @@ export const customersRoute = new Elysia({
     const customerId = await verifyCustomerToken(auth.replace("Bearer ", "").trim(), (t) => jwt.verify(t));
     if (!customerId) { set.status = 401; return { success: false, error: "Invalid or missing token" }; }
     try {
-      return { success: true, data: await updateCustomerProfile(customerId, body) };
+      return { success: true, data: await updateCustomerProfile(customerId, body, body.pin) };
     } catch (err: any) {
       set.status = err.code === "P2002" ? 409 : 400;
       return { success: false, error: err.code === "P2002" ? "That phone number is already in use." : err.message || "Unable to update profile" };
     }
-  }, { body: t.Object({ firstName: t.Optional(t.String({ minLength: 1, maxLength: 80 })), lastName: t.Optional(t.String({ maxLength: 80 })), phone: t.Optional(t.String({ minLength: 9, maxLength: 13 })), knownName: t.Optional(t.Union([t.String({ maxLength: 80 }), t.Null()])) }) })
+  }, { body: t.Object({ firstName: t.Optional(t.String({ minLength: 1, maxLength: 80 })), lastName: t.Optional(t.String({ maxLength: 80 })), phone: t.Optional(t.String({ minLength: 9, maxLength: 13 })), knownName: t.Optional(t.Union([t.String({ maxLength: 80 }), t.Null()])), pin: t.Optional(t.String({ minLength: 4, maxLength: 4 })) }) })
+
+  // ─── Customer: Change phone — send OTP to new number ──────────────
+  .post(
+    "/me/change-phone",
+    async ({ headers, jwt, body, set }) => {
+      const auth = headers["authorization"] ?? "";
+      const customerId = await verifyCustomerToken(auth.replace("Bearer ", "").trim(), (t) => jwt.verify(t));
+      if (!customerId) { set.status = 401; return { success: false, error: "Invalid or missing token" }; }
+      try {
+        return { success: true, data: await updateCustomerProfile(customerId, { phone: body.newPhone }, body.pin) };
+      } catch (err: any) {
+        set.status = 400;
+        return { success: false, error: err.message };
+      }
+    },
+    { body: t.Object({ newPhone: t.String({ minLength: 9, maxLength: 13 }), pin: t.Optional(t.String({ minLength: 4, maxLength: 4 })) }) }
+  )
+
+  // ─── Customer: Verify phone change OTP ─────────────────────────────
+  .post(
+    "/me/change-phone/verify",
+    async ({ headers, jwt, body, set }) => {
+      const auth = headers["authorization"] ?? "";
+      const customerId = await verifyCustomerToken(auth.replace("Bearer ", "").trim(), (t) => jwt.verify(t));
+      if (!customerId) { set.status = 401; return { success: false, error: "Invalid or missing token" }; }
+      try {
+        return { success: true, data: await verifyPhoneChangeOtp(customerId, body.otp) };
+      } catch (err: any) {
+        set.status = 400;
+        return { success: false, error: err.message };
+      }
+    },
+    { body: t.Object({ otp: t.String({ minLength: 4, maxLength: 4 }) }) }
+  )
 
   // ─── Customer: Forgot PIN (request reset code) ────────────────────────────────
   .post(

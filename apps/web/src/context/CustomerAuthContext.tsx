@@ -18,7 +18,8 @@ interface CustomerAuthContextValue {
   isLoggedIn: boolean;
   isLoading: boolean;
   login: (phone: string, pin: string) => Promise<{ success: boolean; error?: string }>;
-  register: (firstName: string, phone: string, pin: string, lastName?: string) => Promise<{ success: boolean; error?: string }>;
+  sendRegistrationOtp: (phone: string) => Promise<{ success: boolean; error?: string }>;
+  register: (firstName: string, phone: string, pin: string, otp: string, lastName?: string, knownName?: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   refreshProfile: () => Promise<void>;
   updateProfile: (data: { firstName?: string; lastName?: string; phone?: string; knownName?: string | null }) => Promise<{ success: boolean; error?: string }>;
@@ -77,10 +78,16 @@ export const CustomerAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
     return { success: false, error: res.error ?? "Login failed" };
   }, []);
 
-  const register = useCallback(async (firstName: string, phone: string, pin: string, lastName?: string) => {
+  const sendRegistrationOtp = useCallback(async (phone: string) => {
+    const res = await apiPost<{ message: string }>("/customers/send-registration-otp", { phone });
+    if (res.success) return { success: true };
+    return { success: false, error: res.error ?? "Failed to send verification code" };
+  }, []);
+
+  const register = useCallback(async (firstName: string, phone: string, pin: string, otp: string, lastName?: string, knownName?: string) => {
     const res = await apiPost<{ token: string; customer: CustomerProfileData }>(
       "/customers/register",
-      { firstName, lastName, phone, pin }
+      { firstName, lastName, knownName, phone, pin, otp }
     );
     if (res.success && res.data) {
       const { token: newToken, customer: profile } = res.data;
@@ -136,7 +143,7 @@ export const CustomerAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
     <CustomerAuthContext.Provider
       value={{
         customer, token, isLoggedIn: Boolean(customer), isLoading,
-        login, register, logout, refreshProfile,
+        login, register, sendRegistrationOtp, logout, refreshProfile,
         updateProfile, deleteAccount, forgotPin, resetPin,
       }}
     >

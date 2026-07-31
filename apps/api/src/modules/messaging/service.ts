@@ -31,7 +31,7 @@ function actorWhere(actor: MessagingActor) {
 async function customerHotelIds(actor: MessagingActor) {
   const customerId = actor.kind === "CUSTOMER" ? actor.customerId : actor.kind === "GUEST" ? actor.customerId : undefined;
   if (!customerId) return [];
-  const orders = await prisma.order.findMany({ where: { customerId, hotelId: { not: null } }, select: { hotelId: true }, distinct: ["hotelId"] });
+  const orders = await prisma.order.findMany({ where: { customerId }, select: { hotelId: true }, distinct: ["hotelId"] });
   return orders.flatMap((order) => order.hotelId ? [order.hotelId] : []);
 }
 

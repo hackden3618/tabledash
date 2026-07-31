@@ -1,7 +1,7 @@
 /**
  * Purpose: REST API endpoints for Order Management & Dashboard Metrics.
  * Responsibilities: Handles POST /api/v1/orders, GET /api/v1/orders, PATCH /api/v1/orders/:id/status, GET /api/v1/orders/dashboard/metrics,
- *                   PATCH /api/v1/orders/:id/payment, GET /api/v1/orders/daily.
+ *                   GET /api/v1/orders/daily.
  * Dependencies: Elysia, shared/config.ts, shared/schemas.ts, orders service.
  * When to modify: When adding new order endpoints or modifying response formats.
  */
@@ -13,10 +13,9 @@ import {
   CreateOrderSchema,
   IdParamSchema,
   UpdateOrderStatusSchema,
-  UpdateOrderPaymentSchema,
   CancelOrderSchema,
 } from "../../../../../shared/schemas";
-import type { OrderStatus, PaymentStatus } from "../../../../../shared/types";
+import type { OrderStatus } from "../../../../../shared/types";
 import {
   cancelOrderByCustomer,
   getDashboardMetrics,
@@ -24,9 +23,11 @@ import {
   getOrderForCustomer,
   getOrderById,
   getOrders,
+  getPendingCollection,
+  markUtensilsIssued,
+  markUtensilsReturned,
   placeOrder,
   updateOrderStatus,
-  updateOrderPayment,
 } from "./service";
 import { verifyAdminToken } from "../auth/service";
 import { verifyCustomerToken } from "../customers/auth.service";
@@ -135,6 +136,77 @@ export const ordersRoute = new Elysia({
       date: t.Optional(t.String()),
     }),
   })
+  // ─── Staff: Pending Collection worklist (payment + utensils, resolved independently) ───
+  .get("/pending-collection", async ({ headers, jwt, set }) => {
+    const authHeader = headers["authorization"];
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      set.status = 401;
+      return { success: false, error: "Missing or invalid authorization header" };
+    }
+    const token = authHeader.split(" ")[1] ?? "";
+    let admin;
+    try {
+      admin = await verifyAdminToken(token, (t) => jwt.verify(t));
+    } catch {
+      set.status = 401;
+      return { success: false, error: "Invalid or expired session token" };
+    }
+    try {
+      if (!admin.hotelId) throw new Error("This account is not assigned to a hotel");
+      return { success: true, data: await getPendingCollection(admin.hotelId) };
+    } catch (err: any) {
+      set.status = 400;
+      return { success: false, error: err.message };
+    }
+  })
+  // ─── Staff: mark utensils issued at dispatch ───
+  .patch("/:id/utensils-issued", async ({ params, body, headers, jwt, set }) => {
+    const authHeader = headers["authorization"];
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      set.status = 401;
+      return { success: false, error: "Missing or invalid authorization header" };
+    }
+    const token = authHeader.split(" ")[1] ?? "";
+    let admin;
+    try {
+      admin = await verifyAdminToken(token, (t) => jwt.verify(t));
+    } catch {
+      set.status = 401;
+      return { success: false, error: "Invalid or expired session token" };
+    }
+    try {
+      if (!admin.hotelId) throw new Error("This account is not assigned to a hotel");
+      const updated = await markUtensilsIssued(params.id, admin.hotelId, body.issued === true);
+      return { success: true, data: updated };
+    } catch (err: any) {
+      set.status = 400;
+      return { success: false, error: err.message };
+    }
+  }, { params: IdParamSchema, body: t.Object({ issued: t.Boolean({ default: true }) }) })
+  // ─── Staff: confirm utensils returned ───
+  .patch("/:id/utensils-returned", async ({ params, headers, jwt, set }) => {
+    const authHeader = headers["authorization"];
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      set.status = 401;
+      return { success: false, error: "Missing or invalid authorization header" };
+    }
+    const token = authHeader.split(" ")[1] ?? "";
+    let admin;
+    try {
+      admin = await verifyAdminToken(token, (t) => jwt.verify(t));
+    } catch {
+      set.status = 401;
+      return { success: false, error: "Invalid or expired session token" };
+    }
+    try {
+      if (!admin.hotelId) throw new Error("This account is not assigned to a hotel");
+      const updated = await markUtensilsReturned(params.id, admin.hotelId, admin.id);
+      return { success: true, data: updated };
+    } catch (err: any) {
+      set.status = 400;
+      return { success: false, error: err.message };
+    }
+  }, { params: IdParamSchema })
 .get(
     "/:id",
     async ({ params, headers, jwt, set }) => {
@@ -197,39 +269,6 @@ export const ordersRoute = new Elysia({
     {
       params: IdParamSchema,
       body: UpdateOrderStatusSchema,
-    }
-  )
-  .patch(
-    "/:id/payment",
-    async ({ params, body, headers, jwt, set }) => {
-      const authHeader = headers["authorization"];
-      if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        set.status = 401;
-        return { success: false, error: "Missing or invalid authorization header" };
-      }
-      const token = authHeader.split(" ")[1] ?? "";
-      let admin;
-      try {
-        admin = await verifyAdminToken(token, (t) => jwt.verify(t));
-      } catch {
-        set.status = 401;
-        return { success: false, error: "Invalid or expired session token" };
-      }
-      try {
-        if (!admin.hotelId) throw new Error("This account is not assigned to a hotel");
-        const updated = await updateOrderPayment(params.id, {
-          paymentStatus: body.paymentStatus as PaymentStatus | undefined,
-          amountPaid: body.amountPaid,
-        }, admin.hotelId);
-        return { success: true, data: updated };
-      } catch (err: any) {
-        set.status = 400;
-        return { success: false, error: err.message };
-      }
-    },
-    {
-      params: IdParamSchema,
-      body: UpdateOrderPaymentSchema,
     }
   )
   // ─── Customer: Cancel own order ────────────────────────────────────────────

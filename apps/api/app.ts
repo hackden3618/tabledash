@@ -135,8 +135,15 @@ export const app = new Elysia()
     async message(ws, message) {
       wsHub.touch(ws.id);
       try {
-        const event = JSON.parse(String(message)) as { type?: string; conversationId?: string };
+        const event = JSON.parse(String(message)) as { type?: string; conversationId?: string; lastSeq?: number };
         if (event.type === "PING") return;
+        if (event.type === "RESYNC") {
+          const missed = wsHub.getEventsSince(event.lastSeq ?? 0);
+          for (const payload of missed) {
+            ws.send(payload);
+          }
+          return;
+        }
         if (event.type === "JOIN_CONVERSATION") {
           if (!event.conversationId) return;
           const senderIdentity = wsHub.getIdentityKey(ws.id);

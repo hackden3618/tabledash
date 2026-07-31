@@ -26,6 +26,9 @@ import { SearchPage } from "./pages/customer/SearchPage";
 import { TrackingListPage } from "./pages/customer/TrackingListPage";
 import { CustomerProfilePage } from "./pages/customer/CustomerProfilePage";
 import { InboxPage } from "./pages/InboxPage";
+import { WalletPage } from "./pages/customer/WalletPage";
+import { WalletHotelDetailPage } from "./pages/customer/WalletHotelDetailPage";
+import { WalletActivityPage } from "./pages/customer/WalletActivityPage";
 import { decodeJwt } from "./lib/jwt";
 import { useWebSocket, type WsEventPayload } from "./lib/websocket";
 
@@ -40,6 +43,7 @@ import { AdminOrderHistoryPage } from "./pages/admin/AdminOrderHistoryPage";
 import { AdminOrdersPage } from "./pages/admin/AdminOrdersPage";
 import { AdminSettingsPage } from "./pages/admin/AdminSettingsPage";
 import { FinanceDashboardPage } from "./pages/admin/FinanceDashboardPage";
+import { PendingCollectionPage } from "./pages/admin/PendingCollectionPage";
 import { PlatformAdminPage } from "./pages/platform/PlatformAdminPage";
 
 
@@ -56,6 +60,9 @@ type ViewState =
   | "customer_profile"
   | "customer_conversations"
   | "customer_tracker_list"
+  | "customer_wallet"
+  | "customer_wallet_hotel"
+  | "customer_wallet_activity"
   | "admin_login"
   | "admin_orders"
   | "admin_order_details"
@@ -66,6 +73,7 @@ type ViewState =
   | "admin_order_history"
   | "admin_conversations"
   | "admin_finance"
+  | "admin_pending_collection"
   | "platform_admin";
 
 export function AppContent() {
@@ -131,6 +139,8 @@ export function AppContent() {
   const [placedOrder, setPlacedOrder] = useState<any>(null);
   const [trackingOrderId, setTrackingOrderId] = useState<string>("");
   const [selectedAdminOrder, setSelectedAdminOrder] = useState<any>(null);
+  const [selectedWalletHotel, setSelectedWalletHotel] = useState<{ id: string; name: string } | null>(null);
+  const [returnToCheckout, setReturnToCheckout] = useState(false);
 
   // Listen for URL changes (pop state / back/forward)
   useEffect(() => {
@@ -222,7 +232,7 @@ export function AppContent() {
     if (currentView === "customer_cart") return "cart";
     if (currentView === "customer_tracker_list" || currentView === "customer_tracking" || currentView === "customer_confirmation") return "tracking";
     if (currentView === "customer_conversations") return "conversations";
-    if (currentView === "customer_auth" || currentView === "customer_my_orders" || currentView === "customer_profile") return "account";
+    if (currentView === "customer_auth" || currentView === "customer_my_orders" || currentView === "customer_profile" || currentView === "customer_wallet" || currentView === "customer_wallet_hotel" || currentView === "customer_wallet_activity") return "account";
     return "menu";
   };
 
@@ -268,6 +278,10 @@ export function AppContent() {
             setPlacedOrder(primary);
             setCurrentView("customer_confirmation");
           }}
+          onNavigateToVerify={() => {
+            setReturnToCheckout(true);
+            setCurrentView("customer_auth");
+          }}
         />
       )}
 
@@ -310,8 +324,22 @@ export function AppContent() {
 
        {currentView === "customer_auth" && (
         <CustomerAuthPage
-          onBack={() => setCurrentView("customer_my_orders")}
-          onSuccess={() => setCurrentView("customer_my_orders")}
+          onBack={() => {
+            if (returnToCheckout) {
+              setReturnToCheckout(false);
+              setCurrentView("customer_location");
+            } else {
+              setCurrentView("customer_my_orders");
+            }
+          }}
+          onSuccess={() => {
+            if (returnToCheckout) {
+              setReturnToCheckout(false);
+              setCurrentView("customer_location");
+            } else {
+              setCurrentView("customer_my_orders");
+            }
+          }}
         />
       )}
 
@@ -323,6 +351,7 @@ export function AppContent() {
             setCurrentView("customer_tracking");
           }}
           onGoToProfile={() => setCurrentView("customer_profile")}
+          onNavigateToWallet={() => setCurrentView("customer_wallet")}
         />
       )}
 
@@ -330,6 +359,29 @@ export function AppContent() {
         <CustomerProfilePage
           onBack={() => setCurrentView("customer_my_orders")}
         />
+      )}
+
+      {currentView === "customer_wallet" && (
+        <WalletPage
+          onBack={() => setCurrentView("customer_my_orders")}
+          onSelectHotel={(hotelId, hotelName) => {
+            setSelectedWalletHotel({ id: hotelId, name: hotelName });
+            setCurrentView("customer_wallet_hotel");
+          }}
+          onOpenActivity={() => setCurrentView("customer_wallet_activity")}
+        />
+      )}
+
+      {currentView === "customer_wallet_hotel" && selectedWalletHotel && (
+        <WalletHotelDetailPage
+          hotelId={selectedWalletHotel.id}
+          hotelName={selectedWalletHotel.name}
+          onBack={() => setCurrentView("customer_wallet")}
+        />
+      )}
+
+      {currentView === "customer_wallet_activity" && (
+        <WalletActivityPage onBack={() => setCurrentView("customer_wallet")} />
       )}
 
       {/* Customer Sticky Bottom Navigation */}
@@ -362,6 +414,7 @@ export function AppContent() {
             adminLogout();
             setCurrentView("customer_menu");
           }}
+          onOpenPendingCollection={() => setCurrentView("admin_pending_collection")}
         />
       )}
 
@@ -369,6 +422,7 @@ export function AppContent() {
         <AdminOrderDetailsPage
           order={selectedAdminOrder}
           token={adminToken}
+          canRefund={adminUser?.role === "HOTEL_ADMIN"}
           onBack={() => setCurrentView("admin_orders")}
           onOpenMap={(order) => {
             setSelectedAdminOrder(order);
@@ -423,7 +477,18 @@ export function AppContent() {
       )}
 
       {currentView === "admin_finance" && (
-        <FinanceDashboardPage token={adminToken} onBackToDashboard={() => setCurrentView("admin_dashboard")} />
+        <FinanceDashboardPage token={adminToken} onBackToDashboard={() => setCurrentView("admin_dashboard")} onNavigateToOrders={() => setCurrentView("admin_order_history")} onOpenPendingCollection={() => setCurrentView("admin_pending_collection")} />
+      )}
+
+      {currentView === "admin_pending_collection" && (
+        <PendingCollectionPage
+          token={adminToken}
+          onBack={() => setCurrentView("admin_finance")}
+          onOpenOrder={(order) => {
+            setSelectedAdminOrder(order);
+            setCurrentView("admin_order_details");
+          }}
+        />
       )}
 
       {/* ─── Platform Admin Panel (self-contained auth) ──────────────── */}

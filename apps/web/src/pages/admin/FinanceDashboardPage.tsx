@@ -1,38 +1,32 @@
 import { motion } from "framer-motion";
-import { ArrowLeft, TrendingUp, Wallet, Banknote, Receipt, RefreshCw, XCircle, BarChart3, Users, Calendar, DollarSign, CreditCard } from "lucide-react";
+import { ArrowLeft, TrendingUp, Wallet, Banknote, RefreshCw, XCircle, BarChart3, Calendar, DollarSign, CreditCard, FileText, UtensilsCrossed } from "lucide-react";
 import { useState, useEffect } from "react";
-import { apiGet, apiPost } from "../../lib/api";
+import { apiGet } from "../../lib/api";
 import { PageTransition } from "../../components/ui/PageTransition";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
-import { Modal } from "../../components/ui/Modal";
 
 interface FinanceDashboardPageProps {
   token: string;
   onBackToDashboard: () => void;
+  onNavigateToOrders: () => void;
+  onOpenPendingCollection: () => void;
 }
 
 const METRICS = [
   { key: "todayRevenue", label: "Today's Revenue", icon: TrendingUp, color: "#114B36", bg: "#EBF5F0", prefix: true },
   { key: "cashRevenue", label: "Cash Revenue", icon: Banknote, color: "#15803D", bg: "#DCFCE7", prefix: true },
-  { key: "creditRevenue", label: "Credit Revenue", icon: CreditCard, color: "#D97706", bg: "#FEF3C7", prefix: true },
+  { key: "mpesaRevenue", label: "M-Pesa Revenue", icon: CreditCard, color: "#2563EB", bg: "#DBEAFE", prefix: true },
   { key: "outstandingBalance", label: "Outstanding", icon: Wallet, color: "#DC2626", bg: "#FEE2E2", prefix: true },
   { key: "dailyCashPosition", label: "Daily Cash Position", icon: DollarSign, color: "#114B36", bg: "#EBF5F0", prefix: true },
-  { key: "refundsProcessed", label: "Refunds Processed", icon: RefreshCw, color: "#7C3AED", bg: "#EDE9FE", suffix: "" },
-  { key: "refundsAmount", label: "Refunds Amount", icon: XCircle, color: "#DC2626", bg: "#FEE2E2", prefix: true },
-  { key: "cancelledCount", label: "Cancelled Orders", icon: XCircle, color: "#6B7280", bg: "#F3F4F6", suffix: "" },
+  { key: "refundsProcessed", label: "Refunds", icon: RefreshCw, color: "#7C3AED", bg: "#EDE9FE", suffix: "" },
+  { key: "refundsAmount", label: "Refunded Amount", icon: XCircle, color: "#DC2626", bg: "#FEE2E2", prefix: true },
+  { key: "cancelledCount", label: "Cancelled", icon: XCircle, color: "#6B7280", bg: "#F3F4F6", suffix: "" },
 ];
 
-export const FinanceDashboardPage: React.FC<FinanceDashboardPageProps> = ({ token, onBackToDashboard }) => {
+export const FinanceDashboardPage: React.FC<FinanceDashboardPageProps> = ({ token, onBackToDashboard, onNavigateToOrders, onOpenPendingCollection }) => {
   const [metrics, setMetrics] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [showReconcile, setShowReconcile] = useState(false);
-  const [reconcileDate, setReconcileDate] = useState(new Date().toISOString().split("T")[0]);
-  const [reconcileExpected, setReconcileExpected] = useState("");
-  const [reconcileCounted, setReconcileCounted] = useState("");
-  const [reconcileReason, setReconcileReason] = useState("");
-  const [reconcileResult, setReconcileResult] = useState<any>(null);
-  const [reconciling, setReconciling] = useState(false);
 
   const fetchMetrics = async () => {
     setLoading(true);
@@ -42,16 +36,6 @@ export const FinanceDashboardPage: React.FC<FinanceDashboardPageProps> = ({ toke
   };
 
   useEffect(() => { fetchMetrics(); }, []);
-
-  const handleReconcile = async () => {
-    setReconciling(true);
-    const res = await apiPost<any>("/finance/reconcile", { date: reconcileDate, expectedCash: parseFloat(reconcileExpected) || 0, countedCash: parseFloat(reconcileCounted) || 0, varianceReason: reconcileReason || undefined }, token);
-    setReconciling(false);
-    if (res.success && res.data) {
-      setReconcileResult(res.data);
-      fetchMetrics();
-    }
-  };
 
   return (
     <div className="admin-container">
@@ -64,9 +48,14 @@ export const FinanceDashboardPage: React.FC<FinanceDashboardPageProps> = ({ toke
 
       <PageTransition>
         <div className="p-4 max-w-4xl mx-auto">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
             <h2 className="font-bold text-lg text-[#1F2937]">Dashboard</h2>
-            <Button size="sm" variant="secondary" onClick={() => setShowReconcile(true)} icon={<Receipt size={14} />}>Reconcile Cash</Button>
+            <div className="flex gap-2">
+              {onOpenPendingCollection && (
+                <Button size="sm" variant="secondary" onClick={onOpenPendingCollection}><UtensilsCrossed size={14} className="mr-1" />Pending Collection</Button>
+              )}
+              {onNavigateToOrders && <Button size="sm" variant="secondary" onClick={onNavigateToOrders}><FileText size={14} className="mr-1" />Order History</Button>}
+            </div>
           </div>
 
           {loading ? (
@@ -152,45 +141,7 @@ export const FinanceDashboardPage: React.FC<FinanceDashboardPageProps> = ({ toke
         </div>
       </PageTransition>
 
-      <Modal isOpen={showReconcile} onClose={() => { setShowReconcile(false); setReconcileResult(null); }} title="Cash Reconciliation" type="default"
-        primaryAction={reconcileResult ? { label: "Done", onClick: () => { setShowReconcile(false); setReconcileResult(null); }, variant: "primary" } : { label: reconciling ? "Reconciling..." : "Reconcile", onClick: handleReconcile, variant: "primary", loading: reconciling }}
-        secondaryAction={!reconcileResult ? { label: "Cancel", onClick: () => setShowReconcile(false), variant: "secondary" } : undefined}>
-        {reconcileResult ? (
-          <div className="space-y-3 py-2">
-            <div className="bg-[#DCFCE7] text-[#15803D] rounded-xl p-4 text-center font-bold text-sm">Reconciliation Complete</div>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div className="bg-[#F9FAFB] rounded-xl p-3"><p className="text-[0.6rem] text-[#6B7280] font-semibold">Expected</p><p className="font-bold text-[#1F2937]">KSh {reconcileResult.expectedCash?.toFixed(2)}</p></div>
-              <div className="bg-[#F9FAFB] rounded-xl p-3"><p className="text-[0.6rem] text-[#6B7280] font-semibold">Counted</p><p className="font-bold text-[#1F2937]">KSh {reconcileResult.countedCash?.toFixed(2)}</p></div>
-              <div className="bg-[#F9FAFB] rounded-xl p-3 col-span-2"><p className="text-[0.6rem] text-[#6B7280] font-semibold">Variance</p><p className={`font-bold ${reconcileResult.variance >= 0 ? "text-[#15803D]" : "text-[#DC2626]"}`}>KSh {reconcileResult.variance?.toFixed(2)}</p></div>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-4 py-2">
-            <div>
-              <label className="text-xs font-semibold text-[#374151] block mb-1">Date</label>
-              <input type="date" value={reconcileDate} onChange={(e) => setReconcileDate(e.target.value)}
-                className="w-full bg-[#F3F4F6] rounded-xl px-4 py-3 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-[#114B36]/20 border-2 border-transparent focus:border-[#114B36]" />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-semibold text-[#374151] block mb-1">Expected Cash (KSh)</label>
-                <input type="number" min="0" step="0.01" value={reconcileExpected} onChange={(e) => setReconcileExpected(e.target.value)}
-                  className="w-full bg-[#F3F4F6] rounded-xl px-4 py-3 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-[#114B36]/20 border-2 border-transparent focus:border-[#114B36]" />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-[#374151] block mb-1">Counted Cash (KSh)</label>
-                <input type="number" min="0" step="0.01" value={reconcileCounted} onChange={(e) => setReconcileCounted(e.target.value)}
-                  className="w-full bg-[#F3F4F6] rounded-xl px-4 py-3 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-[#114B36]/20 border-2 border-transparent focus:border-[#114B36]" />
-              </div>
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-[#374151] block mb-1">Variance Reason (optional)</label>
-              <textarea value={reconcileReason} onChange={(e) => setReconcileReason(e.target.value)} rows={2}
-                className="w-full bg-[#F3F4F6] rounded-xl px-4 py-3 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-[#114B36]/20 border-2 border-transparent focus:border-[#114B36] resize-none" />
-            </div>
-          </div>
-        )}
-      </Modal>
+
     </div>
   );
 };

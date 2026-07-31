@@ -11,20 +11,66 @@ import { prisma } from "../../../../../infrastructure/database/prisma";
 import { formatPhone } from "../../../../../shared/phone";
 import { smsService } from "../notifications/sms.service";
 import { linkGuestIdentity } from "./guest-identity";
+import { generateAccountId } from "./account-id";
 
 const CUSTOMER_TOKEN_EXPIRY_SEC = 7 * 24 * 60 * 60; // 7 days
 
 /**
- * Registers a new customer account with a 4-digit PIN.
- * If the phone already exists and has no PIN yet (guest account created during a past order),
- * we attach the PIN to that existing record instead of creating a duplicate.
+ * Sends an OTP to the phone for registration verification.
+ * If the phone already has a PIN, throws error — already registered.
+ */
+export const sendRegistrationOtp = async (phone: string) => {
+  const formattedPhone = formatPhone(phone);
+  const existing = await prisma.customer.findUnique({ where: { phone: formattedPhone } });
+
+  if (existing?.pinHash) {
+    throw new Error("An account already exists for this phone number. Please sign in instead.");
+  }
+
+  const otp = String(Math.floor(1000 + Math.random() * 9000));
+  const expires = new Date(Date.now() + 10 * 60 * 1000);
+
+  if (existing) {
+    await prisma.customer.update({
+      where: { id: existing.id },
+      data: { registrationOtp: otp, registrationOtpExpires: expires },
+    });
+  } else {
+    await prisma.customer.create({
+      data: {
+        accountId: await generateAccountId(),
+        firstName: "Guest",
+        phone: formattedPhone,
+        registrationOtp: otp,
+        registrationOtpExpires: expires,
+      },
+    });
+  }
+
+  const otpMessage = `Your Ladha registration code is: ${otp}. It expires in 10 minutes. - Ladha Deliveries`;
+  (async () => {
+    try {
+      await smsService.sendSms(formattedPhone, otpMessage);
+    } catch (err) {
+      console.error("[Registration OTP SMS Error]:", err);
+    }
+  })();
+
+  return { message: "Verification code sent to your phone." };
+};
+
+/**
+ * Registers a new customer account with a 4-digit PIN + OTP.
+ * Requires OTP verification before PIN is set.
  */
 export const registerCustomer = async (
   input: {
     firstName: string;
     lastName?: string;
+    knownName?: string;
     phone: string;
     pin: string;
+    otp: string;
   },
   jwtSign: (payload: Record<string, any>) => Promise<string>,
   guestId?: string,
@@ -36,20 +82,34 @@ export const registerCustomer = async (
     throw new Error("An account already exists for this phone number. Please sign in instead.");
   }
 
-  const pinHash = await Bun.password.hash(input.pin);
-
-  let customer;
-  if (existing) {
-    // Upgrade the existing guest record to a full account
-    customer = await prisma.customer.update({
-      where: { id: existing.id },
-      data: { firstName: input.firstName, lastName: input.lastName, pinHash },
-    });
-  } else {
-    customer = await prisma.customer.create({
-      data: { firstName: input.firstName, lastName: input.lastName, phone: formattedPhone, pinHash },
-    });
+  if (!existing || !existing.registrationOtp || !existing.registrationOtpExpires) {
+    throw new Error("No verification code has been sent. Please request one first.");
   }
+
+  if (existing.registrationOtp !== input.otp) {
+    throw new Error("Invalid verification code. Please try again.");
+  }
+
+  if (new Date() > existing.registrationOtpExpires) {
+    throw new Error("Verification code has expired. Please request a new one.");
+  }
+
+  const pinHash = await Bun.password.hash(input.pin);
+  const accountId = existing.accountId || await generateAccountId();
+
+  const customer = await prisma.customer.update({
+    where: { id: existing.id },
+    data: {
+      firstName: input.firstName,
+      lastName: input.lastName,
+      knownName: input.knownName,
+      pinHash,
+      accountId,
+      verifiedAt: new Date(),
+      registrationOtp: null,
+      registrationOtpExpires: null,
+    },
+  });
 
   await linkGuestIdentity(guestId, customer.id);
 
@@ -63,6 +123,7 @@ export const registerCustomer = async (
     token,
     customer: {
       id: customer.id,
+      accountId: customer.accountId,
       firstName: customer.firstName,
       lastName: customer.lastName,
       phone: customer.phone,
@@ -71,6 +132,7 @@ export const registerCustomer = async (
       marketSection: customer.marketSection,
       locationDescription: customer.locationDescription,
       hasPin: true,
+      isVerified: true,
     },
   };
 };
@@ -104,6 +166,7 @@ export const loginCustomer = async (
     token,
     customer: {
       id: customer.id,
+      accountId: customer.accountId,
       firstName: customer.firstName,
       lastName: customer.lastName,
       phone: customer.phone,
@@ -112,6 +175,7 @@ export const loginCustomer = async (
       marketSection: customer.marketSection,
       locationDescription: customer.locationDescription,
       hasPin: true,
+      isVerified: Boolean(customer.verifiedAt),
     },
   };
 };
@@ -137,10 +201,12 @@ export const getCustomerProfile = async (customerId: string) => {
 
   return {
     id: customer.id,
+    accountId: customer.accountId,
     firstName: customer.firstName,
     lastName: customer.lastName,
     phone: customer.phone,
     knownName: customer.knownName,
+    isVerified: Boolean(customer.verifiedAt),
     stallNumber: customer.stallNumber,
     marketSection: customer.marketSection,
     locationDescription: customer.locationDescription,
@@ -157,14 +223,81 @@ export const getCustomerProfile = async (customerId: string) => {
   };
 };
 
-export const updateCustomerProfile = async (customerId: string, input: { firstName?: string; lastName?: string; phone?: string; knownName?: string | null }) => {
+export const updateCustomerProfile = async (customerId: string, input: { firstName?: string; lastName?: string; phone?: string; knownName?: string | null }, pin?: string) => {
+  const hasChanges = input.firstName !== undefined || input.lastName !== undefined || input.phone !== undefined || input.knownName !== undefined;
+  if (!hasChanges) return null;
+
+  const customer = await prisma.customer.findUnique({ where: { id: customerId } });
+  if (!customer) throw new Error("Customer not found");
+
+  if (pin !== undefined) {
+    if (!customer.pinHash) throw new Error("No PIN set on this account.");
+    const valid = await Bun.password.verify(pin, customer.pinHash);
+    if (!valid) throw new Error("Invalid PIN.");
+  } else if (input.phone !== undefined || input.firstName !== undefined || input.lastName !== undefined || input.knownName !== undefined) {
+    throw new Error("PIN is required to update profile information.");
+  }
+
+  const phoneChanged = input.phone !== undefined && formatPhone(input.phone) !== customer.phone;
+  if (phoneChanged) {
+    const newPhone = formatPhone(input.phone!);
+    if (!customer.verifiedAt) {
+      throw new Error("Phone change requires a verified account (PIN + OTP).");
+    }
+    const otp = String(Math.floor(1000 + Math.random() * 9000));
+    const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+    await prisma.customer.update({
+      where: { id: customerId },
+      data: { phoneChangeOtp: otp, phoneChangeOtpExpires: otpExpires, phoneChangePending: newPhone },
+    });
+    const otpMessage = `Your Ladha phone verification code is: ${otp}. It expires in 10 minutes. - Ladha Deliveries`;
+    (async () => {
+      try { await smsService.sendSms(newPhone, otpMessage); } catch (err) { console.error("[Phone Change OTP SMS Error]:", err); }
+    })();
+    return { message: "Phone change OTP sent to the new number. Please verify to complete the change.", requiresOtp: true };
+  }
+
   const data: Record<string, string | null> = {};
   if (input.firstName !== undefined) data.firstName = input.firstName.trim();
   if (input.lastName !== undefined) data.lastName = input.lastName?.trim() || null;
-  if (input.phone !== undefined) data.phone = formatPhone(input.phone);
   if (input.knownName !== undefined) data.knownName = input.knownName?.trim() || null;
-  const customer = await prisma.customer.update({ where: { id: customerId }, data, select: { id: true, firstName: true, lastName: true, phone: true, knownName: true, stallNumber: true, marketSection: true, locationDescription: true, pinHash: true } });
-  return { ...customer, hasPin: Boolean(customer.pinHash), pinHash: undefined };
+
+  const updated = await prisma.customer.update({
+    where: { id: customerId },
+    data,
+    select: { id: true, accountId: true, firstName: true, lastName: true, phone: true, knownName: true, stallNumber: true, marketSection: true, locationDescription: true, pinHash: true, verifiedAt: true },
+  });
+
+  return { ...updated, hasPin: Boolean(updated.pinHash), pinHash: undefined, isVerified: Boolean(updated.verifiedAt) };
+};
+
+export const verifyPhoneChangeOtp = async (customerId: string, otp: string) => {
+  const customer = await prisma.customer.findUnique({ where: { id: customerId } });
+  if (!customer) throw new Error("Customer not found");
+  if (!customer.phoneChangeOtp || !customer.phoneChangeOtpExpires) throw new Error("No phone change in progress.");
+  if (customer.phoneChangeOtp !== otp) throw new Error("Invalid verification code.");
+  if (new Date() > customer.phoneChangeOtpExpires) throw new Error("Verification code has expired.");
+
+  const newPhone = customer.phoneChangePending;
+  if (!newPhone) throw new Error("No pending phone change.");
+
+  await prisma.$transaction(async (tx) => {
+    await tx.customer.update({
+      where: { id: customerId },
+      data: {
+        phone: newPhone,
+        phoneChangeOtp: null,
+        phoneChangeOtpExpires: null,
+        phoneChangePending: null,
+      },
+    });
+    await tx.guestIdentity.updateMany({
+      where: { customerId },
+      data: { phone: newPhone },
+    });
+  });
+
+  return { message: "Phone number updated successfully." };
 };
 
 /**

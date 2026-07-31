@@ -30,6 +30,10 @@ export const CreateOrderSchema = t.Object({
   locationDescription: t.Optional(t.String()),
   items: t.Array(OrderItemSchema, { minItems: 1, error: "Order must contain at least one item" }),
   guestId: t.Optional(t.String({ format: "uuid" })),
+  paymentMethod: t.Optional(t.Union([
+    t.Literal("PAY_LATER"),
+    t.Literal("PAY_ON_DELIVERY"),
+  ])),
 });
 
 export const UpdateOrderStatusSchema = t.Object({
@@ -79,11 +83,17 @@ export const IdParamSchema = t.Object({
   id: t.String({ format: "uuid", error: "Invalid UUID parameter" }),
 });
 
+export const CustomerSendOtpSchema = t.Object({
+  phone: PhoneString,
+});
+
 export const CustomerRegisterSchema = t.Object({
   firstName: t.String({ minLength: 2, error: "First name is required" }),
   lastName: t.Optional(t.String()),
+  knownName: t.Optional(t.String()),
   phone: PhoneString,
   pin: t.String({ minLength: 4, maxLength: 4, pattern: "^[0-9]{4}$", error: "PIN must be exactly 4 digits" }),
+  otp: t.String({ minLength: 4, maxLength: 4, pattern: "^[0-9]{4}$", error: "Verification code must be exactly 4 digits" }),
 });
 
 export const CustomerLoginSchema = t.Object({
@@ -103,14 +113,4 @@ export const CustomerResetPinSchema = t.Object({
   phone: PhoneString,
   otp: t.String({ minLength: 4, maxLength: 4, pattern: "^[0-9]{4}$", error: "OTP must be exactly 4 digits" }),
   newPin: t.String({ minLength: 4, maxLength: 4, pattern: "^[0-9]{4}$", error: "PIN must be exactly 4 digits" }),
-});
-
-export const UpdateOrderPaymentSchema = t.Object({
-  paymentStatus: t.Optional(t.Union([
-    t.Literal("UNPAID"),
-    t.Literal("PARTIAL"),
-    t.Literal("PAID"),
-    t.Literal("REFUNDED"),
-  ])),
-  amountPaid: t.Optional(t.Number({ minimum: 0 })),
 });

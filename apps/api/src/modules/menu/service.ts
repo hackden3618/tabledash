@@ -52,6 +52,7 @@ export const createMenuItem = async (input: CreateProductInput, hotelIdFromJwt?:
   const stock = input.stockQty ?? 0;
   const isAvailable = input.available !== undefined ? input.available : stock > 0;
   const hotelId = hotelIdFromJwt || input.hotelId || (await getDefaultHotel())?.id;
+  if (!hotelId) throw new Error("Hotel ID is required to create a product");
 
   const product = await prisma.product.create({
     data: {

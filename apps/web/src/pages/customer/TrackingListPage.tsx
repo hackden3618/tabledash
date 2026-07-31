@@ -38,17 +38,22 @@ export const TrackingListPage: React.FC<TrackingListPageProps> = ({ onTrackOrder
     } catch { /* ignore */ }
   }, []);
 
-  // Fetch guest order live data if not logged in
+  // Fetch guest order live data if not logged in. If the order no longer
+  // exists (e.g. dev DB reset), drop the stale card instead of persisting it.
   useEffect(() => {
-    if (!isLoggedIn && placedOrderId) {
-      apiGet<any>(`/orders/${placedOrderId}`).then((res) => {
+    const orderId = guestOrder?.id || placedOrderId;
+    if (!isLoggedIn && orderId) {
+      apiGet<any>(`/orders/${orderId}`).then((res) => {
         if (res.success && res.data) {
           setGuestOrder(res.data);
           localStorage.setItem("ladha_last_order", JSON.stringify(res.data));
+        } else {
+          localStorage.removeItem("ladha_last_order");
+          setGuestOrder(null);
         }
       });
     }
-  }, [placedOrderId, isLoggedIn]);
+  }, [guestOrder?.id, placedOrderId, isLoggedIn]);
 
   useEffect(() => {
     if (customer?.recentOrders) {

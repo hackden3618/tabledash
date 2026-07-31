@@ -26,7 +26,7 @@ interface CustomerAuthPageProps {
 }
 
 export const CustomerAuthPage: React.FC<CustomerAuthPageProps> = ({ onBack, onSuccess }) => {
-  const { login, register, forgotPin, resetPin } = useCustomerAuth();
+  const { login, register, sendRegistrationOtp, forgotPin, resetPin } = useCustomerAuth();
   const [activeTab, setActiveTab] = useState<AuthTab>("login");
 
   const [loginPhone, setLoginPhone] = useState("");
@@ -35,11 +35,15 @@ export const CustomerAuthPage: React.FC<CustomerAuthPageProps> = ({ onBack, onSu
   const [loginLoading, setLoginLoading] = useState(false);
 
   const [regFirstName, setRegFirstName] = useState("");
+  const [regLastName, setRegLastName] = useState("");
+  const [regKnownName, setRegKnownName] = useState("");
   const [regPhone, setRegPhone] = useState("");
   const [regPin, setRegPin] = useState("");
   const [regPinConfirm, setRegPinConfirm] = useState("");
   const [regError, setRegError] = useState("");
   const [regLoading, setRegLoading] = useState(false);
+  const [regOtpStep, setRegOtpStep] = useState(false);
+  const [regOtp, setRegOtp] = useState("");
 
   const [showForgot, setShowForgot] = useState(false);
   const [forgotStep, setForgotStep] = useState<ForgotStep>("phone");
@@ -63,15 +67,29 @@ export const CustomerAuthPage: React.FC<CustomerAuthPageProps> = ({ onBack, onSu
     else { setLoginError(res.error ?? "Sign in failed"); }
   };
 
-  const handleRegister = async (e: React.FormEvent) => {
+  const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegError("");
     if (!regFirstName) { setRegError("Please enter your first name."); return; }
     if (!isValidPhone(regPhone)) { setRegError("Enter a valid Kenyan phone number (e.g. 0712345678)."); return; }
+    setRegLoading(true);
+    const res = await sendRegistrationOtp(regPhone);
+    setRegLoading(false);
+    if (res.success) {
+      setRegOtpStep(true);
+    } else {
+      setRegError(res.error ?? "Failed to send verification code");
+    }
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRegError("");
+    if (!regOtp) { setRegError("Please enter the verification code sent to your phone."); return; }
     if (regPin.length < 4) { setRegError("Please choose a 4-digit PIN."); return; }
     if (regPin !== regPinConfirm) { setRegError("PINs do not match. Please re-enter."); return; }
     setRegLoading(true);
-    const res = await register(regFirstName.trim(), regPhone, regPin);
+    const res = await register(regFirstName.trim(), regPhone, regPin, regOtp, regLastName.trim() || undefined, regKnownName.trim() || undefined);
     setRegLoading(false);
     if (res.success) { onSuccess(); }
     else { setRegError(res.error ?? "Registration failed"); }
@@ -376,17 +394,17 @@ export const CustomerAuthPage: React.FC<CustomerAuthPageProps> = ({ onBack, onSu
             </motion.form>
           )}
 
-          {activeTab === "register" && (
+          {activeTab === "register" && !regOtpStep && (
             <motion.form
-              key="register"
+              key="register-step1"
               initial={{ opacity: 0, x: 10 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -10 }}
-              onSubmit={handleRegister}
+              onSubmit={handleSendOtp}
               className="space-y-4"
             >
               <p className="text-sm text-[#6B7280] text-center">
-                Create a free account so your delivery location is saved for next time.
+                Create a free account. We'll send a verification code to your phone.
               </p>
 
               <Input
@@ -399,6 +417,23 @@ export const CustomerAuthPage: React.FC<CustomerAuthPageProps> = ({ onBack, onSu
               />
 
               <Input
+                label="Last Name"
+                placeholder="e.g. Muthoni"
+                value={regLastName}
+                onChange={(e) => setRegLastName(e.target.value)}
+                icon={<User size={16} />}
+                autoComplete="family-name"
+              />
+
+              <Input
+                label="Known Name (Nickname)"
+                placeholder="Optional nickname"
+                value={regKnownName}
+                onChange={(e) => setRegKnownName(e.target.value)}
+                icon={<User size={16} />}
+              />
+
+              <Input
                 label="Phone Number"
                 placeholder="07XXXXXXXX"
                 value={regPhone}
@@ -407,6 +442,52 @@ export const CustomerAuthPage: React.FC<CustomerAuthPageProps> = ({ onBack, onSu
                 autoComplete="tel"
                 maxLength={14}
               />
+
+              <AnimatePresence>
+                {regError && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    className="bg-[#FEE2E2] text-[#DC2626] rounded-xl px-4 py-3 text-sm font-semibold"
+                  >
+                    {regError}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <Button type="submit" disabled={regLoading || !isValidPhone(regPhone)} loading={regLoading} fullWidth>
+                Send Verification Code
+              </Button>
+
+              <p className="text-center text-sm text-[#9CA3AF]">
+                Already registered?{" "}
+                <button type="button" onClick={() => setActiveTab("login")} className="text-[#114B36] font-bold bg-none border-none cursor-pointer">
+                  Sign in →
+                </button>
+              </p>
+            </motion.form>
+          )}
+
+          {activeTab === "register" && regOtpStep && (
+            <motion.form
+              key="register-step2"
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+              onSubmit={handleRegister}
+              className="space-y-4"
+            >
+              <p className="text-sm text-[#6B7280] text-center">
+                A verification code was sent to <strong>{regPhone}</strong>. Enter it below to complete registration.
+              </p>
+
+              <div>
+                <label className="flex items-center gap-1.5 text-sm font-semibold text-[#374151] mb-1.5">
+                  <KeyRound size={14} /> Verification Code
+                </label>
+                <SecureCodeInput value={regOtp} onChange={setRegOtp} masked={false} autoFocus autoComplete="one-time-code" label="Verification code" />
+              </div>
 
               <div>
                 <label className="flex items-center gap-1.5 text-sm font-semibold text-[#374151] mb-1.5">
@@ -435,16 +516,15 @@ export const CustomerAuthPage: React.FC<CustomerAuthPageProps> = ({ onBack, onSu
                 )}
               </AnimatePresence>
 
-              <Button type="submit" disabled={regLoading || !isValidPhone(regPhone)} loading={regLoading} fullWidth>
+              <Button type="submit" disabled={regLoading || regOtp.length < 4 || regPin.length < 4} loading={regLoading} fullWidth>
                 Create Account
               </Button>
 
-              <p className="text-center text-sm text-[#9CA3AF]">
-                Already registered?{" "}
-                <button type="button" onClick={() => setActiveTab("login")} className="text-[#114B36] font-bold bg-none border-none cursor-pointer">
-                  Sign in →
-                </button>
-              </p>
+              <div className="text-center">
+                <button type="button" onClick={() => { setRegOtpStep(false); setRegError(""); }}
+                  className="text-sm text-[#114B36] font-semibold bg-none border-none cursor-pointer hover:underline"
+                >← Back to phone number</button>
+              </div>
             </motion.form>
           )}
         </div>

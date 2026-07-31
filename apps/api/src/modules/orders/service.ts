@@ -6,7 +6,7 @@
  */
 
 import { prisma } from "../../../../../infrastructure/database/prisma";
-import type { DashboardMetrics, OrderStatus, PaymentStatus } from "../../../../../shared/types";
+import type { DashboardMetrics, OrderStatus } from "../../../../../shared/types";
 import type { ParticipantKind } from "../../../../../generated/prisma/client";
 import { smsService } from "../notifications/sms.service";
 import { getDefaultHotel } from "../hotels/service";
@@ -14,6 +14,8 @@ import { getSmsRecipients } from "../settings/service";
 import { wsHub } from "../websocket/hub";
 import { formatPhone } from "../../../../../shared/phone";
 import { calculateDashboardMetrics, normalizeOrderItems } from "./logic";
+import { applyOrderChargeTx, reverseUnpaidChargeTx } from "../finance/service";
+import { generateAccountId } from "../customers/account-id";
 
 export interface CreateOrderInputItem {
   productId: string;
@@ -30,6 +32,7 @@ export interface CreateOrderInput {
   locationDescription?: string;
   items: CreateOrderInputItem[];
   guestId?: string;
+  paymentMethod?: "PAY_LATER" | "PAY_ON_DELIVERY";
 }
 
 interface OrderItemDraft {
@@ -129,7 +132,7 @@ export const placeOrder = async (input: CreateOrderInput) => {
   const hotelGroups = new Map<string, { hotelId: string; hotelName: string; items: typeof input.items; orderItemData: OrderItemDraft[]; totalAmount: number }>();
   for (const [productId, quantity] of normalizedItems) {
     const product = productMap.get(productId)!;
-    const hId = product.hotelId || "default";
+    const hId = product.hotelId;
     if (!hotelGroups.has(hId)) {
       hotelGroups.set(hId, { hotelId: hId, hotelName: product.hotel?.name || "Ladha Deliveries", items: [], orderItemData: [], totalAmount: 0 });
     }
@@ -156,8 +159,10 @@ export const placeOrder = async (input: CreateOrderInput) => {
     });
 
     if (!customer) {
+      const accountId = await generateAccountId();
       customer = await tx.customer.create({
         data: {
+          accountId,
           firstName: input.firstName,
           lastName: input.lastName,
           phone: formattedPhone,
@@ -179,6 +184,13 @@ export const placeOrder = async (input: CreateOrderInput) => {
           locationDescription: input.locationDescription ?? customer.locationDescription,
         },
       });
+    }
+
+    // Pay Later is a deliberate, upfront credit arrangement — verified accounts
+    // only. Enforced once, server-side, at order-creation time. This says nothing
+    // about Payment-on-Delivery settlement speed, which is operational lag.
+    if (input.paymentMethod === "PAY_LATER" && !customer.verifiedAt) {
+      throw new Error("Pay Later requires a verified account (PIN + OTP verification). Please verify your account first.");
     }
 
     if (input.guestId) {
@@ -220,6 +232,9 @@ export const placeOrder = async (input: CreateOrderInput) => {
     const orders: any[] = [];
     const outboxIds: string[] = [];
     for (const [, group] of hotelGroups) {
+      // paymentStatus/amountPaid are intentionally left at their DB defaults
+      // (UNPAID/0) here. They have no direct writer; they are only ever updated
+      // as a side-effect of a SalesRecord write in the same transaction.
       const order = await tx.order.create({
         data: {
           customerId: customer.id,
@@ -229,7 +244,7 @@ export const placeOrder = async (input: CreateOrderInput) => {
           marketSection: input.marketSection,
           locationDescription: input.locationDescription,
           knownName: input.knownName,
-          hotelId: group.hotelId === "default" ? undefined : group.hotelId,
+          hotelId: group.hotelId,
           orderItems: {
             create: group.orderItemData.map((item) => ({
               productId: item.productId,
@@ -248,14 +263,14 @@ export const placeOrder = async (input: CreateOrderInput) => {
 
       // Create an order conversation so customer and staff can chat
       const hotelStaff = await tx.adminUser.findMany({
-        where: { hotelId: group.hotelId === "default" ? undefined : group.hotelId, role: { in: ["HOTEL_ADMIN", "HOTEL_STAFF"] } },
+        where: { hotelId: group.hotelId, role: { in: ["HOTEL_ADMIN", "HOTEL_STAFF"] } },
         select: { id: true },
       });
       await tx.conversation.create({
         data: {
           type: "ORDER",
           orderId: order.id,
-          hotelId: group.hotelId === "default" ? undefined : group.hotelId,
+          hotelId: group.hotelId,
           participants: {
             create: [
               { kind: "CUSTOMER" as ParticipantKind, customerId: customer.id, canReply: true },
@@ -282,12 +297,37 @@ export const placeOrder = async (input: CreateOrderInput) => {
             stallNumber: input.stallNumber,
             marketSection: input.marketSection,
             locationDescription: input.locationDescription,
-            hotelId: group.hotelId === "default" ? undefined : group.hotelId,
+          hotelId: group.hotelId,
             hotelName: group.hotelName,
           }),
           status: "initialized",
         },
       });
+
+      // Write the ORDER_CHARGE sales record and increment CustomerAccount in the
+      // same transaction. The payment is recorded separately, by staff, when it
+      // is actually collected — the ledger reflects reality, not the checkout
+      // intent. (A cash-on-delivery handover is simply step 2 done immediately.)
+      if (group.hotelId) {
+        const charge = await applyOrderChargeTx(tx, group.hotelId, customer.id, order.id, group.totalAmount);
+
+        await tx.eventOutbox.create({
+          data: {
+            eventName: "customer_account_credited",
+            hotelId: group.hotelId,
+            payload: JSON.stringify({
+              customerId: customer.id,
+              orderId: order.id,
+              recordId: charge.record.id,
+              amount: group.totalAmount,
+              type: "ORDER_CHARGE",
+              balance: charge.balance,
+              hotelId: group.hotelId,
+            }),
+            status: "initialized",
+          },
+        });
+      }
 
       orders.push(order);
       outboxIds.push(outbox.id);
@@ -315,7 +355,7 @@ export const placeOrder = async (input: CreateOrderInput) => {
     const formattedOrder = formattedOrders[i]!;
     const group = Array.from(hotelGroups.values())[i]!;
 
-    wsHub.broadcastToHotelAdmins(group.hotelId === "default" ? undefined : group.hotelId, {
+    wsHub.broadcastToHotelAdmins(group.hotelId, {
       type: "ORDER_CREATED",
       payload: formattedOrder,
     });
@@ -492,7 +532,14 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus, canc
     });
     if (transition.count !== 1) throw new Error("Order was updated by another request. Please refresh and try again.");
 
-    if (newStatus === "CANCELLED") await restoreStockFromCancellation(tx, existing.orderItems);
+    if (newStatus === "CANCELLED") {
+      await restoreStockFromCancellation(tx, existing.orderItems);
+      // Reverse the outstanding charge on the ledger (ADJUSTMENT row + outbox
+      // event) so a cancelled order never leaves a phantom balance. Only runs
+      // when nothing has been paid — partial/paid cancellations are refunded by
+      // staff through the finance module.
+      await reverseUnpaidChargeTx(tx, existing.hotelId, existing.customerId, existing.id, "Order cancelled");
+    }
 
     const updatedOrder = await tx.order.findUniqueOrThrow({
       where: { id },
@@ -663,130 +710,9 @@ export const cancelOrderByCustomer = async (id: string, customerId: string, reas
 
 /**
  * Updates payment status and amount paid for an order.
- * Guards:
- *  - REFUNDED orders cannot be changed further (terminal payment state).
- *  - CANCELLED orders: only REFUNDED or UNPAID is allowed (refund processed or write-off).
- *  - Non-cancelled orders: standard UNPAID → PARTIAL → PAID flow.
- * When marked PAID, auto-sets amountPaid = totalAmount.
- * When marked UNPAID, sets amountPaid = 0.
- * Broadcasts ORDER_PAYMENT_UPDATED via WS and writes outbox event.
+ * Delegates to the finance module's SalesRecord-backed functions.
+ * Broadcasts ORDER_PAYMENT_UPDATED via WS.
  */
-export const updateOrderPayment = async (id: string, data: { paymentStatus?: PaymentStatus; amountPaid?: number }, hotelId?: string) => {
-  const existing = await prisma.order.findFirst({
-    where: { id, ...(hotelId ? { hotelId } : {}) },
-    include: { customer: true, orderItems: true },
-  });
-  if (!existing) {
-    throw new Error("Order not found");
-  }
-  if (hotelId && existing.hotelId !== hotelId) throw new Error("Order does not belong to your hotel");
-
-  if (existing.paymentStatus === "REFUNDED") {
-    throw new Error("Payment is already marked as REFUNDED and cannot be changed.");
-  }
-
-  const total = Number(existing.totalAmount);
-  let paymentStatus = data.paymentStatus ?? existing.paymentStatus;
-  let amountPaid = data.amountPaid ?? Number(existing.amountPaid);
-  let refundedAt: Date | null = null;
-
-  // CANCELLED order payment constraints
-  if (existing.status === "CANCELLED") {
-    if (data.paymentStatus === "REFUNDED") {
-      if (Number(existing.amountPaid) <= 0) {
-        throw new Error("Cannot mark as REFUNDED — no payment was collected on this order.");
-      }
-      amountPaid = 0;
-      refundedAt = new Date();
-    } else if (data.paymentStatus === "PAID" || data.paymentStatus === "PARTIAL") {
-      throw new Error("Cannot collect payment on a cancelled order. Process a refund instead.");
-    } else if (data.paymentStatus === "UNPAID" || !data.paymentStatus) {
-      paymentStatus = "UNPAID";
-      amountPaid = 0;
-    }
-  } else {
-    if (data.paymentStatus === "REFUNDED") {
-      throw new Error("Cannot mark a non-cancelled order as REFUNDED. You must cancel the order first.");
-    }
-    if (data.paymentStatus === "PAID") {
-      amountPaid = total;
-    } else if (data.paymentStatus === "UNPAID") {
-      amountPaid = 0;
-    }
-  }
-
-  const hotel = existing.hotelId ? await prisma.hotel.findUnique({ where: { id: existing.hotelId } }) : await getDefaultHotel();
-  const hotelName = hotel?.name ?? "Ladha Deliveries";
-
-  const updated = await prisma.$transaction(async (tx) => {
-    const updatedOrder = await tx.order.update({
-      where: { id },
-      data: { paymentStatus, amountPaid, ...(refundedAt ? { refundedAt } : {}) },
-      include: { customer: true, orderItems: true },
-    });
-
-    // Create auditable ledger entry for every payment change
-    const delta = amountPaid - Number(existing.amountPaid);
-    if (delta !== 0) {
-      const ledgerType = existing.status === "CANCELLED" && paymentStatus === "REFUNDED" ? "REFUND" : paymentStatus === "PAID" ? "CASH_PAYMENT" : paymentStatus === "PARTIAL" ? "PARTIAL_PAYMENT" : "MANUAL_ADJUSTMENT";
-      await tx.ledgerEntry.create({
-        data: {
-          hotelId: updatedOrder.hotelId || hotel?.id || "",
-          customerId: updatedOrder.customerId,
-          orderId: updatedOrder.id,
-          type: ledgerType as any,
-          amount: ledgerType === "REFUND" ? -amountPaid : delta,
-          balance: 0,
-          description: `${ledgerType === "REFUND" ? "Refund" : "Payment"} for Order #${updatedOrder.orderNumber}. Status: ${paymentStatus}`,
-          reference: `order-${updatedOrder.orderNumber}`,
-        },
-      });
-    }
-
-    await tx.eventOutbox.create({
-      data: {
-        eventName: "order_payment_updated",
-        hotelId: updatedOrder.hotelId,
-        payload: JSON.stringify({
-          orderId: updatedOrder.id,
-          orderNumber: updatedOrder.orderNumber,
-          customerName: buildCustomerDisplay(updatedOrder.customer.firstName, updatedOrder.customer.lastName, updatedOrder.customer.knownName),
-          firstName: updatedOrder.customer.firstName,
-          lastName: updatedOrder.customer.lastName,
-          customerPhone: updatedOrder.customer.phone,
-          paymentStatus,
-          amountPaid,
-          totalAmount: total,
-          hotelName,
-        }),
-        status: "initialized",
-      },
-    });
-    return updatedOrder;
-  });
-
-  const formatted = formatOrderResponse(updated);
-
-  wsHub.broadcastToHotelAdmins(existing.hotelId || undefined, {
-    type: "ORDER_PAYMENT_UPDATED",
-    payload: {
-      ...formatted,
-      paymentStatus,
-      amountPaid,
-    },
-  });
-  wsHub.broadcastToIdentities(await getOrderOwnerIdentityKeys(existing.customerId), {
-    type: "ORDER_PAYMENT_UPDATED",
-    payload: {
-      ...formatted,
-      paymentStatus,
-      amountPaid,
-    },
-  });
-
-  return formatted;
-};
-
 /**
  * Retrieves orders for a specific date with payment info surfaced.
  */
@@ -812,6 +738,88 @@ export const getDailyOrders = async (dateStr: string, hotelId?: string) => {
   });
 
   return orders.map(formatOrderResponse);
+};
+
+/**
+ * Marks an order's reusable utensils as issued at dispatch (staff-only).
+ * Not every order goes out on reusable plates — this only records when staff
+ * actually handed any out. Independent of payment status.
+ */
+export const markUtensilsIssued = async (id: string, hotelId: string, issued: boolean) => {
+  const order = await prisma.order.findFirst({ where: { id, hotelId } });
+  if (!order) throw new Error("Order not found");
+  return formatOrderResponse(await prisma.order.update({
+    where: { id },
+    data: { utensilsIssued: issued },
+    include: { customer: true, orderItems: true },
+  }));
+};
+
+/**
+ * Records that a deliverer confirmed utensil collection — independent of, and at
+ * a possibly completely different time from, whoever records the payment.
+ */
+export const markUtensilsReturned = async (id: string, hotelId: string, adminUserId: string) => {
+  const order = await prisma.order.findFirst({ where: { id, hotelId } });
+  if (!order) throw new Error("Order not found");
+  return formatOrderResponse(await prisma.order.update({
+    where: { id },
+    data: { utensilsReturnedAt: new Date(), utensilsReturnedByAdminUserId: adminUserId },
+    include: { customer: true, orderItems: true },
+  }));
+};
+
+/**
+ * The Pending Collection worklist: every DELIVERED order that still owes payment
+ * OR still has issued-but-unreturned utensils. The two conditions resolve
+ * independently — a row tells staff which of the two is still outstanding.
+ */
+export const getPendingCollection = async (hotelId: string) => {
+  const orders = await prisma.order.findMany({
+    where: {
+      hotelId,
+      status: "DELIVERED",
+      OR: [
+        { paymentStatus: { not: "PAID" } },
+        { utensilsIssued: true, utensilsReturnedAt: null },
+      ],
+    },
+    include: { customer: true, orderItems: true },
+    orderBy: { orderedAt: "desc" },
+  });
+
+  return orders.map((order) => {
+    const amountPaid = Number(order.amountPaid);
+    const totalAmount = Number(order.totalAmount);
+    const paymentOutstanding = order.paymentStatus !== "PAID";
+    const utensilsOutstanding = order.utensilsIssued === true && order.utensilsReturnedAt === null;
+    return {
+      id: order.id,
+      orderNumber: order.orderNumber,
+      totalAmount,
+      amountPaid,
+      paymentStatus: order.paymentStatus,
+      paymentOutstanding,
+      utensilsOutstanding,
+      outstandingAmount: Math.max(0, totalAmount - amountPaid),
+      utensilsIssued: order.utensilsIssued,
+      utensilsReturnedAt: order.utensilsReturnedAt,
+      customer: order.customer
+        ? {
+            id: order.customer.id,
+            accountId: order.customer.accountId,
+            firstName: order.customer.firstName,
+            lastName: order.customer.lastName,
+            knownName: order.customer.knownName,
+            phone: order.customer.phone,
+          }
+        : null,
+      orderedAt: order.orderedAt,
+      marketSection: order.marketSection,
+      locationDescription: order.locationDescription,
+      stallNumber: order.stallNumber,
+    };
+  });
 };
 
 /**

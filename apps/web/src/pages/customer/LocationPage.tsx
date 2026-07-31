@@ -7,7 +7,7 @@ import { Header } from "../../components/ui/Header";
 import { Button } from "../../components/ui/Button";
 import { Input, Textarea } from "../../components/ui/Input";
 import { PageTransition } from "../../components/ui/PageTransition";
-import { Lock, CheckCircle2 } from "lucide-react";
+import { Lock, CheckCircle2, Wallet, CreditCard, Zap } from "lucide-react";
 import { SecureCodeInput } from "../../components/ui/SecureCodeInput";
 
 const formatPhone = (raw: string): string => {
@@ -22,9 +22,10 @@ const isValidPhone = (v: string): boolean => /^254\d{9}$/.test(v);
 interface LocationPageProps {
   onBackToCart: () => void;
   onOrderPlaced: (orderData: any) => void;
+  onNavigateToVerify?: () => void;
 }
 
-export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrderPlaced }) => {
+export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrderPlaced, onNavigateToVerify }) => {
   const { cart, totalAmount, clearCart, closedHotelIds, setClosedHotelIds } = useCart();
   const { customer, isLoggedIn } = useCustomerAuth();
 
@@ -43,6 +44,10 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
   const [pinError, setPinError] = useState("");
   const [pinLoading, setPinLoading] = useState(false);
   const [orderError, setOrderError] = useState("");
+  const [showVerifyPrompt, setShowVerifyPrompt] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<"PAY_LATER" | "PAY_ON_DELIVERY">("PAY_ON_DELIVERY");
+
+  const isVerified = isLoggedIn && customer?.isVerified === true;
 
   useEffect(() => {
     if (isLoggedIn && customer) {
@@ -103,6 +108,9 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
     if (!isValidPhone(phone.trim())) {
       setOrderError("Please enter a valid phone number (e.g. 0712345678)."); return;
     }
+    if (!isLoggedIn && paymentMethod === "PAY_LATER") {
+      setOrderError("Sign in to use Pay Later. Guests can pay on delivery."); return;
+    }
     setShowConfirmModal(true);
   };
 
@@ -139,6 +147,7 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
       phone: phone.trim(), knownName: knownName.trim() || undefined,
       stallNumber: stallNumber.trim() || undefined, marketSection, locationDescription,
       items: cart.map((item) => ({ productId: item.id, quantity: item.quantity })),
+      paymentMethod,
     };
     const res = await apiPost<any>("/orders", payload);
     setIsSubmitting(false);
@@ -207,6 +216,60 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
           )}
 
           <div className="mt-6 space-y-3">
+              <div className="bg-white rounded-2xl border border-[#E5E7EB] p-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-[#6B7280] mb-3">Payment Method</p>
+                <div className="space-y-2.5">
+                  <button
+                    type="button"
+                    disabled
+                    className="w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 border-dashed border-[#D1D5DB] bg-[#F9FAFB] opacity-70 cursor-not-allowed"
+                  >
+                    <span className="flex items-center gap-2 text-sm font-semibold text-[#6B7280]">
+                      <Zap size={18} className="text-[#2563EB]" /> Instant Payment
+                    </span>
+                    <span className="text-[0.6rem] font-bold px-2 py-0.5 rounded-full bg-[#DBEAFE] text-[#1D4ED8]">COMING IN VERSION 2.0</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setPaymentMethod("PAY_ON_DELIVERY"); setShowVerifyPrompt(false); }}
+                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 text-sm font-semibold transition-colors cursor-pointer ${paymentMethod === "PAY_ON_DELIVERY" ? "bg-[#FEF3C7] text-[#D97706] border-[#D97706]" : "bg-white text-[#6B7280] border-[#E5E7EB] hover:border-[#D97706]"}`}
+                  >
+                    <span className="flex items-center gap-2"><CreditCard size={18} /> Pay on Delivery</span>
+                    {paymentMethod === "PAY_ON_DELIVERY" && <CheckCircle2 size={16} />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isVerified) { setPaymentMethod("PAY_LATER"); setShowVerifyPrompt(false); }
+                      else setShowVerifyPrompt(true);
+                    }}
+                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 text-sm font-semibold transition-colors cursor-pointer ${paymentMethod === "PAY_LATER" ? "bg-[#EBF5F0] text-[#114B36] border-[#114B36]" : "bg-white text-[#6B7280] border-[#E5E7EB] hover:border-[#114B36]"}`}
+                  >
+                    <span className="flex items-center gap-2"><Wallet size={18} /> Pay Later</span>
+                    {!isVerified && <span className="text-[0.6rem] font-bold px-2 py-0.5 rounded-full bg-[#F3F4F6] text-[#6B7280]">VERIFIED ACCOUNTS ONLY</span>}
+                    {paymentMethod === "PAY_LATER" && <CheckCircle2 size={16} />}
+                  </button>
+                </div>
+
+                {showVerifyPrompt && (
+                  <div className="mt-3 bg-[#EBF5F0] border border-[#114B36]/20 rounded-xl p-3.5">
+                    <p className="text-xs font-semibold text-[#114B36] leading-relaxed">
+                      Pay Later lets you settle after delivery, so it requires a verified account (PIN + OTP verification).
+                    </p>
+                    {onNavigateToVerify && (
+                      <button
+                        type="button"
+                        onClick={onNavigateToVerify}
+                        className="mt-2.5 px-4 py-2 bg-[#114B36] text-white rounded-lg text-xs font-bold hover:bg-[#0D3D2B] transition-colors cursor-pointer bg-none border-none"
+                      >
+                        Verify My Account →
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             <div className="flex items-center justify-between py-3 px-4 bg-white rounded-2xl border border-[#E5E7EB]">
               <span className="text-sm text-[#6B7280]">Total</span>
               <span className="text-xl font-extrabold text-[#114B36]">KSh {totalAmount}</span>

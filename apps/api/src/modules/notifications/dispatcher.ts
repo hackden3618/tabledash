@@ -16,6 +16,10 @@ import { handleHotelAdminCreated } from "./handlers/hotel-admin-created.handler"
 import { handleHotelStaffCreated } from "./handlers/hotel-staff-created.handler";
 import { handleHotelStatusUpdated } from "./handlers/hotel-status-updated.handler";
 import { handlePlatformAdminCreated } from "./handlers/platform-admin-created.handler";
+import { handleAccountCredited } from "./handlers/account-credited.handler";
+import { handleAccountPayment } from "./handlers/account-payment.handler";
+import { handleAccountRefund } from "./handlers/account-refund.handler";
+import { handleAccountAdjustment } from "./handlers/account-adjustment.handler";
 
 const MAX_RETRIES = 5;
 const POLL_INTERVAL_MS = 3000;
@@ -32,6 +36,10 @@ const HANDLER_MAP: Record<string, HandlerFn> = {
   hotel_admin_created: handleHotelAdminCreated,
   hotel_staff_created: handleHotelStaffCreated,
   platform_admin_created: handlePlatformAdminCreated,
+  customer_account_credited: handleAccountCredited,
+  customer_account_payment_recorded: handleAccountPayment,
+  customer_account_refund_recorded: handleAccountRefund,
+  customer_account_adjusted: handleAccountAdjustment,
 };
 
 let intervalHandle: ReturnType<typeof setInterval> | null = null;

@@ -137,6 +137,7 @@ export const CustomerProfilePage: React.FC<CustomerProfilePageProps> = ({ onBack
             <div>
               <p className="font-bold text-base text-[#1F2937]">{customer.firstName}{customer.lastName ? ` ${customer.lastName}` : ""}</p>
               <p className="text-sm text-[#6B7280]">{customer.phone}</p>
+              {customer.accountId && <p className="text-xs text-[#114B36] font-mono mt-1">{customer.accountId}</p>}
             </div>
           </motion.div>
 
