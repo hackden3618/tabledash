@@ -7,7 +7,6 @@
 
 import { prisma } from "../../../../../infrastructure/database/prisma";
 import type { DashboardMetrics, OrderStatus } from "../../../../../shared/types";
-import type { ParticipantKind } from "../../../../../generated/prisma/client";
 import { smsService } from "../notifications/sms.service";
 import { getDefaultHotel } from "../hotels/service";
 import { getSmsRecipients } from "../settings/service";
@@ -33,6 +32,14 @@ export interface CreateOrderInput {
   items: CreateOrderInputItem[];
   guestId?: string;
   paymentMethod?: "PAY_LATER" | "PAY_ON_DELIVERY";
+  /**
+   * True when the caller is placing the order for someone else. The order is
+   * still attributed to the customer resolved by `phone` (the recipient), but
+   * the caller's device guest identity must NOT be linked to the recipient's
+   * account — that would leak the recipient's order history into the caller's
+   * guest session.
+   */
+  orderingForOther?: boolean;
 }
 
 interface OrderItemDraft {
@@ -42,6 +49,11 @@ interface OrderItemDraft {
   unitPrice: number;
   subtotal: number;
 }
+
+// On-behalf orders require the recipient's number to be OTP-verified, and the
+// verification must be recent (OTP itself lives 10 minutes) so a stale confirm
+// can't be reused. This is enforced here, server-side, not in the UI.
+const RECIPIENT_VERIFY_FRESH_MS = 15 * 60 * 1000;
 
 function buildCustomerDisplay(firstName: string, lastName?: string | null, knownName?: string | null): string {
   const name = lastName ? `${firstName} ${lastName}` : firstName;
@@ -193,7 +205,22 @@ export const placeOrder = async (input: CreateOrderInput) => {
       throw new Error("Pay Later requires a verified account (PIN + OTP verification). Please verify your account first.");
     }
 
-    if (input.guestId) {
+    // On-behalf orders must not be attributed to a number whose owner never
+    // confirmed it. A valid, recent OTP verification proves the recipient (or
+    // the orderer, with the recipient's code) was involved.
+    if (input.orderingForOther) {
+      const verifiedFresh =
+        customer.recipientVerifiedAt &&
+        Date.now() - new Date(customer.recipientVerifiedAt).getTime() <= RECIPIENT_VERIFY_FRESH_MS;
+      if (!verifiedFresh) {
+        throw new Error("The recipient's phone number must be verified before placing this order. Please verify the recipient's number.");
+      }
+    }
+
+    // On-behalf orders never link the caller's guest identity to the recipient
+    // (the customer resolved by phone). The recipient keeps their own account;
+    // the caller keeps their own device identity.
+    if (input.guestId && !input.orderingForOther) {
       await tx.guestIdentity.upsert({
         where: { id: input.guestId },
         create: { id: input.guestId, customerId: customer.id },
@@ -261,24 +288,10 @@ export const placeOrder = async (input: CreateOrderInput) => {
         },
       });
 
-      // Create an order conversation so customer and staff can chat
-      const hotelStaff = await tx.adminUser.findMany({
-        where: { hotelId: group.hotelId, role: { in: ["HOTEL_ADMIN", "HOTEL_STAFF"] } },
-        select: { id: true },
-      });
-      await tx.conversation.create({
-        data: {
-          type: "ORDER",
-          orderId: order.id,
-          hotelId: group.hotelId,
-          participants: {
-            create: [
-              { kind: "CUSTOMER" as ParticipantKind, customerId: customer.id, canReply: true },
-              ...hotelStaff.map((admin) => ({ kind: "HOTEL_STAFF" as ParticipantKind, adminUserId: admin.id, canReply: true })),
-            ],
-          },
-        },
-      });
+      // Order conversations are NOT created here — most orders never need a
+      // thread. The messaging module creates one lazily on the first message
+      // from either the customer or the kitchen, so an inbox stays quiet unless
+      // someone actually has something to say.
 
       const itemsSummary = group.orderItemData.map((it) => `${it.quantity}x ${it.name}`).join(", ");
       const outbox = await tx.eventOutbox.create({

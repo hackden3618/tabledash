@@ -175,6 +175,12 @@ model Customer {
     phoneChangeOtp      String?  @map("phone_change_otp")
     phoneChangeOtpExpires DateTime? @map("phone_change_otp_expires") @db.Timestamptz()
     phoneChangePending  String?  @map("phone_change_pending")
+    recipientVerifyOtp      String?   @map("recipient_verify_otp")
+    recipientVerifyOtpExpires DateTime? @map("recipient_verify_otp_expires") @db.Timestamptz()
+    recipientVerifiedAt     DateTime? @map("recipient_verified_at") @db.Timestamptz()
+    ownPhoneOtp              String?   @map("own_phone_otp")
+    ownPhoneOtpExpires       DateTime? @map("own_phone_otp_expires") @db.Timestamptz()
+    phoneConfirmedAt         DateTime? @map("phone_confirmed_at") @db.Timestamptz()
     createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
     orders Order[]

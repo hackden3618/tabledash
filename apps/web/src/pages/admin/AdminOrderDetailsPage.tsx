@@ -1,8 +1,10 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { apiGet, apiPatch, apiPost } from "../../lib/api";
-import { CheckCircle, Circle, Lock, AlertTriangle, ChevronLeft, Phone, MapPin, CreditCard, Undo2, UtensilsCrossed, User, Wallet } from "lucide-react";
+import { CheckCircle, Circle, Lock, AlertTriangle, ChevronLeft, Phone, MapPin, CreditCard, Undo2, UtensilsCrossed, User, Wallet, Send } from "lucide-react";
 import { Modal } from "../../components/ui/Modal";
 import { Button } from "../../components/ui/Button";
+
+interface ChatMessage { id: string; body: string; createdAt: string; senderParticipantId: string; }
 
 interface AdminOrderDetailsPageProps {
   order: any;
@@ -73,6 +75,14 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
 
   const [utensilBusy, setUtensilBusy] = useState(false);
   const [accountModal, setAccountModal] = useState<null | { loading: boolean; data: any }>(null);
+
+  // ── Order chat (lazily created on the first message from either side) ──
+  const [convId, setConvId] = useState<string | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatBody, setChatBody] = useState("");
+  const [sending, setSending] = useState(false);
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   const currentRank = STATUS_RANK[currentStatus] ?? 0;
   const isTerminal  = currentStatus === "DELIVERED" || currentStatus === "CANCELLED";
@@ -194,6 +204,47 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
     setAccountModal({ loading: true, data: null });
     const res = await apiGet<any>(`/finance/customers/${order.customer?.id}/account`, token);
     setAccountModal({ loading: false, data: res.success && res.data ? res.data : null });
+  };
+
+  const fetchOrderChat = async () => {
+    setChatLoading(true);
+    const res = await apiGet<{ id: string }>(`/messaging/orders/${order.id}/conversation`, token);
+    if (res.success && res.data) {
+      setConvId(res.data.id);
+      const msgs = await apiGet<{ messages: ChatMessage[] }>(`/messaging/conversations/${res.data.id}/messages`, token);
+      if (msgs.success && msgs.data) setChatMessages(msgs.data.messages);
+    }
+    setChatLoading(false);
+  };
+
+  useEffect(() => { if (!isTerminal) void fetchOrderChat(); }, [order.id, token, currentStatus]);
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages]);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail.type === "MESSAGE_CREATED" && convId && detail.payload?.conversationId === convId) {
+        setChatMessages((prev) => prev.some((m) => m.id === detail.payload.id) ? prev : [...prev, detail.payload as ChatMessage]);
+      }
+    };
+    window.addEventListener("tabledash:realtime", handler);
+    return () => window.removeEventListener("tabledash:realtime", handler);
+  }, [convId]);
+
+  const sendChat = async () => {
+    if (!chatBody.trim() || sending) return;
+    setSending(true);
+    const result = convId
+      ? await apiPost<ChatMessage>(`/messaging/conversations/${convId}/messages`, { body: chatBody.trim() }, token)
+      : await apiPost<ChatMessage>(`/messaging/orders/${order.id}/messages`, { body: chatBody.trim() }, token);
+    if (result.success && result.data) {
+      setChatMessages((prev) => prev.some((m) => m.id === result.data!.id) ? prev : [...prev, result.data!]);
+      setChatBody("");
+      if (!convId) void fetchOrderChat();
+    } else {
+      setError(result.error ?? "Unable to send message");
+    }
+    setSending(false);
   };
 
   const formatKsh = (amount: number) =>
@@ -370,6 +421,46 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
             <MapPin size={14} /> Open Map Inspector
           </Button>
         </div>
+
+        {/* Client communication — kitchen staff can initiate a message to the
+               client about this order. The conversation is lazily created on
+               the first message from either side. */}
+        {!isTerminal && (
+          <div className="bg-white rounded-2xl p-4 shadow-[0_2px_8px_rgba(17,75,54,0.06)]">
+            <p className="font-bold text-xs text-[#6B7280] uppercase tracking-wider mb-3 flex items-center gap-1.5">
+              <Send size={14} /> Client messages
+            </p>
+            {chatLoading ? (
+              <div className="text-center py-6 text-xs text-[#9CA3AF]">Loading conversation…</div>
+            ) : (
+              <>
+                <div className="max-h-44 overflow-y-auto px-1 space-y-2 mb-3">
+                  {chatMessages.length === 0 ? (
+                    <p className="text-xs text-[#9CA3AF] text-center py-3">No messages yet. Send an update to the client about this order.</p>
+                  ) : (
+                    chatMessages.map((msg) => (
+                      <div key={msg.id} className="text-xs">
+                        <span className="text-[#9CA3AF]">{new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                        <p className="text-[#1F2937] mt-0.5">{msg.body}</p>
+                      </div>
+                    ))
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    value={chatBody}
+                    onChange={(e) => setChatBody(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void sendChat(); } }}
+                    placeholder="Message client…"
+                    className="flex-1 rounded-xl border-2 border-[#E5E7EB] bg-white px-3 py-2 text-sm outline-none focus:border-[#114B36]"
+                  />
+                  <Button size="sm" onClick={() => void sendChat()} loading={sending} disabled={!chatBody.trim()} icon={<Send size={14} />}>Send</Button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
         {/* Status Timeline */}
         <div className={`bg-white rounded-2xl p-4 shadow-[0_2px_8px_rgba(17,75,54,0.06)] transition-opacity ${updating ? "opacity-70" : ""}`}>

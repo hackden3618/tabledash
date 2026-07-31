@@ -166,13 +166,13 @@ export async function assertConversationAccess(actor: MessagingActor, conversati
 
 // ── ORDER conversations ──
 
-export async function createOrderConversation(tx: any, orderId: string, hotelId: string, customerId: string) {
+export async function createOrderConversation(orderId: string, hotelId: string, customerId: string) {
   const staff = await prisma.adminUser.findMany({ where: { hotelId, role: { in: ["HOTEL_ADMIN", "HOTEL_STAFF"] } }, select: { id: true } });
   const participants: { kind: ParticipantKind; adminUserId?: string; customerId?: string; canReply: boolean }[] = [
     { kind: "CUSTOMER", customerId, canReply: true },
     ...staff.map((admin) => ({ kind: "HOTEL_STAFF" as ParticipantKind, adminUserId: admin.id, canReply: true })),
   ];
-  return tx.conversation.create({
+  return prisma.conversation.create({
     data: {
       type: "ORDER",
       orderId,
@@ -183,11 +183,18 @@ export async function createOrderConversation(tx: any, orderId: string, hotelId:
 }
 
 export async function sendOrderMessage(actor: MessagingActor, orderId: string, body: string, replyToId?: string) {
-  const order = await prisma.order.findUnique({ where: { id: orderId }, select: { status: true, id: true } });
+  const order = await prisma.order.findUnique({ where: { id: orderId }, select: { status: true, id: true, hotelId: true, customerId: true } });
   if (!order) throw new Error("Order not found");
   if (order.status === "DELIVERED" || order.status === "CANCELLED") throw new Error("This order is complete and can no longer receive messages");
-  const conversation = await prisma.conversation.findFirst({ where: { orderId, type: "ORDER" }, include: { participants: true } });
-  if (!conversation) throw new Error("Order conversation not found");
+
+  // Order conversations are created lazily on the first message from either
+  // side — the customer or the kitchen. Not every order needs a thread.
+  let conversation = await prisma.conversation.findFirst({ where: { orderId, type: "ORDER" }, include: { participants: true } });
+  if (!conversation) {
+    if (!order.hotelId) throw new Error("This order has no hotel and cannot have a conversation");
+    const created = await createOrderConversation(orderId, order.hotelId, order.customerId);
+    conversation = await prisma.conversation.findUniqueOrThrow({ where: { id: created.id }, include: { participants: true } });
+  }
   return sendMessageToConversation(actor, conversation, body, replyToId);
 }
 

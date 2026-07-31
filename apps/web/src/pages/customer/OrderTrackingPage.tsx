@@ -77,12 +77,17 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({ orderId, o
   }, [orderId, convId, pushNotification]);
 
   const sendChat = async () => {
-    if (!chatBody.trim() || sending || !convId) return;
+    if (!chatBody.trim() || sending) return;
     setSending(true);
-    const result = await apiPost<ChatMessage>(`/messaging/conversations/${convId}/messages`, { body: chatBody.trim() }, customerToken || undefined);
+    // The order-level endpoint lazily creates the conversation on the first
+    // message from either side; after that we reuse the existing thread.
+    const result = convId
+      ? await apiPost<ChatMessage>(`/messaging/conversations/${convId}/messages`, { body: chatBody.trim() }, customerToken || undefined)
+      : await apiPost<ChatMessage>(`/messaging/orders/${orderId}/messages`, { body: chatBody.trim() }, customerToken || undefined);
     if (result.success && result.data) {
-      setChatMessages((prev) => [...prev, result.data!]);
+      setChatMessages((prev) => prev.some((m) => m.id === result.data!.id) ? prev : [...prev, result.data!]);
       setChatBody("");
+      if (!convId) fetchConversation();
     }
     setSending(false);
   };
@@ -136,7 +141,7 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({ orderId, o
         )}
 
         {/* Inline order chat */}
-        {convId && !isTerminal && <div className="mt-6 border border-[#E5E7EB] rounded-2xl overflow-hidden"><div className="bg-[#EBF5F0] px-4 py-2.5 border-b border-[#D1E4D8]"><p className="text-[0.6rem] font-bold text-[#114B36]">ORDER CHAT</p><p className="text-xs text-[#6B7280]">Chat with the kitchen about this order</p></div><div className="max-h-48 overflow-y-auto px-4 py-3 space-y-2 bg-white">{chatMessages.length === 0 ? <p className="text-xs text-[#9CA3AF] text-center py-4">No messages yet. Send a note to the kitchen.</p> : chatMessages.map((msg) => <div key={msg.id} className="text-xs"><span className="text-[#9CA3AF]">{new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span><p className="text-sm text-[#1F2937] mt-0.5">{msg.body}</p></div>)}<div ref={chatEndRef} /></div><div className="flex gap-2 p-3 bg-[#FFF8F0] border-t border-[#E5E7EB]"><input value={chatBody} onChange={(e) => setChatBody(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void sendChat(); } }} placeholder="Type a message..." className="flex-1 rounded-xl border-2 border-[#E5E7EB] bg-white px-3 py-2 text-sm outline-none focus:border-[#114B36]" /><Button size="sm" onClick={() => void sendChat()} loading={sending} disabled={!chatBody.trim()} icon={<Send size={14} />}>Send</Button></div></div>}
+        {!isTerminal && <div className="mt-6 border border-[#E5E7EB] rounded-2xl overflow-hidden"><div className="bg-[#EBF5F0] px-4 py-2.5 border-b border-[#D1E4D8]"><p className="text-[0.6rem] font-bold text-[#114B36]">ORDER CHAT</p><p className="text-xs text-[#6B7280]">Chat with the kitchen about this order</p></div><div className="max-h-48 overflow-y-auto px-4 py-3 space-y-2 bg-white">{chatMessages.length === 0 ? <p className="text-xs text-[#9CA3AF] text-center py-4">No messages yet. Send a note to the kitchen.</p> : chatMessages.map((msg) => <div key={msg.id} className="text-xs"><span className="text-[#9CA3AF]">{new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span><p className="text-sm text-[#1F2937] mt-0.5">{msg.body}</p></div>)}<div ref={chatEndRef} /></div><div className="flex gap-2 p-3 bg-[#FFF8F0] border-t border-[#E5E7EB]"><input value={chatBody} onChange={(e) => setChatBody(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void sendChat(); } }} placeholder="Type a message..." className="flex-1 rounded-xl border-2 border-[#E5E7EB] bg-white px-3 py-2 text-sm outline-none focus:border-[#114B36]" /><Button size="sm" onClick={() => void sendChat()} loading={sending} disabled={!chatBody.trim()} icon={<Send size={14} />}>Send</Button></div></div>}
 
         <Button onClick={onBackToHome} variant="secondary" fullWidth size="md" className="mt-3">Back to Menu</Button>
       </PageTransition>

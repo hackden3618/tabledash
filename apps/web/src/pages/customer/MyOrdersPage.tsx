@@ -210,6 +210,7 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
                 lastUpdatedId={lastUpdatedId}
                 onTrackOrder={onTrackOrder}
                 terminalConfig={TERMINAL_CONFIG}
+                onNavigateToWallet={onNavigateToWallet}
               />
             </div>
           )}
@@ -219,15 +220,24 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
   );
 };
 
+function getFinancialStatus(order: any): { bg: string; color: string; label: string } | null {
+  if (!order.paymentStatus) return null;
+  if (order.paymentStatus === "REFUNDED") return { bg: "#F3F4F6", color: "#6B7280", label: "Refunded" };
+  if (Number(order.amountPaid ?? 0) >= Number(order.totalAmount)) return { bg: "#DCFCE7", color: "#15803D", label: "Fully settled" };
+  return { bg: "#FEF3C7", color: "#D97706", label: "Balance due" };
+}
+
 function AnimateOrders({
   orders,
   lastUpdatedId,
   onTrackOrder,
+  onNavigateToWallet,
   terminalConfig,
 }: {
   orders: any[];
   lastUpdatedId: string | null;
   onTrackOrder: (id: string) => void;
+  onNavigateToWallet?: () => void;
   terminalConfig: Record<string, { label: string; variant: "success" | "danger" }>;
 }) {
   return (
@@ -236,6 +246,7 @@ function AnimateOrders({
         const isTerminal = order.status === "DELIVERED" || order.status === "CANCELLED";
         const termCfg = terminalConfig[order.status];
         const justUpdated = lastUpdatedId === order.id;
+        const fin = getFinancialStatus(order);
 
         return (
           <motion.div
@@ -286,11 +297,28 @@ function AnimateOrders({
               <span className="font-bold text-sm text-[#114B36]">KSh {order.totalAmount}</span>
             </div>
 
-            <div className="mt-2 flex items-center justify-end">
-              <span className="text-xs font-semibold text-[#114B36] flex items-center gap-0.5">
-                {!isTerminal ? "Track live" : "View details"} <ChevronRight size={12} />
-              </span>
-            </div>
+            {fin && (
+              <div className="mt-2 flex items-center justify-end gap-2">
+                <button
+                  onClick={(e) => { e.stopPropagation(); onNavigateToWallet?.(); }}
+                  className="text-[0.65rem] font-bold px-2.5 py-1 rounded-full transition-opacity hover:opacity-80 cursor-pointer border-none bg-transparent"
+                  style={{ background: fin.bg, color: fin.color }}
+                >
+                  {fin.label}
+                </button>
+                <span className="text-xs font-semibold text-[#114B36] flex items-center gap-0.5">
+                  View details <ChevronRight size={12} />
+                </span>
+              </div>
+            )}
+
+            {!fin && (
+              <div className="mt-2 flex items-center justify-end">
+                <span className="text-xs font-semibold text-[#114B36] flex items-center gap-0.5">
+                  {!isTerminal ? "Track live" : "View details"} <ChevronRight size={12} />
+                </span>
+              </div>
+            )}
           </motion.div>
         );
       })}

@@ -469,6 +469,10 @@ export function AppContent() {
         <AdminOrderHistoryPage
           token={adminToken}
           onBackToOrders={() => setCurrentView("admin_orders")}
+          onOpenOrder={(order) => {
+            setSelectedAdminOrder(order);
+            setCurrentView("admin_order_details");
+          }}
         />
       )}
 

@@ -1,15 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { apiGet, apiPost } from "../../lib/api";
-import { ArrowLeft, Calendar, CheckCircle2, DollarSign, Undo2, X } from "lucide-react";
-import { Button } from "../../components/ui/Button";
+import { apiGet } from "../../lib/api";
+import { ArrowLeft, Calendar, ChevronRight, DollarSign, X } from "lucide-react";
 
 interface AdminOrderHistoryPageProps {
     token: string;
     onBackToOrders: () => void;
+    onOpenOrder: (order: any) => void;
 }
-
-type PaymentMethod = "CASH" | "MPESA";
 
 const STATUS_BADGE: Record<string, { bg: string; color: string }> = {
     NEW: { bg: "#FEE2E2", color: "#DC2626" },
@@ -25,23 +23,25 @@ function getStatusBadge(status: string): { bg: string; color: string } {
     return STATUS_BADGE[status] ?? { bg: "#F3F4F6", color: "#6B7280" };
 }
 
-function getPaymentBadge(status: string): { bg: string; color: string; label: string } {
-    switch (status) {
-        case "PAID": return { bg: "#DCFCE7", color: "#15803D", label: "Paid" };
-        case "PARTIAL": return { bg: "#FEF3C7", color: "#D97706", label: "Partial" };
-        default: return { bg: "#FEE2E2", color: "#DC2626", label: "Unpaid" };
-    }
+function getFinancialStatus(order: any): { bg: string; color: string; label: string } {
+  if (order.status === "CANCELLED") {
+    if (Number(order.amountPaid ?? 0) >= Number(order.totalAmount)) return { bg: "#FEE2E2", color: "#DC2626", label: "Refund pending" };
+    return { bg: "#F3F4F6", color: "#6B7280", label: "Cancelled" };
+  }
+  if (order.paymentStatus === "REFUNDED") return { bg: "#F3F4F6", color: "#6B7280", label: "Refunded" };
+  if (Number(order.amountPaid ?? 0) >= Number(order.totalAmount)) return { bg: "#DCFCE7", color: "#15803D", label: "Fully settled" };
+  return { bg: "#FEF3C7", color: "#D97706", label: "Balance due" };
 }
 
 export const AdminOrderHistoryPage: React.FC<AdminOrderHistoryPageProps> = ({
     token,
     onBackToOrders,
+    onOpenOrder,
 }) => {
     const [orders, setOrders] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const todayStr = new Date().toISOString().split("T")[0] ?? "";
     const [selectedDate, setSelectedDate] = useState(todayStr);
-    const [editingCollection, setEditingCollection] = useState<Record<string, { method: PaymentMethod; amount: string }>>({});
     const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
     useEffect(() => {
@@ -63,40 +63,6 @@ export const AdminOrderHistoryPage: React.FC<AdminOrderHistoryPageProps> = ({
     useEffect(() => {
         fetchDailyOrders(selectedDate);
     }, [selectedDate]);
-
-    const handleRecordPayment = async (orderId: string) => {
-        const edit = editingCollection[orderId];
-        if (!edit || !edit.amount || parseFloat(edit.amount) <= 0) return;
-        const res = await apiPost<any>(`/finance/orders/${orderId}/payments`, {
-            method: edit.method,
-            amount: parseFloat(edit.amount),
-        }, token);
-        if (res.success && res.data) {
-            setOrders((prev) => prev.map((o) => (o.id === orderId ? res.data.order : o)));
-            setEditingCollection((prev) => {
-                const next = { ...prev };
-                delete next[orderId];
-                return next;
-            });
-            setToast({ message: "Payment recorded successfully", type: "success" });
-        } else {
-            setToast({ message: res.error || "Failed to record payment", type: "error" });
-        }
-    };
-
-    const handleRefund = async (orderId: string, amount: number) => {
-        const res = await apiPost<any>(`/finance/orders/${orderId}/adjustments`, {
-            type: "REFUND",
-            amount,
-            reason: "Refunded from order history",
-        }, token);
-        if (res.success && res.data) {
-            setOrders((prev) => prev.map((o) => (o.id === orderId ? res.data.order : o)));
-            setToast({ message: "Refund processed successfully", type: "success" });
-        } else {
-            setToast({ message: res.error || "Failed to process refund", type: "error" });
-        }
-    };
 
     const totalDailyRevenue = orders
         .filter((o) => o.status !== "CANCELLED")
@@ -164,8 +130,7 @@ export const AdminOrderHistoryPage: React.FC<AdminOrderHistoryPageProps> = ({
                     ) : (
                         <div className="space-y-3">
                             {orders.map((ord, idx) => {
-                                const edit = editingCollection[ord.id] || {};
-                                const balance = Number(ord.totalAmount) - Number(ord.amountPaid ?? 0);
+                                const financial = getFinancialStatus(ord);
 
                                 return (
                                     <motion.div
@@ -173,7 +138,8 @@ export const AdminOrderHistoryPage: React.FC<AdminOrderHistoryPageProps> = ({
                                         initial={{ opacity: 0, y: 12 }}
                                         animate={{ opacity: 1, y: 0 }}
                                         transition={{ delay: idx * 0.02 }}
-                                        className="bg-white rounded-2xl p-4 shadow-[0_2px_8px_rgba(17,75,54,0.06)]"
+                                        onClick={() => onOpenOrder(ord)}
+                                        className="bg-white rounded-2xl p-4 shadow-[0_2px_8px_rgba(17,75,54,0.06)] cursor-pointer active:scale-[0.99] transition-transform"
                                     >
                                         <div className="flex justify-between items-start mb-2">
                                             <div>
@@ -194,64 +160,20 @@ export const AdminOrderHistoryPage: React.FC<AdminOrderHistoryPageProps> = ({
                                             {ord.customer?.firstName} ({ord.customer?.phone}) &mdash; {ord.orderItems?.map((it: any) => `${it.quantity}x ${it.name}`).join(", ")}
                                         </p>
 
-                                        <div className="flex justify-between items-center flex-wrap gap-2 border-t border-[#F3F4F6] pt-3">
+                                        <div className="flex justify-between items-center gap-2 border-t border-[#F3F4F6] pt-3">
                                             <div className="flex items-center gap-2">
                                                 <span className="font-bold text-sm text-[#1F2937]">KSh {ord.totalAmount}</span>
                                                 <span className="text-[#D1D5DB]">|</span>
                                                 <span
                                                     className="text-[0.65rem] font-bold px-2.5 py-1 rounded-full"
-                                                    style={{ background: getPaymentBadge(ord.paymentStatus).bg, color: getPaymentBadge(ord.paymentStatus).color }}
+                                                    style={{ background: financial.bg, color: financial.color }}
                                                 >
-                                                    {getPaymentBadge(ord.paymentStatus).label}
+                                                    {financial.label}
                                                 </span>
-                                                {balance > 0 && ord.paymentStatus !== "CANCELLED" && (
-                                                    <span className="text-[0.65rem] font-semibold text-[#DC2626]">
-                                                        Balance: KSh {balance.toFixed(2)}
-                                                    </span>
-                                                )}
                                             </div>
-
-                                            <div className="flex items-center gap-1.5">
-                                                <select
-                                                    value={edit.method ?? "CASH"}
-                                                    onChange={(e) => setEditingCollection((prev) => ({
-                                                        ...prev,
-                                                        [ord.id]: { ...prev[ord.id], method: e.target.value as PaymentMethod },
-                                                    }))}
-                                                    className="px-2 py-1.5 rounded-lg border border-[#D1D5DB] text-[0.65rem] font-semibold outline-none bg-white"
-                                                >
-                                                    <option value="CASH">Cash</option>
-                                                    <option value="MPESA">M-PESA</option>
-                                                </select>
-                                                <input
-                                                    type="number"
-                                                    min="0.01"
-                                                    step="0.01"
-                                                    placeholder="Amount"
-                                                    value={edit.amount ?? ""}
-                                                    onChange={(e) => setEditingCollection((prev) => ({
-                                                        ...prev,
-                                                        [ord.id]: { ...prev[ord.id], amount: e.target.value },
-                                                    }))}
-                                                    className="w-20 px-2 py-1.5 rounded-lg border border-[#D1D5DB] text-[0.65rem] font-semibold text-center outline-none"
-                                                />
-                                                <Button
-                                                    size="sm"
-                                                    variant="primary"
-                                                    onClick={() => handleRecordPayment(ord.id)}
-                                                >
-                                                    <CheckCircle2 size={12} /> Record
-                                                </Button>
-                                                {Number(ord.amountPaid) > 0 && ord.paymentStatus !== "REFUNDED" && (
-                                                    <Button
-                                                        size="sm"
-                                                        variant="danger"
-                                                        onClick={() => handleRefund(ord.id, Number(ord.amountPaid))}
-                                                    >
-                                                        <Undo2 size={12} /> Refund
-                                                    </Button>
-                                                )}
-                                            </div>
+                                            <span className="flex items-center gap-0.5 text-[0.65rem] font-semibold text-[#114B36]">
+                                                View order &amp; account <ChevronRight size={14} />
+                                            </span>
                                         </div>
                                     </motion.div>
                                 );

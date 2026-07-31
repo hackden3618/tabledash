@@ -34,6 +34,7 @@ export const CreateOrderSchema = t.Object({
     t.Literal("PAY_LATER"),
     t.Literal("PAY_ON_DELIVERY"),
   ])),
+  orderingForOther: t.Optional(t.Boolean()),
 });
 
 export const UpdateOrderStatusSchema = t.Object({

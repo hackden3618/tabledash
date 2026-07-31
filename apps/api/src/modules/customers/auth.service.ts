@@ -241,6 +241,12 @@ export const updateCustomerProfile = async (customerId: string, input: { firstNa
   const phoneChanged = input.phone !== undefined && formatPhone(input.phone) !== customer.phone;
   if (phoneChanged) {
     const newPhone = formatPhone(input.phone!);
+    const existingOwner = await prisma.customer.findUnique({ where: { phone: newPhone }, select: { id: true } });
+    if (existingOwner && existingOwner.id !== customerId) {
+      const error = new Error("That phone number is already linked to another customer account.");
+      (error as Error & { code?: string }).code = "PHONE_IN_USE";
+      throw error;
+    }
     if (!customer.verifiedAt) {
       throw new Error("Phone change requires a verified account (PIN + OTP).");
     }
@@ -282,6 +288,12 @@ export const verifyPhoneChangeOtp = async (customerId: string, otp: string) => {
   if (!newPhone) throw new Error("No pending phone change.");
 
   await prisma.$transaction(async (tx) => {
+    const existingOwner = await tx.customer.findUnique({ where: { phone: newPhone }, select: { id: true } });
+    if (existingOwner && existingOwner.id !== customerId) {
+      const error = new Error("That phone number is already linked to another customer account.");
+      (error as Error & { code?: string }).code = "PHONE_IN_USE";
+      throw error;
+    }
     await tx.customer.update({
       where: { id: customerId },
       data: {
@@ -298,6 +310,76 @@ export const verifyPhoneChangeOtp = async (customerId: string, otp: string) => {
   });
 
   return { message: "Phone number updated successfully." };
+};
+
+const RECIPIENT_VERIFY_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+/**
+ * Sends an OTP to a phone number that someone is ordering on behalf of.
+ * Confirming the code proves the number wasn't entered without its owner's
+ * involvement — without this, anyone could attribute an order to another
+ * person's number by typing it into the "order for someone else" flow.
+ */
+export const sendRecipientVerificationOtp = async (phone: string) => {
+  const formattedPhone = formatPhone(phone);
+  let customer = await prisma.customer.findUnique({ where: { phone: formattedPhone } });
+  if (!customer) {
+    customer = await prisma.customer.create({
+      data: {
+        accountId: await generateAccountId(),
+        firstName: "Guest",
+        phone: formattedPhone,
+      },
+    });
+  }
+
+  const otp = String(Math.floor(1000 + Math.random() * 9000));
+  const expires = new Date(Date.now() + RECIPIENT_VERIFY_TTL_MS);
+  await prisma.customer.update({
+    where: { id: customer.id },
+    data: { recipientVerifyOtp: otp, recipientVerifyOtpExpires: expires },
+  });
+
+  const otpMessage = `Someone is placing a Ladha order for you. Your verification code is: ${otp}. It expires in 10 minutes. If you did not expect this, please ignore. - Ladha Deliveries`;
+  (async () => {
+    try {
+      await smsService.sendSms(formattedPhone, otpMessage);
+    } catch (err) {
+      console.error("[Recipient Verify OTP SMS Error]:", err);
+    }
+  })();
+
+  return { message: "Verification code sent to that number." };
+};
+
+/**
+ * Confirms the OTP for an on-behalf recipient. Single-use: a confirmed code is
+ * cleared and stamps `recipientVerifiedAt`, which `placeOrder` requires (and
+ * checks for freshness) before accepting an on-behalf order.
+ */
+export const confirmRecipientVerificationOtp = async (phone: string, otp: string) => {
+  const formattedPhone = formatPhone(phone);
+  const customer = await prisma.customer.findUnique({ where: { phone: formattedPhone } });
+  if (!customer || !customer.recipientVerifyOtp || !customer.recipientVerifyOtpExpires) {
+    throw new Error("No verification code has been sent for this number.");
+  }
+  if (customer.recipientVerifyOtp !== otp) {
+    throw new Error("Invalid verification code. Please try again.");
+  }
+  if (new Date() > customer.recipientVerifyOtpExpires) {
+    throw new Error("Verification code has expired. Please request a new one.");
+  }
+
+  await prisma.customer.update({
+    where: { id: customer.id },
+    data: {
+      recipientVerifyOtp: null,
+      recipientVerifyOtpExpires: null,
+      recipientVerifiedAt: new Date(),
+    },
+  });
+
+  return { message: "Number verified." };
 };
 
 /**
@@ -355,6 +437,52 @@ export const resetCustomerPin = async (input: { phone: string; otp: string; newP
     data: { pinHash, pinResetCode: null, pinResetCodeExpires: null },
   });
   return { message: "PIN has been reset successfully." };
+};
+
+const OTP_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Sends an OTP to verify the orderer's own phone number. Creates a
+ * guest customer row for unknown numbers so guests can also verify.
+ * Single-use: codes are cleared on successful confirmation.
+ */
+export const sendOwnPhoneOtp = async (phone: string) => {
+  const formatted = formatPhone(phone);
+  if (!/^254\d{9}$/.test(formatted)) throw new Error("Invalid phone number");
+  let customer = await prisma.customer.findUnique({ where: { phone: formatted } });
+  if (!customer) {
+    const accountId = await generateAccountId();
+    customer = await prisma.customer.create({
+      data: { accountId, phone: formatted, firstName: "Guest" },
+    });
+  }
+  const otp = String(Math.floor(1000 + Math.random() * 9000));
+  const expires = new Date(Date.now() + OTP_TTL_MS);
+  await prisma.customer.update({
+    where: { id: customer.id },
+    data: { ownPhoneOtp: otp, ownPhoneOtpExpires: expires },
+  });
+  const otpMessage = `Your Ladha verification code is: ${otp}. It expires in 10 minutes. - Ladha Deliveries`;
+  (async () => {
+    try { await smsService.sendSms(formatted, otpMessage); } catch (err) { console.error("[Own Phone OTP SMS Error]:", err); }
+  })();
+  return { message: "Verification code sent." };
+};
+
+/** Confirms the OTP and stamps `phoneConfirmedAt` so account details can be surfaced. */
+export const confirmOwnPhoneOtp = async (phone: string, otp: string) => {
+  const formatted = formatPhone(phone);
+  const customer = await prisma.customer.findUnique({ where: { phone: formatted } });
+  if (!customer || !customer.ownPhoneOtp || !customer.ownPhoneOtpExpires) {
+    throw new Error("No verification code has been sent for this number.");
+  }
+  if (customer.ownPhoneOtp !== otp) throw new Error("Invalid verification code. Please try again.");
+  if (new Date() > customer.ownPhoneOtpExpires) throw new Error("Verification code has expired. Please request a new one.");
+  await prisma.customer.update({
+    where: { id: customer.id },
+    data: { ownPhoneOtp: null, ownPhoneOtpExpires: null, phoneConfirmedAt: new Date() },
+  });
+  return { message: "Phone verified.", phoneConfirmedAt: new Date() };
 };
 
 export const verifyCustomerToken = async (

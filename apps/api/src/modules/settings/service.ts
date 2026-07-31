@@ -258,14 +258,14 @@ export const getSmsRecipients = async (hotelId?: string): Promise<string[]> => {
     return staff.map((s) => s.phone);
   }
 
-  // The legacy setting is only safe for the original single-tenant/default flow.
-  // Never route a tenant-scoped event to a process-wide fallback recipient.
   if (hotelId) {
-    const defaultHotel = await getDefaultHotel();
-    if (!defaultHotel || defaultHotel.id !== hotelId) return [];
+    const fallback = await prisma.staffUser.findFirst({
+      where: { hotelId },
+      orderBy: { createdAt: "asc" },
+      select: { phone: true },
+    });
+    if (fallback?.phone) return [fallback.phone];
   }
 
-  // Fallback to legacy single setting if no specific staff users are configured
-  const legacyPhone = await getStaffPhone();
-  return legacyPhone ? [legacyPhone] : [];
+  return [];
 };

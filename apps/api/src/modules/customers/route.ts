@@ -17,8 +17,8 @@ import {
   CustomerResetPinSchema,
   IdParamSchema,
 } from "../../../../../shared/schemas";
-import { getAllCustomers, getCustomerHistory } from "./service";
-import { getCustomerProfile, loginCustomer, registerCustomer, sendRegistrationOtp, verifyCustomerToken, generatePinResetCode, resetCustomerPin, updateCustomerProfile, verifyPhoneChangeOtp } from "./auth.service";
+import { getAllCustomers, getCustomerHistory, lookupCustomerByPhone } from "./service";
+import { getCustomerProfile, loginCustomer, registerCustomer, sendRegistrationOtp, generatePinResetCode, resetCustomerPin, updateCustomerProfile, verifyPhoneChangeOtp, sendRecipientVerificationOtp, confirmRecipientVerificationOtp, sendOwnPhoneOtp, confirmOwnPhoneOtp, verifyCustomerToken } from "./auth.service";
 import { verifyAdminToken } from "../auth/service";
 import { AUTH_LIMITER } from "../../lib/rate-limiter";
 
@@ -90,6 +90,27 @@ export const customersRoute = new Elysia({
     { params: IdParamSchema }
   )
 
+  // ─── Public: Look up a customer by phone (on-behalf ordering) ───────────────
+  .get(
+    "/lookup",
+    async ({ query, set, request }) => {
+      const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+      const { allowed, resetIn } = AUTH_LIMITER(`customer-lookup:${ip}`);
+      if (!allowed) {
+        set.status = 429;
+        set.headers["retry-after"] = String(Math.ceil(resetIn / 1000));
+        return { success: false, error: `Too many attempts. Try again in ${Math.ceil(resetIn / 1000)}s.` };
+      }
+      try {
+        return { success: true, data: await lookupCustomerByPhone(query.phone) };
+      } catch (err: any) {
+        set.status = 400;
+        return { success: false, error: err.message };
+      }
+    },
+    { query: t.Object({ phone: t.String({ minLength: 9, maxLength: 13 }) }) }
+  )
+
   // ─── Customer: Send registration OTP ────────────────────────────────────────
   .post(
     "/send-registration-otp",
@@ -112,7 +133,92 @@ export const customersRoute = new Elysia({
     { body: CustomerSendOtpSchema }
   )
 
-  // ─── Customer: Register (phone + OTP + PIN) ─────────────────────────────────
+  // ─── On-behalf recipient verification ───────────────────────────────────────
+  // Proves a phone number entered into the "order for someone else" flow belongs
+  // to someone who received the OTP — no order can be attributed to a number the
+  // owner never confirmed.
+  .post(
+    "/recipient-verify/send",
+    async ({ body, set, request }) => {
+      const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+      const { allowed, resetIn } = AUTH_LIMITER(`recipient-verify-send:${ip}`);
+      if (!allowed) {
+        set.status = 429;
+        set.headers["retry-after"] = String(Math.ceil(resetIn / 1000));
+        return { success: false, error: `Too many attempts. Try again in ${Math.ceil(resetIn / 1000)}s.` };
+      }
+      try {
+        return { success: true, data: await sendRecipientVerificationOtp(body.phone) };
+      } catch (err: any) {
+        set.status = 400;
+        return { success: false, error: err.message };
+      }
+    },
+    { body: t.Object({ phone: t.String({ minLength: 9, maxLength: 13 }) }) }
+  )
+  .post(
+    "/recipient-verify/confirm",
+    async ({ body, set, request }) => {
+      const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+      const { allowed, resetIn } = AUTH_LIMITER(`recipient-verify-confirm:${ip}`);
+      if (!allowed) {
+        set.status = 429;
+        set.headers["retry-after"] = String(Math.ceil(resetIn / 1000));
+        return { success: false, error: `Too many attempts. Try again in ${Math.ceil(resetIn / 1000)}s.` };
+      }
+      try {
+        return { success: true, data: await confirmRecipientVerificationOtp(body.phone, body.otp) };
+      } catch (err: any) {
+        set.status = 400;
+        return { success: false, error: err.message };
+      }
+    },
+    { body: t.Object({ phone: t.String({ minLength: 9, maxLength: 13 }), otp: t.String({ minLength: 4, maxLength: 4 }) }) }
+  )
+
+  // ─── Own phone verification ───────────────────────────────────────
+  // Delays surfacing account details until the orderer proves they hold
+  // the phone number. Prevents ghost histories on shared browsers.
+  .post(
+    "/phone-otp/send",
+    async ({ body, set, request }) => {
+      const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+      const { allowed, resetIn } = AUTH_LIMITER(`own-phone-otp-send:${ip}`);
+      if (!allowed) {
+        set.status = 429;
+        set.headers["retry-after"] = String(Math.ceil(resetIn / 1000));
+        return { success: false, error: `Too many attempts. Try again in ${Math.ceil(resetIn / 1000)}s.` };
+      }
+      try {
+        return { success: true, data: await sendOwnPhoneOtp(body.phone) };
+      } catch (err: any) {
+        set.status = 400;
+        return { success: false, error: err.message };
+      }
+    },
+    { body: t.Object({ phone: t.String({ minLength: 9, maxLength: 13 }) }) }
+  )
+  .post(
+    "/phone-otp/confirm",
+    async ({ body, set, request }) => {
+      const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+      const { allowed, resetIn } = AUTH_LIMITER(`own-phone-otp-confirm:${ip}`);
+      if (!allowed) {
+        set.status = 429;
+        set.headers["retry-after"] = String(Math.ceil(resetIn / 1000));
+        return { success: false, error: `Too many attempts. Try again in ${Math.ceil(resetIn / 1000)}s.` };
+      }
+      try {
+        return { success: true, data: await confirmOwnPhoneOtp(body.phone, body.otp) };
+      } catch (err: any) {
+        set.status = 400;
+        return { success: false, error: err.message };
+      }
+    },
+    { body: t.Object({ phone: t.String({ minLength: 9, maxLength: 13 }), otp: t.String({ minLength: 4, maxLength: 4 }) }) }
+  )
+
+  // ─── Customer: Register (phone + OTP + PIN) ─────────────────────────
   .post(
     "/register",
     async ({ body, jwt, set, request, headers }) => {
@@ -205,8 +311,8 @@ export const customersRoute = new Elysia({
       try {
         return { success: true, data: await updateCustomerProfile(customerId, { phone: body.newPhone }, body.pin) };
       } catch (err: any) {
-        set.status = 400;
-        return { success: false, error: err.message };
+        set.status = err.code === "PHONE_IN_USE" || err.code === "P2002" ? 409 : 400;
+        return { success: false, error: err.message || "Unable to start phone change" };
       }
     },
     { body: t.Object({ newPhone: t.String({ minLength: 9, maxLength: 13 }), pin: t.Optional(t.String({ minLength: 4, maxLength: 4 })) }) }
@@ -222,8 +328,8 @@ export const customersRoute = new Elysia({
       try {
         return { success: true, data: await verifyPhoneChangeOtp(customerId, body.otp) };
       } catch (err: any) {
-        set.status = 400;
-        return { success: false, error: err.message };
+        set.status = err.code === "PHONE_IN_USE" || err.code === "P2002" ? 409 : 400;
+        return { success: false, error: err.message || "Unable to verify phone change" };
       }
     },
     { body: t.Object({ otp: t.String({ minLength: 4, maxLength: 4 }) }) }
