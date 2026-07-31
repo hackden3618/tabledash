@@ -14,8 +14,8 @@ interface AdminBottomNavBarProps {
 const tabs: { key: AdminTab; label: string; icon: React.ElementType }[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { key: "menu", label: "Menu", icon: Utensils },
-  { key: "orders", label: "Orders", icon: ShoppingBag },
   { key: "finance", label: "Finance", icon: Wallet },
+  { key: "orders", label: "Orders", icon: ShoppingBag },
   { key: "settings", label: "Settings", icon: Settings },
   { key: "history", label: "History", icon: Calendar },
   { key: "messages", label: "Inbox", icon: Inbox },
