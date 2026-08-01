@@ -149,7 +149,7 @@ export const addStaffUser = async (data: StaffUserPayload, hotelId?: string) => 
   const formattedPhone = formatPhone(data.phone);
 
   const existing = await prisma.staffUser.findUnique({
-    where: { phone: formattedPhone },
+    where: { phone: formattedPhone, hotelId},
   });
   if (existing) {
     throw new Error("A staff member with this phone number already exists.");

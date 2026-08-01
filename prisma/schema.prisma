@@ -515,7 +515,7 @@ model Notification {
 model StaffUser {
   id             String   @id @default(uuid()) @db.Uuid
   name           String
-  phone          String   @unique
+  phone          String   
   receiveSms     Boolean  @default(true) @map("receive_sms")
   isDiscoverable Boolean  @default(false) @map("is_discoverable")
   hotelId        String   @map("hotel_id") @db.Uuid
@@ -525,5 +525,6 @@ model StaffUser {
   hotel     Hotel      @relation(fields: [hotelId], references: [id])
   adminUser AdminUser? @relation(fields: [adminUserId], references: [id], onDelete: SetNull)
 
+@@unique([phone, hotelId])
   @@map("staff_users")
 }
