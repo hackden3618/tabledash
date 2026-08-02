@@ -512,10 +512,6 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus, canc
         throw new Error("Order not found");
     }
     if (hotelId && existing.hotelId !== hotelId) throw new Error("Order does not belong to your hotel");
-    throw new Error(
-      `Cannot move order from "${existing.status}" to "${newStatus}". Allowed: ${(allowed || []).join(", ") || "(none)"}`
-    );
-  }
 
     const hotel = hotelId ? await prisma.hotel.findUnique({ where: { id: hotelId } }) : existing.hotelId ? await prisma.hotel.findUnique({ where: { id: existing.hotelId } }) : await getDefaultHotel();
     const hotelName = hotel?.name ?? "Ladha Deliveries";
