@@ -5,6 +5,9 @@ import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { Lock, ChevronLeft, Phone, KeyRound, CheckCircle2 } from "lucide-react";
 
+// TODO - when doing admin password, do a trim...
+// in fact, for all inputs, do a trim to prevent whitespace from causing inconsistent errors e.g in platform admin username input, we have an issue if there is a whitespace before or after the admin username, it reads as a different name
+
 const formatPhone = (raw: string): string => {
   const cleaned = raw.replace(/\D/g, "");
   if (cleaned.startsWith("0") && cleaned.length === 10) return `254${cleaned.slice(1)}`;

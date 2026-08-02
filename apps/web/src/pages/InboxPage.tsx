@@ -254,6 +254,8 @@ export const InboxPage: React.FC<{ token?: string; actorId?: string; onBack: () 
         if (result.success) { setNoticeTitle(""); setNoticeBody(""); void loadInbox(); }
         else setActionError(result.error || "Unable to publish notice");
     };
+     
+    // TODO - platform support should have a scrollable view with the input fixed at the bottom, immediately above the bottom navigation tab, and this applies to all chat inputs...
 
     const startPlatformSupport = async () => {
         if (!supportBody.trim() || startingSupport) return;

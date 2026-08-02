@@ -10,6 +10,9 @@ import { PageTransition } from "../../components/ui/PageTransition";
 import { Lock, CheckCircle2, Phone, Wallet, CreditCard, Zap, Users, UserRound, Info, ShieldCheck } from "lucide-react";
 import { SecureCodeInput } from "../../components/ui/SecureCodeInput";
 
+// TODO - the location data should be auto saved upon first entering since I saw that a user was complaining too much about re-entering the data everytime... I thought that was fixed...
+// also, the stall number should only be the main reference if in the market...
+
 const formatPhone = (raw: string): string => {
   const cleaned = raw.replace(/\D/g, "");
   if (cleaned.startsWith("0") && cleaned.length === 10) return `254${cleaned.slice(1)}`;
