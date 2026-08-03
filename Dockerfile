@@ -26,4 +26,4 @@ RUN bun install --frozen-lockfile --production
 RUN bunx prisma generate
 
 EXPOSE ${PORT:-3000}
-CMD ["sh", "-c", "bunx prisma migrate deploy && bun run apps/api/server.ts"]
+CMD ["sh", "-c", "bunx prisma migrate reset && bun run apps/api/server.ts"]
