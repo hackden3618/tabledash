@@ -53,7 +53,7 @@ const TypingDots: React.FC = () => <span className="inline-flex items-center gap
 
 const TypingBubble: React.FC = () => <div className="flex justify-start" aria-live="polite"><div className="rounded-2xl rounded-bl-md border border-[#E5E7EB] bg-white px-4 py-3 text-[#6B7280] shadow-sm"><TypingDots /></div></div>;
 
-export const InboxPage: React.FC<{ token?: string; actorId?: string; onBack: () => void; title?: string; mode?: "customer" | "hotel" | "global"; hotelId?: string }> = ({ token, actorId, onBack, title = "Inbox", mode = "customer", hotelId }) => {
+export const InboxPage: React.FC<{ token?: string; actorId?: string; onBack: () => void; title?: string; mode?: "customer" | "hotel" | "global"; hotelId?: string; initialConversationId?: string }> = ({ token, actorId, onBack, title = "Inbox", mode = "customer", hotelId, initialConversationId }) => {
     const [inbox, setInbox] = useState<InboxData | null>(null);
     const [selected, setSelected] = useState<Conversation | null>(null);
     const [messages, setMessages] = useState<Message[]>([]);
@@ -156,6 +156,19 @@ export const InboxPage: React.FC<{ token?: string; actorId?: string; onBack: () 
 
     useEffect(() => { void loadInbox(); }, [token]);
     useEffect(() => { setTyping(Boolean(selected?.id && typingByConversation[selected.id])); }, [selected?.id, typingByConversation]);
+
+    // Deep-link support: when a specific conversation id is provided in the URL
+    // (e.g. /inbox/:conversationId), open it as soon as the inbox has loaded.
+    const openedInitialRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (!initialConversationId || !inbox || openedInitialRef.current === initialConversationId) return;
+        const lists: Conversation[][] = [inbox.orderConversations, inbox.hotelNotices, inbox.platformNotices, inbox.talkToStaff, inbox.communityChannels];
+        const conversation = lists.flat().find((item) => item.id === initialConversationId);
+        if (conversation) {
+            openedInitialRef.current = initialConversationId;
+            void openConversation(conversation);
+        }
+    }, [initialConversationId, inbox, selected]);
 
     useEffect(() => {
         if (typeof document === "undefined") return;
