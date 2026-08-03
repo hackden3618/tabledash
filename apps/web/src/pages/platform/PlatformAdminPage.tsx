@@ -349,15 +349,14 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
             {/* Notification bell — fixed top-right, platform-scoped */}
             <button onClick={() => setPanelOpen(true)}
                 style={{
-                    position: "fixed", top: s(4), right: s(4), zIndex: 60,
+                    position: "fixed", top: s(4), right: "calc(16px + 44px)", zIndex: 60,
                     background: T.surface,
                     border: `1px solid ${T.border}`, cursor: "pointer",
                     width: "36px", height: "36px", display: "flex",
                     alignItems: "center", justifyContent: "center",
                     padding: 0, borderRadius: "10px",
-                    transition: "box-shadow 0.15s, opacity 0.2s",
+                    transition: "box-shadow 0.15s",
                     boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-                    opacity: sidebarOpen ? 0 : 1, pointerEvents: sidebarOpen ? "none" : "auto",
                 }}
                 aria-label="Notifications"
                 title="Notifications"
@@ -779,6 +778,9 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                     secondaryAction={{ label: "Cancel", onClick: () => setConfirm(null) }}
                 />
             )}
+
+            {/* Notification panel */}
+            <AdminNotificationPanel isOpen={panelOpen} onClose={() => setPanelOpen(false)} />
         </div>
     );
 };
