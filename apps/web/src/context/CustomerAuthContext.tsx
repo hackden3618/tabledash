@@ -22,6 +22,7 @@ interface CustomerAuthContextValue {
   register: (firstName: string, phone: string, pin: string, otp: string, lastName?: string, knownName?: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   refreshProfile: () => Promise<void>;
+  syncCustomer: (profile: CustomerProfileData) => void;
   updateProfile: (data: { firstName?: string; lastName?: string; phone?: string; knownName?: string | null }, pin?: string) => Promise<{ success: boolean; error?: string }>;
   changePhone: (newPhone: string, pin: string) => Promise<{ success: boolean; error?: string }>;
   verifyPhoneChange: (otp: string) => Promise<{ success: boolean; error?: string }>;
@@ -64,6 +65,10 @@ export const CustomerAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const refreshProfile = useCallback(async () => {
     await fetchProfile(token);
   }, [token, fetchProfile]);
+
+  const syncCustomer = useCallback((profile: CustomerProfileData) => {
+    setCustomer(profile);
+  }, []);
 
   const login = useCallback(async (phone: string, pin: string) => {
     const res = await apiPost<{ token: string; customer: CustomerProfileData }>(
@@ -158,7 +163,7 @@ export const CustomerAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
     <CustomerAuthContext.Provider
       value={{
         customer, token, isLoggedIn: Boolean(customer), isLoading,
-        login, register, sendRegistrationOtp, logout, refreshProfile,
+        login, register, sendRegistrationOtp, logout, refreshProfile, syncCustomer,
         updateProfile, changePhone, verifyPhoneChange, deleteAccount, forgotPin, resetPin,
       }}
     >

@@ -15,6 +15,7 @@ import { formatPhone } from "../../../../../shared/phone";
 import { calculateDashboardMetrics, normalizeOrderItems } from "./logic";
 import { applyOrderChargeTx, reverseUnpaidChargeTx } from "../finance/service";
 import { generateAccountId } from "../customers/account-id";
+import { getCustomerProfile } from "../customers/auth.service";
 
 export interface CreateOrderInputItem {
     productId: string;
@@ -353,6 +354,13 @@ export const placeOrder = async (input: CreateOrderInput) => {
     });
 
     const formattedOrders = result.orders.map(formatOrderResponse);
+
+    // Attach the updated customer profile (incl. recentOrders) so the client can
+    // sync its context from the order response without a second /customers/me call.
+    const customerProfile = await getCustomerProfile(result.orders[0]!.customerId);
+    for (const order of formattedOrders) {
+        (order as any).customerProfile = customerProfile;
+    }
 
     // Broadcast menu updates
     for (const prod of result.updatedProducts) {

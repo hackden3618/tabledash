@@ -80,7 +80,7 @@ type ViewState =
 
 export function AppContent() {
     const { toasts, dismissToast, setScope, clearScope, pushNotification } = useNotifications();
-    const { token: customerToken, customer } = useCustomerAuth();
+    const { token: customerToken, customer, syncCustomer } = useCustomerAuth();
     const { token: adminToken, user: adminUser, isLoggedIn: isAdminLoggedIn, hydrating: adminHydrating, login: adminLogin, logout: adminLogout } = useAdminAuth();
     const { token: platformToken } = usePlatformAdminAuth();
 
@@ -287,6 +287,7 @@ export function AppContent() {
                     onBackToCart={() => setCurrentView("customer_cart")}
                     onOrderPlaced={(order) => {
                         const primary = Array.isArray(order) ? order[0] : order;
+                        if (primary?.customerProfile && customer?.id === primary.customerProfile.id) syncCustomer(primary.customerProfile);
                         setPlacedOrder(primary);
                         setCurrentView("customer_confirmation");
                     }}

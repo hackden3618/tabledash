@@ -121,19 +121,7 @@ export const registerCustomer = async (
 
   return {
     token,
-    customer: {
-      id: customer.id,
-      accountId: customer.accountId,
-      firstName: customer.firstName,
-      lastName: customer.lastName,
-      phone: customer.phone,
-      knownName: customer.knownName,
-      stallNumber: customer.stallNumber,
-      marketSection: customer.marketSection,
-      locationDescription: customer.locationDescription,
-      hasPin: true,
-      isVerified: true,
-    },
+    customer: await getCustomerProfile(customer.id),
   };
 };
 
@@ -164,19 +152,7 @@ export const loginCustomer = async (
 
   return {
     token,
-    customer: {
-      id: customer.id,
-      accountId: customer.accountId,
-      firstName: customer.firstName,
-      lastName: customer.lastName,
-      phone: customer.phone,
-      knownName: customer.knownName,
-      stallNumber: customer.stallNumber,
-      marketSection: customer.marketSection,
-      locationDescription: customer.locationDescription,
-      hasPin: true,
-      isVerified: Boolean(customer.verifiedAt),
-    },
+    customer: await getCustomerProfile(customer.id),
   };
 };
 

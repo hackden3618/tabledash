@@ -609,7 +609,7 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
             {/* Talk to Staff overlay */}
             {talkToStaffOpen && (
                 <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
-                    <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl bg-[#FFF8F0] p-5 shadow-2xl max-h-[60vh] overflow-y-auto">
+                    <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl bg-[#FFF8F0] pt-5 px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] shadow-2xl max-h-[60vh] overflow-y-auto">
                         <div className="flex items-center justify-between mb-4">
                             <div>
                                 <p className="text-xs font-bold uppercase tracking-wider text-[#114B36]">Talk to Staff</p>
