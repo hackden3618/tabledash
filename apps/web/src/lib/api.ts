@@ -8,6 +8,15 @@
 export const API_BASE = import.meta.env.VITE_API_BASE ?? "/api/v1";
 const GUEST_ID_KEY = "tableDash_guest_id";
 
+const GUEST_STORAGE_KEYS = [
+  "tableDash_guest_id",
+  "ladha_last_order",
+  "ladha_guest_delivery",
+  "ladha_zone_id",
+  "ladha_recent_searches",
+  "ladha_cart",
+];
+
 /** Device-local identity for guest conversations; never treated as auth. */
 export function getGuestId(): string {
   if (typeof window === "undefined") return "";
@@ -15,6 +24,9 @@ export function getGuestId(): string {
   if (existing) return existing;
   const created = crypto.randomUUID();
   window.localStorage.setItem(GUEST_ID_KEY, created);
+  for (const key of GUEST_STORAGE_KEYS) {
+    if (key !== GUEST_ID_KEY) window.localStorage.removeItem(key);
+  }
   return created;
 }
 

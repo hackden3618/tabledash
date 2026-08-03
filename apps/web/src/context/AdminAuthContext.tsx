@@ -45,7 +45,7 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const expiryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const logout = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.clear();
     setToken("");
     setUser(null);
     setHotels([]);
