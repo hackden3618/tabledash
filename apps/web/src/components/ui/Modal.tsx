@@ -14,13 +14,15 @@ interface ModalAction {
 
 interface ModalProps {
   isOpen: boolean;
-  onClose: () => void;
+  onClose?: () => void;
   title: string;
   message?: string;
   children?: React.ReactNode;
   type?: ModalType;
   primaryAction?: ModalAction;
   secondaryAction?: ModalAction;
+  /** When false the modal cannot be dismissed (no close button, backdrop click is ignored). */
+  dismissible?: boolean;
 }
 
 const typeIcons: Record<ModalType, React.ReactNode> = {
@@ -48,6 +50,7 @@ export const Modal: React.FC<ModalProps> = ({
   type = "info",
   primaryAction,
   secondaryAction,
+  dismissible = true,
 }) => {
   return (
     <AnimatePresence>
@@ -58,7 +61,7 @@ export const Modal: React.FC<ModalProps> = ({
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
           className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/45 backdrop-blur-sm"
-          onClick={onClose}
+          onClick={dismissible && onClose ? onClose : undefined}
         >
           <motion.div
             initial={{ y: "100%", opacity: 0 }}
@@ -72,7 +75,7 @@ export const Modal: React.FC<ModalProps> = ({
               <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${typeIconBg[type]}`}>
                 {typeIcons[type]}
               </div>
-              {onClose && (
+              {onClose && dismissible && (
                 <button
                   onClick={onClose}
                   className="p-1 text-[#9CA3AF] hover:text-[#6B7280] transition-colors bg-none border-none cursor-pointer rounded-lg hover:bg-[#F3F4F6]"

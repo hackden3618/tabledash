@@ -1,5 +1,5 @@
 export interface MediaUploadOptions {
-  hotelId?: string;
+  hotelId: string;
   maxWidth?: number;
   maxHeight?: number;
   thumbnail?: boolean;

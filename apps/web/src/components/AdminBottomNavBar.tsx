@@ -1,10 +1,10 @@
 import React from "react";
 import { motion } from "framer-motion";
-import { LayoutDashboard, ShoppingBag, Utensils, Settings, Calendar, Inbox } from "lucide-react";
+import { LayoutDashboard, ShoppingBag, Utensils, Settings, Calendar, Inbox, Wallet, Building2, ChevronUp, Check } from "lucide-react";
 import { apiGet } from "../lib/api";
 import { useAdminAuth } from "../context/AdminAuthContext";
 
-export type AdminTab = "orders" | "dashboard" | "menu" | "settings" | "history" | "messages";
+export type AdminTab = "orders" | "dashboard" | "menu" | "settings" | "history" | "messages" | "finance";
 
 interface AdminBottomNavBarProps {
   activeTab: AdminTab;
@@ -14,6 +14,7 @@ interface AdminBottomNavBarProps {
 const tabs: { key: AdminTab; label: string; icon: React.ElementType }[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { key: "menu", label: "Menu", icon: Utensils },
+  { key: "finance", label: "Finance", icon: Wallet },
   { key: "orders", label: "Orders", icon: ShoppingBag },
   { key: "settings", label: "Settings", icon: Settings },
   { key: "history", label: "History", icon: Calendar },
@@ -24,8 +25,10 @@ export const AdminBottomNavBar: React.FC<AdminBottomNavBarProps> = ({
   activeTab,
   onSelectTab,
 }) => {
-  const { token, user } = useAdminAuth();
+  const { token, user, hotels, switchHotel } = useAdminAuth();
   const [messageCount, setMessageCount] = React.useState(0);
+  const [hotelMenuOpen, setHotelMenuOpen] = React.useState(false);
+  const [switchError, setSwitchError] = React.useState("");
   const refreshMessageCount = React.useCallback(async () => {
     if (!token) { setMessageCount(0); return; }
     const result = await apiGet<{ unreadCount: number }>("/messaging/unread-count", token);
@@ -43,8 +46,63 @@ export const AdminBottomNavBar: React.FC<AdminBottomNavBarProps> = ({
     window.addEventListener("tabledash:realtime", handleRealtime);
     return () => window.removeEventListener("tabledash:realtime", handleRealtime);
   }, [refreshMessageCount, user?.id]);
+
+  const currentHotel = hotels.find((h) => h.id === user?.hotelId);
+  const showHotelBar = hotels.length > 1;
+
+  const handleSwitchHotel = async (hotelId: string) => {
+    setHotelMenuOpen(false);
+    setSwitchError("");
+    try {
+      await switchHotel(hotelId);
+    } catch (err: any) {
+      setSwitchError(err?.message || "Unable to switch hotel");
+    }
+  };
+
   return (
-    <nav className="safe-area-bottom fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[1000px] bg-white/96 backdrop-blur-lg border-t border-[#E5E7EB] z-40 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+    <nav className="glass-nav safe-area-bottom fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[1000px] border-t z-40">
+      {showHotelBar && (
+        <div className="relative px-3 pt-1.5">
+          <button
+            onClick={() => setHotelMenuOpen((open) => !open)}
+            aria-expanded={hotelMenuOpen}
+            aria-label="Switch hotel"
+            className="w-full flex items-center justify-between gap-2 rounded-xl bg-[#EBF5F0] hover:bg-[#DCE8E2] border border-[#D1E3DA] px-3 py-2 text-left transition-colors cursor-pointer"
+          >
+            <span className="flex items-center gap-2 min-w-0">
+              <Building2 size={14} className="text-[#114B36] shrink-0" />
+              <span className="min-w-0">
+                <span className="block text-[0.55rem] uppercase tracking-wide font-bold text-[#6B7280] leading-none mb-0.5">Working at</span>
+                <span className="block text-xs font-bold text-[#114B36] truncate">{currentHotel?.name ?? "Select hotel"}</span>
+              </span>
+            </span>
+            <ChevronUp size={16} className={`text-[#114B36] shrink-0 transition-transform ${hotelMenuOpen ? "" : "rotate-180"}`} />
+          </button>
+          {hotelMenuOpen && (
+            <div className="absolute left-3 right-3 bottom-full mb-1 rounded-xl bg-white border border-[#E5E7EB] shadow-lg overflow-hidden">
+              <div className="px-3 pt-2.5 pb-1 text-[0.6rem] uppercase tracking-wide font-bold text-[#9CA3AF]">Switch hotel</div>
+              {hotels.map((hotel) => {
+                const isCurrent = hotel.id === user?.hotelId;
+                return (
+                  <button
+                    key={hotel.id}
+                    onClick={() => handleSwitchHotel(hotel.id)}
+                    disabled={isCurrent}
+                    className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 text-sm font-semibold text-left cursor-pointer ${isCurrent ? "text-[#059669] disabled:cursor-default" : "text-[#374151] hover:bg-[#F3F4F6]"}`}
+                  >
+                    <span className="truncate">{hotel.name}</span>
+                    {isCurrent && <Check size={16} className="shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {switchError && (
+            <div className="text-[0.6rem] text-[#DC2626] font-semibold px-1 pt-0.5">{switchError}</div>
+          )}
+        </div>
+      )}
       <div className="flex items-center justify-around py-1 px-2">
         {tabs.map(({ key, label, icon: Icon }) => {
           const isActive = activeTab === key;

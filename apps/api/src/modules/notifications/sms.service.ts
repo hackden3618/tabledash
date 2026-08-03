@@ -34,8 +34,11 @@ export class TextSmsDriver implements ISmsDriver {
     const formattedPhone = formatPhone(recipientPhone);
 
     if (!env.textSmsApiKey || !env.textSmsPartnerId) {
-      console.error("[SMS Dispatch Blocked] TextSMS credentials are not configured");
-      return false;
+      console.log(`\n========================================`);
+      console.log(`[DEV SMS — TextSMS credentials missing] To: ${formattedPhone}`);
+      console.log(`[Message]: ${message}`);
+      console.log(`========================================\n`);
+      return true;
     }
 
     try {
@@ -89,12 +92,10 @@ export class TextSmsDriver implements ISmsDriver {
  */
 export class ConsoleSmsDriver implements ISmsDriver {
   public async sendSms(recipientPhone: string, message: string): Promise<boolean> {
-    if (env.smsLogMessages) {
-      console.log(`\n========================================`);
-      console.log(`[DEV SMS SIMULATION] To: ${recipientPhone}`);
-      console.log(`[Message]: ${message}`);
-      console.log(`========================================\n`);
-    }
+    console.log(`\n========================================`);
+    console.log(`[DEV SMS SIMULATION] To: ${recipientPhone}`);
+    console.log(`[Message]: ${message}`);
+    console.log(`========================================\n`);
     return true;
   }
 }

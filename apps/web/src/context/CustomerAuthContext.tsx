@@ -18,10 +18,14 @@ interface CustomerAuthContextValue {
   isLoggedIn: boolean;
   isLoading: boolean;
   login: (phone: string, pin: string) => Promise<{ success: boolean; error?: string }>;
-  register: (firstName: string, phone: string, pin: string, lastName?: string) => Promise<{ success: boolean; error?: string }>;
+  sendRegistrationOtp: (phone: string) => Promise<{ success: boolean; error?: string }>;
+  register: (firstName: string, phone: string, pin: string, otp: string, lastName?: string, knownName?: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   refreshProfile: () => Promise<void>;
-  updateProfile: (data: { firstName?: string; lastName?: string; phone?: string; knownName?: string | null }) => Promise<{ success: boolean; error?: string }>;
+  syncCustomer: (profile: CustomerProfileData) => void;
+  updateProfile: (data: { firstName?: string; lastName?: string; phone?: string; knownName?: string | null }, pin?: string) => Promise<{ success: boolean; error?: string }>;
+  changePhone: (newPhone: string, pin: string) => Promise<{ success: boolean; error?: string }>;
+  verifyPhoneChange: (otp: string) => Promise<{ success: boolean; error?: string }>;
   deleteAccount: () => Promise<{ success: boolean; error?: string }>;
   forgotPin: (phone: string) => Promise<{ success: boolean; error?: string }>;
   resetPin: (phone: string, otp: string, newPin: string) => Promise<{ success: boolean; error?: string }>;
@@ -62,6 +66,10 @@ export const CustomerAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
     await fetchProfile(token);
   }, [token, fetchProfile]);
 
+  const syncCustomer = useCallback((profile: CustomerProfileData) => {
+    setCustomer(profile);
+  }, []);
+
   const login = useCallback(async (phone: string, pin: string) => {
     const res = await apiPost<{ token: string; customer: CustomerProfileData }>(
       "/customers/login",
@@ -77,10 +85,16 @@ export const CustomerAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
     return { success: false, error: res.error ?? "Login failed" };
   }, []);
 
-  const register = useCallback(async (firstName: string, phone: string, pin: string, lastName?: string) => {
+  const sendRegistrationOtp = useCallback(async (phone: string) => {
+    const res = await apiPost<{ message: string }>("/customers/send-registration-otp", { phone });
+    if (res.success) return { success: true };
+    return { success: false, error: res.error ?? "Failed to send verification code" };
+  }, []);
+
+  const register = useCallback(async (firstName: string, phone: string, pin: string, otp: string, lastName?: string, knownName?: string) => {
     const res = await apiPost<{ token: string; customer: CustomerProfileData }>(
       "/customers/register",
-      { firstName, lastName, phone, pin }
+      { firstName, lastName, knownName, phone, pin, otp }
     );
     if (res.success && res.data) {
       const { token: newToken, customer: profile } = res.data;
@@ -94,17 +108,31 @@ export const CustomerAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const logout = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem("ladha_cart");
+    window.dispatchEvent(new Event("ladha:customer-logout"));
     setToken("");
     setCustomer(null);
   }, []);
 
-  const updateProfile = useCallback(async (data: { firstName?: string; lastName?: string; phone?: string }) => {
-    const res = await apiPatch<CustomerProfileData>("/customers/me", data, token);
+  const updateProfile = useCallback(async (data: { firstName?: string; lastName?: string; phone?: string; knownName?: string | null }, pin?: string) => {
+    const res = await apiPatch<CustomerProfileData>("/customers/me", { ...data, pin }, token);
     if (res.success && res.data) {
       setCustomer(res.data);
       return { success: true };
     }
     return { success: false, error: res.error ?? "Failed to update profile" };
+  }, [token]);
+
+  const changePhone = useCallback(async (newPhone: string, pin: string) => {
+    const res = await apiPost<{ message: string }>("/customers/me/change-phone", { newPhone, pin }, token);
+    if (res.success) return { success: true };
+    return { success: false, error: res.error ?? "Failed to start phone change" };
+  }, [token]);
+
+  const verifyPhoneChange = useCallback(async (otp: string) => {
+    const res = await apiPost<{ message: string }>("/customers/me/change-phone/verify", { otp }, token);
+    if (res.success) return { success: true };
+    return { success: false, error: res.error ?? "Phone verification failed" };
   }, [token]);
 
   const deleteAccount = useCallback(async () => {
@@ -136,8 +164,8 @@ export const CustomerAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
     <CustomerAuthContext.Provider
       value={{
         customer, token, isLoggedIn: Boolean(customer), isLoading,
-        login, register, logout, refreshProfile,
-        updateProfile, deleteAccount, forgotPin, resetPin,
+        login, register, sendRegistrationOtp, logout, refreshProfile, syncCustomer,
+        updateProfile, changePhone, verifyPhoneChange, deleteAccount, forgotPin, resetPin,
       }}
     >
       {children}

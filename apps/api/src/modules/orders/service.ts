@@ -6,52 +6,68 @@
  */
 
 import { prisma } from "../../../../../infrastructure/database/prisma";
-import type { DashboardMetrics, OrderStatus, PaymentStatus } from "../../../../../shared/types";
-import type { ParticipantKind } from "../../../../../generated/prisma/client";
+import type { DashboardMetrics, OrderStatus } from "../../../../../shared/types";
 import { smsService } from "../notifications/sms.service";
 import { getDefaultHotel } from "../hotels/service";
 import { getSmsRecipients } from "../settings/service";
 import { wsHub } from "../websocket/hub";
 import { formatPhone } from "../../../../../shared/phone";
 import { calculateDashboardMetrics, normalizeOrderItems } from "./logic";
+import { applyOrderChargeTx, recordCancellationChargeTx } from "../finance/service";
+import { generateAccountId } from "../customers/account-id";
+import { getCustomerProfile } from "../customers/auth.service";
 
 export interface CreateOrderInputItem {
-  productId: string;
-  quantity: number;
+    productId: string;
+    quantity: number;
 }
 
 export interface CreateOrderInput {
-  firstName: string;
-  lastName?: string;
-  phone: string;
-  knownName?: string;
-  stallNumber?: string;
-  marketSection?: string;
-  locationDescription?: string;
-  items: CreateOrderInputItem[];
-  guestId?: string;
+    firstName: string;
+    lastName?: string;
+    phone: string;
+    knownName?: string;
+    stallNumber?: string;
+    marketSection?: string;
+    locationDescription?: string;
+    items: CreateOrderInputItem[];
+    guestId?: string;
+    paymentMethod?: "PAY_LATER" | "PAY_ON_DELIVERY";
+    /**
+     * True when the caller is placing the order for someone else. The order is
+     * still attributed to the customer resolved by `phone` (the recipient), but
+     * the caller's device guest identity must NOT be linked to the recipient's
+     * account — that would leak the recipient's order history into the caller's
+     * guest session.
+     */
+    orderingForOther?: boolean;
 }
 
 interface OrderItemDraft {
-  productId: string;
-  name: string;
-  quantity: number;
-  unitPrice: number;
-  subtotal: number;
+    productId: string;
+    name: string;
+    quantity: number;
+    unitPrice: number;
+    subtotal: number;
 }
 
+// On-behalf orders require the recipient's number to be OTP-verified, and the
+// verification must be recent (OTP itself lives 10 minutes) so a stale confirm
+// can't be reused. This is enforced here, server-side, not in the UI.
+const RECIPIENT_VERIFY_FRESH_MS = 15 * 60 * 1000;
+
 function buildCustomerDisplay(firstName: string, lastName?: string | null, knownName?: string | null): string {
-  const name = lastName ? `${firstName} ${lastName}` : firstName;
-  return knownName ? `${name} (${knownName})` : name;
+    const name = lastName ? `${firstName} ${lastName}` : firstName;
+    return knownName ? `${name} (${knownName})` : name;
 }
 
 /** Resolves every live identity that is allowed to receive a customer's order events. */
 async function getOrderOwnerIdentityKeys(customerId: string): Promise<string[]> {
-  const guestSessions = await prisma.guestIdentity.findMany({
-    where: { customerId },
-    select: { id: true },
-  });
-  return [`customer:${customerId}`, ...guestSessions.map((session) => `guest:${session.id}`)];
+    const guestSessions = await prisma.guestIdentity.findMany({
+        where: { customerId },
+        select: { id: true },
+    });
+    return [`customer:${customerId}`, ...guestSessions.map((session) => `guest:${session.id}`)];
 }
 
 /**
@@ -61,346 +77,394 @@ async function getOrderOwnerIdentityKeys(customerId: string): Promise<string[]> 
  * into separate orders within a single transaction. All orders share one customer.
  */
 export const placeOrder = async (input: CreateOrderInput) => {
-  const normalizedItems = new Map(normalizeOrderItems(input.items).map((item) => [item.productId, item.quantity]));
-  if (!input.firstName?.trim() || !input.phone?.trim()) {
-    throw new Error("Customer name and phone are required");
-  }
-
-  // Fetch requested products to calculate authoritative unit prices and totals
-  const productIds = [...normalizedItems.keys()];
-  const products = await prisma.product.findMany({
-    where: { id: { in: productIds } },
-    include: { hotel: true },
-  });
-
-  // Check each hotel in the cart is open
-  const hotelIdsInCart = products.map((p) => p.hotelId).filter((id): id is string => !!id);
-  const uniqueHotelIds = [...new Set(hotelIdsInCart)];
-  if (uniqueHotelIds.length > 0) {
-    const hotels = await prisma.hotel.findMany({
-      where: { id: { in: uniqueHotelIds } },
-    });
-    const closedHotel = hotels.find((h) => !h.isOpen);
-    if (closedHotel) {
-      throw new Error(`${closedHotel.name} is currently closed for new orders. Please check back later!`);
+    const normalizedItems = new Map(normalizeOrderItems(input.items).map((item) => [item.productId, item.quantity]));
+    if (!input.firstName?.trim() || !input.phone?.trim()) {
+        throw new Error("Customer name and phone are required");
     }
-  }
 
-  const productMap = new Map(products.map((p) => [p.id, p]));
-
-  // Validate all items are available and in stock
-  for (const [productId, quantity] of normalizedItems) {
-    const product = productMap.get(productId);
-    if (!product) {
-      throw new Error(`Product with ID ${productId} not found`);
-    }
-    if (!product.available) {
-      wsHub.broadcastOrderBounced({
-        type: "ORDER_BOUNCED",
-        payload: {
-          reason: "unavailable",
-          productName: product.name,
-          customerPhone: input.phone,
-          customerName: buildCustomerDisplay(input.firstName, input.lastName, input.knownName),
-          requestedQty: quantity,
-        },
-      }, product.hotelId || undefined);
-      throw new Error(`"${product.name}" is currently unavailable`);
-    }
-    if (product.stockQty < quantity) {
-      wsHub.broadcastOrderBounced({
-        type: "ORDER_BOUNCED",
-        payload: {
-          reason: "out_of_stock",
-          productName: product.name,
-          customerPhone: input.phone,
-          customerName: buildCustomerDisplay(input.firstName, input.lastName, input.knownName),
-          requestedQty: quantity,
-          availableQty: product.stockQty,
-        },
-      }, product.hotelId || undefined);
-      throw new Error(
-        `Only ${product.stockQty} portion(s) of "${product.name}" left in stock (you requested ${quantity})`
-      );
-    }
-  }
-
-  // Group items by hotelId
-  const hotelGroups = new Map<string, { hotelId: string; hotelName: string; items: typeof input.items; orderItemData: OrderItemDraft[]; totalAmount: number }>();
-  for (const [productId, quantity] of normalizedItems) {
-    const product = productMap.get(productId)!;
-    const hId = product.hotelId || "default";
-    if (!hotelGroups.has(hId)) {
-      hotelGroups.set(hId, { hotelId: hId, hotelName: product.hotel?.name || "Ladha Deliveries", items: [], orderItemData: [], totalAmount: 0 });
-    }
-    const group = hotelGroups.get(hId)!;
-    group.items.push({ productId, quantity });
-    const unitPrice = Number(product.price);
-    const subtotal = unitPrice * quantity;
-    group.totalAmount += subtotal;
-    group.orderItemData.push({
-      productId: product.id,
-      name: product.name,
-      quantity,
-      unitPrice,
-      subtotal,
-    });
-  }
-
-  const formattedPhone = formatPhone(input.phone);
-
-  // Execute database transaction — one Order per hotel group
-  const result = await prisma.$transaction(async (tx) => {
-    let customer = await tx.customer.findFirst({
-      where: { phone: formattedPhone },
+    // Fetch requested products to calculate authoritative unit prices and totals
+    const productIds = [...normalizedItems.keys()];
+    const products = await prisma.product.findMany({
+        where: { id: { in: productIds } },
+        include: { hotel: true },
     });
 
-    if (!customer) {
-      customer = await tx.customer.create({
-        data: {
-          firstName: input.firstName,
-          lastName: input.lastName,
-          phone: formattedPhone,
-          knownName: input.knownName,
-          stallNumber: input.stallNumber,
-          marketSection: input.marketSection,
-          locationDescription: input.locationDescription,
-        },
-      });
-    } else {
-      customer = await tx.customer.update({
-        where: { id: customer.id },
-        data: {
-          firstName: input.firstName,
-          lastName: input.lastName ?? customer.lastName,
-          knownName: input.knownName ?? customer.knownName,
-          stallNumber: input.stallNumber ?? customer.stallNumber,
-          marketSection: input.marketSection ?? customer.marketSection,
-          locationDescription: input.locationDescription ?? customer.locationDescription,
-        },
-      });
-    }
-
-    if (input.guestId) {
-      await tx.guestIdentity.upsert({
-        where: { id: input.guestId },
-        create: { id: input.guestId, customerId: customer.id },
-        update: { customerId: customer.id },
-      });
-    }
-
-    // Decrement stock once per product (deduplicated across groups)
-    const updatedProducts: any[] = [];
-    const seenProductIds = new Set<string>();
-    for (const [, group] of hotelGroups) {
-      for (const item of group.orderItemData) {
-        if (seenProductIds.has(item.productId)) continue;
-        seenProductIds.add(item.productId);
-        const reserved = await tx.product.updateMany({
-          where: { id: item.productId, available: true, stockQty: { gte: item.quantity } },
-          data: { stockQty: { decrement: item.quantity } },
+    // Check each hotel in the cart is open
+    const hotelIdsInCart = products.map((p) => p.hotelId).filter((id): id is string => !!id);
+    const uniqueHotelIds = [...new Set(hotelIdsInCart)];
+    if (uniqueHotelIds.length > 0) {
+        const hotels = await prisma.hotel.findMany({
+            where: { id: { in: uniqueHotelIds } },
         });
-        if (reserved.count !== 1) {
-          throw new Error("One or more items became unavailable. Please review your cart and try again.");
+        const closedHotel = hotels.find((h) => !h.isOpen);
+        if (closedHotel) {
+            throw new Error(`${closedHotel.name} is currently closed for new orders. Please check back later!`);
         }
-        const updated = await tx.product.findUniqueOrThrow({ where: { id: item.productId } });
-        if (updated.stockQty <= 0) {
-          const markedUnavailable = await tx.product.update({
-            where: { id: item.productId },
-            data: { available: false, stockQty: 0, outOfStockSince: updated.outOfStockSince ?? new Date() },
-          });
-          updatedProducts.push(markedUnavailable);
+    }
+
+    const productMap = new Map(products.map((p) => [p.id, p]));
+
+    // Validate all items are available and in stock
+    for (const [productId, quantity] of normalizedItems) {
+        const product = productMap.get(productId);
+        if (!product) {
+            throw new Error(`Product with ID ${productId} not found`);
+        }
+        if (!product.available) {
+            wsHub.broadcastOrderBounced({
+                type: "ORDER_BOUNCED",
+                payload: {
+                    reason: "unavailable",
+                    productName: product.name,
+                    customerPhone: input.phone,
+                    customerName: buildCustomerDisplay(input.firstName, input.lastName, input.knownName),
+                    requestedQty: quantity,
+                },
+            }, product.hotelId || undefined);
+            throw new Error(`"${product.name}" is currently unavailable`);
+        }
+        if (product.stockQty < quantity) {
+            wsHub.broadcastOrderBounced({
+                type: "ORDER_BOUNCED",
+                payload: {
+                    reason: "out_of_stock",
+                    productName: product.name,
+                    customerPhone: input.phone,
+                    customerName: buildCustomerDisplay(input.firstName, input.lastName, input.knownName),
+                    requestedQty: quantity,
+                    availableQty: product.stockQty,
+                },
+            }, product.hotelId || undefined);
+            throw new Error(
+                `Only ${product.stockQty} portion(s) of "${product.name}" left in stock (you requested ${quantity})`
+            );
+        }
+    }
+
+    // Group items by hotelId
+    const hotelGroups = new Map<string, { hotelId: string; hotelName: string; items: typeof input.items; orderItemData: OrderItemDraft[]; totalAmount: number }>();
+    for (const [productId, quantity] of normalizedItems) {
+        const product = productMap.get(productId)!;
+        const hId = product.hotelId;
+        if (!hotelGroups.has(hId)) {
+            hotelGroups.set(hId, { hotelId: hId, hotelName: product.hotel?.name || "Ladha Deliveries", items: [], orderItemData: [], totalAmount: 0 });
+        }
+        const group = hotelGroups.get(hId)!;
+        group.items.push({ productId, quantity });
+        const unitPrice = Number(product.price);
+        const subtotal = unitPrice * quantity;
+        group.totalAmount += subtotal;
+        group.orderItemData.push({
+            productId: product.id,
+            name: product.name,
+            quantity,
+            unitPrice,
+            subtotal,
+        });
+    }
+
+    const formattedPhone = formatPhone(input.phone);
+
+    // Execute database transaction — one Order per hotel group
+    const result = await prisma.$transaction(async (tx) => {
+        let customer = await tx.customer.findFirst({
+            where: { phone: formattedPhone },
+        });
+
+        if (!customer) {
+            const accountId = await generateAccountId();
+            customer = await tx.customer.create({
+                data: {
+                    accountId,
+                    firstName: input.firstName,
+                    lastName: input.lastName,
+                    phone: formattedPhone,
+                    knownName: input.knownName,
+                    stallNumber: input.stallNumber,
+                    marketSection: input.marketSection,
+                    locationDescription: input.locationDescription,
+                },
+            });
         } else {
-          updatedProducts.push(updated);
+            customer = await tx.customer.update({
+                where: { id: customer.id },
+                data: {
+                    firstName: input.firstName,
+                    lastName: input.lastName ?? customer.lastName,
+                    knownName: input.knownName ?? customer.knownName,
+                    // `||` (not `??`) so a blank form field can never silently
+                    // wipe a previously-saved value — location details persist
+                    // across orders unless a real value replaces them.
+                    stallNumber: input.stallNumber || customer.stallNumber,
+                    marketSection: input.marketSection || customer.marketSection,
+                    locationDescription: input.locationDescription || customer.locationDescription,
+                },
+            });
         }
-      }
-    }
 
-    // Create one Order per hotel group
-    const orders: any[] = [];
-    const outboxIds: string[] = [];
-    for (const [, group] of hotelGroups) {
-      const order = await tx.order.create({
-        data: {
-          customerId: customer.id,
-          status: "NEW",
-          totalAmount: group.totalAmount,
-          stallNumber: input.stallNumber,
-          marketSection: input.marketSection,
-          locationDescription: input.locationDescription,
-          knownName: input.knownName,
-          hotelId: group.hotelId === "default" ? undefined : group.hotelId,
-          orderItems: {
-            create: group.orderItemData.map((item) => ({
-              productId: item.productId,
-              name: item.name,
-              quantity: item.quantity,
-              unitPrice: item.unitPrice,
-              subtotal: item.subtotal,
-            })),
-          },
-        },
-        include: {
-          customer: true,
-          orderItems: true,
-        },
-      });
+        // Pay Later is a deliberate, upfront credit arrangement — verified accounts
+        // only. Enforced once, server-side, at order-creation time. This says nothing
+        // about Payment-on-Delivery settlement speed, which is operational lag.
+        if (input.paymentMethod === "PAY_LATER" && !customer.verifiedAt) {
+            throw new Error("Pay Later requires a verified account (PIN + OTP verification). Please verify your account first.");
+        }
 
-      // Create an order conversation so customer and staff can chat
-      const hotelStaff = await tx.adminUser.findMany({
-        where: { hotelId: group.hotelId === "default" ? undefined : group.hotelId, role: { in: ["HOTEL_ADMIN", "HOTEL_STAFF"] } },
-        select: { id: true },
-      });
-      await tx.conversation.create({
-        data: {
-          type: "ORDER",
-          orderId: order.id,
-          hotelId: group.hotelId === "default" ? undefined : group.hotelId,
-          participants: {
-            create: [
-              { kind: "CUSTOMER" as ParticipantKind, customerId: customer.id, canReply: true },
-              ...hotelStaff.map((admin) => ({ kind: "HOTEL_STAFF" as ParticipantKind, adminUserId: admin.id, canReply: true })),
-            ],
-          },
-        },
-      });
+        // On-behalf orders must not be attributed to a number whose owner never
+        // confirmed it. A valid, recent OTP verification proves the recipient (or
+        // the orderer, with the recipient's code) was involved.
+        if (input.orderingForOther) {
+            const verifiedFresh =
+                customer.recipientVerifiedAt &&
+                Date.now() - new Date(customer.recipientVerifiedAt).getTime() <= RECIPIENT_VERIFY_FRESH_MS;
+            if (!verifiedFresh) {
+                throw new Error("The recipient's phone number must be verified before placing this order. Please verify the recipient's number.");
+            }
+        }
 
-      const itemsSummary = group.orderItemData.map((it) => `${it.quantity}x ${it.name}`).join(", ");
-      const outbox = await tx.eventOutbox.create({
-        data: {
-          eventName: "order_created",
-          payload: JSON.stringify({
-            orderId: order.id,
-            orderNumber: order.orderNumber,
-            customerName: buildCustomerDisplay(customer.firstName, customer.lastName, customer.knownName),
-            firstName: customer.firstName,
-            lastName: customer.lastName,
-            knownName: customer.knownName,
-            customerPhone: formattedPhone,
-            totalAmount: group.totalAmount,
-            itemsSummary,
-            stallNumber: input.stallNumber,
-            marketSection: input.marketSection,
-            locationDescription: input.locationDescription,
-            hotelId: group.hotelId === "default" ? undefined : group.hotelId,
-            hotelName: group.hotelName,
-          }),
-          status: "initialized",
-        },
-      });
+        // On-behalf orders never link the caller's guest identity to the recipient
+        // (the customer resolved by phone). The recipient keeps their own account;
+        // the caller keeps their own device identity.
+        if (input.guestId && !input.orderingForOther) {
+            await tx.guestIdentity.upsert({
+                where: { id: input.guestId },
+                create: { id: input.guestId, customerId: customer.id },
+                update: { customerId: customer.id },
+            });
+        }
 
-      orders.push(order);
-      outboxIds.push(outbox.id);
-    }
+        // Decrement stock once per product (deduplicated across groups)
+        const updatedProducts: any[] = [];
+        const seenProductIds = new Set<string>();
+        for (const [, group] of hotelGroups) {
+            for (const item of group.orderItemData) {
+                if (seenProductIds.has(item.productId)) continue;
+                seenProductIds.add(item.productId);
+                const reserved = await tx.product.updateMany({
+                    where: { id: item.productId, available: true, stockQty: { gte: item.quantity } },
+                    data: { stockQty: { decrement: item.quantity } },
+                });
+                if (reserved.count !== 1) {
+                    throw new Error("One or more items became unavailable. Please review your cart and try again.");
+                }
+                const updated = await tx.product.findUniqueOrThrow({ where: { id: item.productId } });
+                if (updated.stockQty <= 0) {
+                    const markedUnavailable = await tx.product.update({
+                        where: { id: item.productId },
+                        data: { available: false, stockQty: 0, outOfStockSince: updated.outOfStockSince ?? new Date() },
+                    });
+                    updatedProducts.push(markedUnavailable);
+                } else {
+                    updatedProducts.push(updated);
+                }
+            }
+        }
 
-    return { orders, updatedProducts, outboxIds };
-  });
+        // Create one Order per hotel group
+        const orders: any[] = [];
+        const outboxIds: string[] = [];
+        for (const [, group] of hotelGroups) {
+            // paymentStatus/amountPaid are intentionally left at their DB defaults
+            // (UNPAID/0) here. They have no direct writer; they are only ever updated
+            // as a side-effect of a SalesRecord write in the same transaction.
+            const order = await tx.order.create({
+                data: {
+                    customerId: customer.id,
+                    status: "NEW",
+                    totalAmount: group.totalAmount,
+                    stallNumber: input.stallNumber,
+                    marketSection: input.marketSection,
+                    locationDescription: input.locationDescription,
+                    knownName: input.knownName,
+                    hotelId: group.hotelId,
+                    orderItems: {
+                        create: group.orderItemData.map((item) => ({
+                            productId: item.productId,
+                            name: item.name,
+                            quantity: item.quantity,
+                            unitPrice: item.unitPrice,
+                            subtotal: item.subtotal,
+                        })),
+                    },
+                },
+                include: {
+                    customer: true,
+                    orderItems: true,
+                },
+            });
 
-  const formattedOrders = result.orders.map(formatOrderResponse);
+            // Order conversations are NOT created here — most orders never need a
+            // thread. The messaging module creates one lazily on the first message
+            // from either the customer or the kitchen, so an inbox stays quiet unless
+            // someone actually has something to say.
 
-  // Broadcast menu updates
-  for (const prod of result.updatedProducts) {
-    wsHub.broadcastMenuUpdate({
-      type: "MENU_AVAILABILITY_UPDATED",
-      payload: {
-        ...prod,
-        price: Number(prod.price),
-      },
-    }, prod.hotelId ?? undefined);
-  }
+            const itemsSummary = group.orderItemData.map((it) => `${it.quantity}x ${it.name}`).join(", ");
+            const outbox = await tx.eventOutbox.create({
+                data: {
+                    eventName: "order_created",
+                    payload: JSON.stringify({
+                        orderId: order.id,
+                        orderNumber: order.orderNumber,
+                        customerName: buildCustomerDisplay(customer.firstName, customer.lastName, customer.knownName),
+                        firstName: customer.firstName,
+                        lastName: customer.lastName,
+                        knownName: customer.knownName,
+                        customerPhone: formattedPhone,
+                        totalAmount: group.totalAmount,
+                        itemsSummary,
+                        stallNumber: input.stallNumber,
+                        marketSection: input.marketSection,
+                        locationDescription: input.locationDescription,
+                        hotelId: group.hotelId,
+                        hotelName: group.hotelName,
+                    }),
+                    status: "initialized",
+                },
+            });
 
-  // Broadcast each order to admins
-  for (let i = 0; i < result.orders.length; i++) {
-    const order = result.orders[i]!;
-    const formattedOrder = formattedOrders[i]!;
-    const group = Array.from(hotelGroups.values())[i]!;
+            // Write the ORDER_CHARGE sales record and increment CustomerAccount in the
+            // same transaction. The payment is recorded separately, by staff, when it
+            // is actually collected — the ledger reflects reality, not the checkout
+            // intent. (A cash-on-delivery handover is simply step 2 done immediately.)
+            if (group.hotelId) {
+                const charge = await applyOrderChargeTx(tx, group.hotelId, customer.id, order.id, group.totalAmount);
 
-    wsHub.broadcastToHotelAdmins(group.hotelId === "default" ? undefined : group.hotelId, {
-      type: "ORDER_CREATED",
-      payload: formattedOrder,
+                await tx.eventOutbox.create({
+                    data: {
+                        eventName: "customer_account_credited",
+                        hotelId: group.hotelId,
+                        payload: JSON.stringify({
+                            customerId: customer.id,
+                            orderId: order.id,
+                            recordId: charge.record.id,
+                            amount: group.totalAmount,
+                            type: "ORDER_CHARGE",
+                            balance: charge.balance,
+                            hotelId: group.hotelId,
+                        }),
+                        status: "initialized",
+                    },
+                });
+            }
+
+            orders.push(order);
+            outboxIds.push(outbox.id);
+        }
+
+        return { orders, updatedProducts, outboxIds };
     });
 
-    const staffPhones = await getSmsRecipients(group.hotelId);
-    if (staffPhones.length > 0) {
-      const itemsSummary = formattedOrder.orderItems?.map((it: any) => `${it.quantity}x ${it.name}`).join(", ") || "";
-      const stall = input.stallNumber || "N/A";
-      const desc = input.locationDescription || "N/A";
-      const displayName = buildCustomerDisplay(input.firstName, input.lastName, input.knownName);
-      const msg = `[${group.hotelName}] NEW ORDER #${formattedOrder.orderNumber} from ${displayName} (${input.phone}). Total: KSh ${formattedOrder.totalAmount}. Stall: ${stall} — ${desc}. Items: ${itemsSummary}`;
+    const formattedOrders = result.orders.map(formatOrderResponse);
 
-      Promise.all(
-        staffPhones.map((phone) =>
-          smsService.sendSms(phone, msg).catch(() => false)
-        )
-      ).then((results) => {
-        const allSent = results.every((r) => r !== false);
-        if (allSent && result.outboxIds[i]) {
-          prisma.eventOutbox.update({
-            where: { id: result.outboxIds[i]! },
-            data: { status: "done", completedAt: new Date() },
-          }).catch(() => {});
-        }
-      }).catch(() => {});
-    } else if (result.outboxIds[i]) {
-      prisma.eventOutbox.update({
-        where: { id: result.outboxIds[i]! },
-        data: { status: "done", completedAt: new Date() },
-      }).catch(() => {});
+    // Attach the updated customer profile (incl. recentOrders) so the client can
+    // sync its context from the order response without a second /customers/me call.
+    const customerProfile = await getCustomerProfile(result.orders[0]!.customerId);
+    for (const order of formattedOrders) {
+        (order as any).customerProfile = customerProfile;
     }
-  }
 
-  // Return first order for backward compatibility with single-order consumers.
-  // Multi-order responses will be surfaced via the checkout concept in a future phase.
-  return formattedOrders.length === 1 ? formattedOrders[0]! : formattedOrders;
+    // Broadcast menu updates
+    for (const prod of result.updatedProducts) {
+        wsHub.broadcastMenuUpdate({
+            type: "MENU_AVAILABILITY_UPDATED",
+            payload: {
+                ...prod,
+                price: Number(prod.price),
+            },
+        }, prod.hotelId ?? undefined);
+    }
+
+    // Broadcast each order to admins
+    for (let i = 0; i < result.orders.length; i++) {
+        const order = result.orders[i]!;
+        const formattedOrder = formattedOrders[i]!;
+        const group = Array.from(hotelGroups.values())[i]!;
+
+        wsHub.broadcastToHotelAdmins(group.hotelId, {
+            type: "ORDER_CREATED",
+            payload: formattedOrder,
+        });
+
+        const staffPhones = await getSmsRecipients(group.hotelId);
+        if (staffPhones.length > 0) {
+            const itemsSummary = formattedOrder.orderItems?.map((it: any) => `${it.quantity}x ${it.name}`).join(", ") || "";
+            const stall = input.stallNumber || "N/A";
+            const desc = input.locationDescription || "N/A";
+            const displayName = buildCustomerDisplay(input.firstName, input.lastName, input.knownName);
+            const msg = `[${group.hotelName}] NEW ORDER #${formattedOrder.orderNumber} from ${displayName} (${input.phone}). Total: KSh ${formattedOrder.totalAmount}. Stall: ${stall} — ${desc}. Items: ${itemsSummary}`;
+
+            Promise.all(
+                staffPhones.map((phone) =>
+                    smsService.sendSms(phone, msg).catch(() => false)
+                )
+            ).then((results) => {
+                const allSent = results.every((r) => r !== false);
+                if (allSent && result.outboxIds[i]) {
+                    prisma.eventOutbox.update({
+                        where: { id: result.outboxIds[i]! },
+                        data: { status: "done", completedAt: new Date() },
+                    }).catch(() => { });
+                }
+            }).catch(() => { });
+        } else if (result.outboxIds[i]) {
+            prisma.eventOutbox.update({
+                where: { id: result.outboxIds[i]! },
+                data: { status: "done", completedAt: new Date() },
+            }).catch(() => { });
+        }
+    }
+
+    // Return first order for backward compatibility with single-order consumers.
+    // Multi-order responses will be surfaced via the checkout concept in a future phase.
+    return formattedOrders.length === 1 ? formattedOrders[0]! : formattedOrders;
 };
 
 /**
  * Retrieves all orders for a given hotel with optional status filter.
  */
 export const getOrders = async (statusFilter?: OrderStatus, hotelId?: string) => {
-  const where: any = {};
-  if (statusFilter) where.status = statusFilter;
-  if (hotelId) where.hotelId = hotelId;
+    const where: any = {};
+    if (statusFilter) where.status = statusFilter;
+    if (hotelId) where.hotelId = hotelId;
 
-  const orders = await prisma.order.findMany({
-    where,
-    include: {
-      customer: true,
-      orderItems: true,
-    },
-    orderBy: { orderedAt: "desc" },
-  });
+    const orders = await prisma.order.findMany({
+        where,
+        include: {
+            customer: true,
+            orderItems: true,
+        },
+        orderBy: { orderedAt: "desc" },
+    });
 
-  return orders.map(formatOrderResponse);
+    return orders.map(formatOrderResponse);
 };
 
 /**
  * Retrieves a single order by ID.
  */
 export const getOrderById = async (id: string, hotelId?: string) => {
-  const order = await prisma.order.findFirst({
-    where: { id, ...(hotelId ? { hotelId } : {}) },
-    include: {
-      customer: true,
-      orderItems: true,
-    },
-  });
+    const order = await prisma.order.findFirst({
+        where: { id, ...(hotelId ? { hotelId } : {}) },
+        include: {
+            customer: true,
+            orderItems: true,
+        },
+    });
 
-  if (!order) {
-    throw new Error("Order not found");
-  }
+    if (!order) {
+        throw new Error("Order not found");
+    }
 
-  return formatOrderResponse(order);
+    return formatOrderResponse(order);
 };
 
 /** Customer/guest tracking must be scoped to the order owner, never only to a UUID. */
 export const getOrderForCustomer = async (id: string, customerId: string) => {
-  const order = await prisma.order.findFirst({
-    where: { id, customerId },
-    include: { customer: true, orderItems: true },
-  });
-  if (!order) throw new Error("Order not found");
-  return formatOrderResponse(order);
+    const order = await prisma.order.findFirst({
+        where: { id, customerId },
+        include: { customer: true, orderItems: true },
+    });
+    if (!order) throw new Error("Order not found");
+    return formatOrderResponse(order);
 };
 
 /**
@@ -412,13 +476,13 @@ export const getOrderForCustomer = async (id: string, customerId: string) => {
  * DELIVERED is also terminal.
  */
 const ALLOWED_TRANSITIONS: Record<string, ReadonlyArray<string>> = {
-  NEW:                ["ACCEPTED", "PREPARING", "CANCELLED"],
-  ACCEPTED:           ["PREPARING", "READY_FOR_DELIVERY", "CANCELLED"],
-  PREPARING:          ["READY_FOR_DELIVERY", "OUT_FOR_DELIVERY", "CANCELLED"],
-  READY_FOR_DELIVERY: ["OUT_FOR_DELIVERY", "CANCELLED"],
-  OUT_FOR_DELIVERY:   ["DELIVERED", "CANCELLED"],
-  DELIVERED:          [],
-  CANCELLED:          [],
+    NEW: ["ACCEPTED", "PREPARING", "CANCELLED"],
+    ACCEPTED: ["PREPARING", "READY_FOR_DELIVERY", "CANCELLED"],
+    PREPARING: ["READY_FOR_DELIVERY", "OUT_FOR_DELIVERY", "CANCELLED"],
+    READY_FOR_DELIVERY: ["OUT_FOR_DELIVERY", "CANCELLED"],
+    OUT_FOR_DELIVERY: ["DELIVERED", "CANCELLED"],
+    DELIVERED: [],
+    CANCELLED: [],
 };
 
 /**
@@ -427,20 +491,20 @@ const ALLOWED_TRANSITIONS: Record<string, ReadonlyArray<string>> = {
  * (lastRestockedAt / outOfStockSince), since cancellation is not a real restock.
  */
 async function restoreStockFromCancellation(tx: any, orderItems: any[]) {
-  for (const item of orderItems) {
-    const product = await tx.product.findUnique({ where: { id: item.productId } });
-    const newStockQty = product.stockQty + item.quantity;
-    const wasOutOfStock = product.stockQty <= 0;
+    for (const item of orderItems) {
+        const product = await tx.product.findUnique({ where: { id: item.productId } });
+        const newStockQty = product.stockQty + item.quantity;
+        const wasOutOfStock = product.stockQty <= 0;
 
-    await tx.product.update({
-      where: { id: item.productId },
-      data: {
-        stockQty: newStockQty,
-        available: wasOutOfStock && newStockQty > 0 ? true : product.available,
-        outOfStockSince: wasOutOfStock && newStockQty > 0 ? null : product.outOfStockSince,
-      },
-    });
-  }
+        await tx.product.update({
+            where: { id: item.productId },
+            data: {
+                stockQty: newStockQty,
+                available: wasOutOfStock && newStockQty > 0 ? true : product.available,
+                outOfStockSince: wasOutOfStock && newStockQty > 0 ? null : product.outOfStockSince,
+            },
+        });
+    }
 }
 
 /**
@@ -451,188 +515,206 @@ async function restoreStockFromCancellation(tx: any, orderItems: any[]) {
  * On CANCELLED, atomically restores stock quantities via restoreStockFromCancellation.
  */
 export const updateOrderStatus = async (id: string, newStatus: OrderStatus, cancelReason?: string, hotelId?: string) => {
-  const existing = await prisma.order.findFirst({
-    where: { id, ...(hotelId ? { hotelId } : {}) },
-    include: { orderItems: true },
-  });
-  if (!existing) {
-    throw new Error("Order not found");
-  }
-  if (hotelId && existing.hotelId !== hotelId) throw new Error("Order does not belong to your hotel");
-
-  const hotel = hotelId ? await prisma.hotel.findUnique({ where: { id: hotelId } }) : existing.hotelId ? await prisma.hotel.findUnique({ where: { id: existing.hotelId } }) : await getDefaultHotel();
-  const hotelName = hotel?.name ?? "Ladha Deliveries";
-
-  const allowed = ALLOWED_TRANSITIONS[existing.status];
-  if (!allowed || !allowed.includes(newStatus)) {
-    if (existing.status === "DELIVERED" || existing.status === "CANCELLED") {
-      throw new Error(`Order is already "${existing.status}" and cannot be changed further.`);
+    const existing = await prisma.order.findFirst({
+        where: { id, ...(hotelId ? { hotelId } : {}) },
+        include: { orderItems: true },
+    });
+    if (!existing) {
+        throw new Error("Order not found");
     }
-    throw new Error(
-      `Cannot move order from "${existing.status}" to "${newStatus}". Allowed: ${(allowed || []).join(", ") || "(none)"}`
-    );
-  }
+    if (hotelId && existing.hotelId !== hotelId) throw new Error("Order does not belong to your hotel");
 
-  const updated = await prisma.$transaction(async (tx) => {
-    const updateData: any = {
-      status: newStatus,
-      completedAt: newStatus === "DELIVERED" ? new Date() : existing.completedAt,
-      cancelReason: newStatus === "CANCELLED" ? (cancelReason || "Staff unavailable to deliver at this time") : existing.cancelReason,
-    };
+    const hotel = hotelId ? await prisma.hotel.findUnique({ where: { id: hotelId } }) : existing.hotelId ? await prisma.hotel.findUnique({ where: { id: existing.hotelId } }) : await getDefaultHotel();
+    const hotelName = hotel?.name ?? "Ladha Deliveries";
+
+    const allowed = ALLOWED_TRANSITIONS[existing.status];
+    if (!allowed || !allowed.includes(newStatus)) {
+        if (existing.status === "DELIVERED" || existing.status === "CANCELLED") {
+            throw new Error(`Order is already "${existing.status}" and cannot be changed further.`);
+        }
+        throw new Error(
+            `Cannot move order from "${existing.status}" to "${newStatus}". Allowed: ${(allowed || []).join(", ") || "(none)"}`
+        );
+    }
+
+    // Utensil confirmations must never gate order completion: utensils are
+    // returned *after* delivery, so a DELIVERED-side check would deadlock every
+    // order that went out on reusable plates. The return is tracked via the
+    // Pending Collection worklist instead. The one guard that belongs here is
+    // that the dispatch-time question was actually answered (defense-in-depth
+    // for direct API calls — the frontend dispatch modal already records this
+    // before transitioning, so this only fires when the API is called directly).
+    if (newStatus === "OUT_FOR_DELIVERY" && existing.utensilsRequired === null) {
+        throw new Error("Confirm whether utensils are being sent before dispatching this order.");
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+        const updateData: any = {
+            status: newStatus,
+            completedAt: newStatus === "DELIVERED" ? new Date() : existing.completedAt,
+            cancelReason: newStatus === "CANCELLED" ? (cancelReason || "Staff unavailable to deliver at this time") : existing.cancelReason,
+        };
+
+        if (newStatus === "CANCELLED") {
+            updateData.cancelledAtStatus = existing.status;
+        }
+
+        // Claim the transition atomically. This prevents two concurrent cancellation
+        // requests from both restoring the same stock.
+        const transition = await tx.order.updateMany({
+            where: { id, status: existing.status },
+            data: updateData,
+        });
+        if (transition.count !== 1) throw new Error("Order was updated by another request. Please refresh and try again.");
+
+        if (newStatus === "CANCELLED") {
+            await restoreStockFromCancellation(tx, existing.orderItems);
+            // Reverse the residual outstanding charge on the ledger (ADJUSTMENT
+            // row + outbox event) so a cancelled order never leaves a phantom
+            // balance. Unpaid and partially-paid cancellations are fully reversed
+            // here; the refund path later reverses the paid portion.
+            await recordCancellationChargeTx(tx, existing.hotelId, existing.customerId, existing.id, "Order cancelled");
+        }
+
+        const updatedOrder = await tx.order.findUniqueOrThrow({
+            where: { id },
+            include: { customer: true, orderItems: true },
+        });
+
+        const outbox = await tx.eventOutbox.create({
+            data: {
+                eventName: "order_status_updated",
+                hotelId: updatedOrder.hotelId,
+                payload: JSON.stringify({
+                    orderId: updatedOrder.id,
+                    orderNumber: updatedOrder.orderNumber,
+                    customerName: buildCustomerDisplay(updatedOrder.customer.firstName, updatedOrder.customer.lastName, updatedOrder.customer.knownName),
+                    firstName: updatedOrder.customer.firstName,
+                    lastName: updatedOrder.customer.lastName,
+                    knownName: updatedOrder.knownName,
+                    customerPhone: updatedOrder.customer.phone,
+                    stallNumber: updatedOrder.stallNumber,
+                    totalAmount: Number(updatedOrder.totalAmount),
+                    newStatus,
+                    hotelName,
+                    cancelReason: newStatus === "CANCELLED" ? (cancelReason || "Staff unavailable to deliver at this time") : undefined,
+                }),
+                status: "initialized",
+            },
+        });
+
+        return { updatedOrder, outboxId: outbox.id };
+    });
+
+    const formattedOrder = formatOrderResponse(updated.updatedOrder);
 
     if (newStatus === "CANCELLED") {
-      updateData.cancelledAtStatus = existing.status;
+        for (const item of existing.orderItems) {
+            const prod = await prisma.product.findUnique({ where: { id: item.productId } });
+            if (prod) {
+                wsHub.broadcastMenuUpdate({
+                    type: "MENU_AVAILABILITY_UPDATED",
+                    payload: { ...prod, price: Number(prod.price) },
+                }, prod.hotelId ?? undefined);
+            }
+        }
     }
 
-    // Claim the transition atomically. This prevents two concurrent cancellation
-    // requests from both restoring the same stock.
-    const transition = await tx.order.updateMany({
-      where: { id, status: existing.status },
-      data: updateData,
-    });
-    if (transition.count !== 1) throw new Error("Order was updated by another request. Please refresh and try again.");
+    const orderHotelId = existing.hotelId || undefined;
+    const customerRecipientIdentityKeys = await getOrderOwnerIdentityKeys(existing.customerId);
 
-    if (newStatus === "CANCELLED") await restoreStockFromCancellation(tx, existing.orderItems);
+    wsHub.notifyOrderStatusUpdate(id, {
+        type: "ORDER_STATUS_UPDATED",
+        payload: formattedOrder,
+    }, orderHotelId, customerRecipientIdentityKeys);
 
-    const updatedOrder = await tx.order.findUniqueOrThrow({
-      where: { id },
-      include: { customer: true, orderItems: true },
-    });
-
-    const outbox = await tx.eventOutbox.create({
-      data: {
-          eventName: "order_status_updated",
-          hotelId: updatedOrder.hotelId,
-        payload: JSON.stringify({
-          orderId: updatedOrder.id,
-          orderNumber: updatedOrder.orderNumber,
-          customerName: buildCustomerDisplay(updatedOrder.customer.firstName, updatedOrder.customer.lastName, updatedOrder.customer.knownName),
-          firstName: updatedOrder.customer.firstName,
-          lastName: updatedOrder.customer.lastName,
-          knownName: updatedOrder.knownName,
-          customerPhone: updatedOrder.customer.phone,
-          stallNumber: updatedOrder.stallNumber,
-          totalAmount: Number(updatedOrder.totalAmount),
-          newStatus,
-          hotelName,
-          cancelReason: newStatus === "CANCELLED" ? (cancelReason || "Staff unavailable to deliver at this time") : undefined,
-        }),
-        status: "initialized",
-      },
-    });
-
-    return { updatedOrder, outboxId: outbox.id };
-  });
-
-  const formattedOrder = formatOrderResponse(updated.updatedOrder);
-
-  if (newStatus === "CANCELLED") {
-    for (const item of existing.orderItems) {
-      const prod = await prisma.product.findUnique({ where: { id: item.productId } });
-      if (prod) {
-        wsHub.broadcastMenuUpdate({
-          type: "MENU_AVAILABILITY_UPDATED",
-          payload: { ...prod, price: Number(prod.price) },
-        }, prod.hotelId ?? undefined);
-      }
+    if (newStatus === "OUT_FOR_DELIVERY") {
+        const dispatchNotification = {
+            type: "NOTIFICATION" as const,
+            payload: {
+                category: "dispatch",
+                title: "🚀 Order Dispatched",
+                message: `Order #${formattedOrder.orderNumber} is out for delivery!`,
+                orderId: id,
+            },
+        };
+        wsHub.broadcastToHotelAdmins(orderHotelId, dispatchNotification);
+        wsHub.broadcastToIdentities(customerRecipientIdentityKeys, dispatchNotification);
     }
-  }
 
-  const orderHotelId = existing.hotelId || undefined;
-  const customerRecipientIdentityKeys = await getOrderOwnerIdentityKeys(existing.customerId);
+    if (newStatus === "CANCELLED") {
+        const cancelNotification = {
+            type: "NOTIFICATION" as const,
+            payload: {
+                category: "cancellation",
+                title: "⚠️ Order Cancelled",
+                message: `Order #${formattedOrder.orderNumber} has been cancelled. Reason: ${cancelReason || "N/A"}`,
+                orderId: id,
+            },
+        };
+        wsHub.broadcastToHotelAdmins(orderHotelId, cancelNotification);
+        wsHub.broadcastToIdentities(customerRecipientIdentityKeys, cancelNotification);
+    }
 
-  wsHub.notifyOrderStatusUpdate(id, {
-    type: "ORDER_STATUS_UPDATED",
-    payload: formattedOrder,
-  }, orderHotelId, customerRecipientIdentityKeys);
+    if (newStatus === "OUT_FOR_DELIVERY" && formattedOrder.customer?.phone) {
+        const stallInfo = formattedOrder.stallNumber ? ` at Stall ${formattedOrder.stallNumber}` : " at your stall";
+        const displayName = buildCustomerDisplay(formattedOrder.customer.firstName, formattedOrder.customer.lastName, formattedOrder.knownName);
+        const customerSmsMessage = `Hello ${displayName}, your order #${formattedOrder.orderNumber} from ${hotelName} is OUT FOR DELIVERY! Be ready to receive your delivery${stallInfo}. Our rider is on the way. Total: KSh ${formattedOrder.totalAmount}.`;
+        (async () => {
+            try {
+                await smsService.sendSms(formattedOrder.customer.phone, customerSmsMessage);
+                if (updated.outboxId) {
+                    await prisma.eventOutbox.update({
+                        where: { id: updated.outboxId },
+                        data: { status: "done", completedAt: new Date() },
+                    });
+                }
+            } catch (err) {
+                console.error("[Customer Out-For-Delivery SMS Error]:", err);
+            }
+        })();
+    }
 
-  if (newStatus === "OUT_FOR_DELIVERY") {
-    const dispatchNotification = {
-      type: "NOTIFICATION" as const,
-      payload: {
-        category: "dispatch",
-        title: "🚀 Order Dispatched",
-        message: `Order #${formattedOrder.orderNumber} is out for delivery!`,
-        orderId: id,
-      },
-    };
-    wsHub.broadcastToHotelAdmins(orderHotelId, dispatchNotification);
-    wsHub.broadcastToIdentities(customerRecipientIdentityKeys, dispatchNotification);
-  }
+    if (newStatus === "CANCELLED") {
+        const isCustomerCancel = (cancelReason || "").toLowerCase().includes("customer");
 
-  if (newStatus === "CANCELLED") {
-    const cancelNotification = {
-      type: "NOTIFICATION" as const,
-      payload: {
-        category: "cancellation",
-        title: "⚠️ Order Cancelled",
-        message: `Order #${formattedOrder.orderNumber} has been cancelled. Reason: ${cancelReason || "N/A"}`,
-        orderId: id,
-      },
-    };
-    wsHub.broadcastToHotelAdmins(orderHotelId, cancelNotification);
-    wsHub.broadcastToIdentities(customerRecipientIdentityKeys, cancelNotification);
-  }
+        // Customer SMS: apology if staff-cancelled, confirmation if self-cancelled
+        if (formattedOrder.customer?.phone) {
+            const displayName = buildCustomerDisplay(formattedOrder.customer.firstName, formattedOrder.customer.lastName, formattedOrder.knownName);
+            const msg = isCustomerCancel
+                ? `Hello ${displayName}, order #${formattedOrder.orderNumber} from ${hotelName} has been CANCELLED as you requested. Track your orders: https://tabledash.up.railway.app`
+                : `Hello ${displayName}, we are sorry to inform you that order #${formattedOrder.orderNumber} from ${hotelName} has been cancelled. Reason: ${cancelReason || "Staff unavailable"}. We appreciate your understanding. Track your orders: https://tabledash.up.railway.app`;
+            (async () => {
+                try {
+                    await smsService.sendSms(formattedOrder.customer.phone, msg);
+                } catch (err) {
+                    console.error("[Customer Cancel SMS Error]:", err);
+                }
+            })();
+        }
 
-  if (newStatus === "OUT_FOR_DELIVERY" && formattedOrder.customer?.phone) {
-    const stallInfo = formattedOrder.stallNumber ? ` at Stall ${formattedOrder.stallNumber}` : " at your stall";
-    const displayName = buildCustomerDisplay(formattedOrder.customer.firstName, formattedOrder.customer.lastName, formattedOrder.knownName);
-    const customerSmsMessage = `Hello ${displayName}, your order #${formattedOrder.orderNumber} from ${hotelName} is OUT FOR DELIVERY! Be ready to receive your delivery${stallInfo}. Our rider is on the way. Total: KSh ${formattedOrder.totalAmount}.`;
-    (async () => {
-      try {
-        await smsService.sendSms(formattedOrder.customer.phone, customerSmsMessage);
+        // Staff abort SMS — notify staff to abort delivery
+        const staffPhones = await getSmsRecipients(existing.hotelId || undefined).catch(() => []);
+        if (staffPhones.length > 0) {
+            const stallTag = formattedOrder.stallNumber ? ` (Stall ${formattedOrder.stallNumber})` : "";
+            const staffAbortMessage = `[${hotelName}] ABORT: Order #${formattedOrder.orderNumber}${stallTag} has been CANCELLED. Reason: ${cancelReason || "Staff unavailable"}. No delivery needed.`;
+            Promise.all(
+                staffPhones.map((phone) =>
+                    smsService.sendSms(phone, staffAbortMessage).catch(() => false)
+                )
+            ).catch(() => { });
+        }
+
+        // Mark outbox as done to prevent duplicate SMS from the outbox handler
         if (updated.outboxId) {
-          await prisma.eventOutbox.update({
-            where: { id: updated.outboxId },
-            data: { status: "done", completedAt: new Date() },
-          });
+            prisma.eventOutbox.update({
+                where: { id: updated.outboxId },
+                data: { status: "done", completedAt: new Date() },
+            }).catch(() => { });
         }
-      } catch (err) {
-        console.error("[Customer Out-For-Delivery SMS Error]:", err);
-      }
-    })();
-  }
-
-  if (newStatus === "CANCELLED") {
-    const isCustomerCancel = (cancelReason || "").toLowerCase().includes("customer");
-
-    // Customer SMS: apology if staff-cancelled, confirmation if self-cancelled
-    if (formattedOrder.customer?.phone) {
-      const displayName = buildCustomerDisplay(formattedOrder.customer.firstName, formattedOrder.customer.lastName, formattedOrder.knownName);
-      const msg = isCustomerCancel
-        ? `Hello ${displayName}, order #${formattedOrder.orderNumber} from ${hotelName} has been CANCELLED as you requested. Track your orders: https://tabledash.up.railway.app`
-        : `Hello ${displayName}, we are sorry to inform you that order #${formattedOrder.orderNumber} from ${hotelName} has been cancelled. Reason: ${cancelReason || "Staff unavailable"}. We appreciate your understanding. Track your orders: https://tabledash.up.railway.app`;
-      (async () => {
-        try {
-          await smsService.sendSms(formattedOrder.customer.phone, msg);
-        } catch (err) {
-          console.error("[Customer Cancel SMS Error]:", err);
-        }
-      })();
     }
 
-    // Staff abort SMS — notify staff to abort delivery
-    const staffPhones = await getSmsRecipients(existing.hotelId || undefined).catch(() => []);
-    if (staffPhones.length > 0) {
-      const stallTag = formattedOrder.stallNumber ? ` (Stall ${formattedOrder.stallNumber})` : "";
-      const staffAbortMessage = `[${hotelName}] ABORT: Order #${formattedOrder.orderNumber}${stallTag} has been CANCELLED. Reason: ${cancelReason || "Staff unavailable"}. No delivery needed.`;
-      Promise.all(
-        staffPhones.map((phone) =>
-          smsService.sendSms(phone, staffAbortMessage).catch(() => false)
-        )
-      ).catch(() => {});
-    }
-
-    // Mark outbox as done to prevent duplicate SMS from the outbox handler
-    if (updated.outboxId) {
-      prisma.eventOutbox.update({
-        where: { id: updated.outboxId },
-        data: { status: "done", completedAt: new Date() },
-      }).catch(() => {});
-    }
-  }
-
-  return formattedOrder;
+    return formattedOrder;
 };
 
 /**
@@ -640,159 +722,209 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus, canc
  * Validates the order belongs to the customer before cancelling.
  */
 export const cancelOrderByCustomer = async (id: string, customerId: string, reason?: string) => {
-  const order = await prisma.order.findUnique({
-    where: { id },
-    include: { orderItems: true },
-  });
-  if (!order) {
-    throw new Error("Order not found");
-  }
-  if (order.customerId !== customerId) {
-    throw new Error("This order does not belong to you");
-  }
-  if (order.status === "DELIVERED" || order.status === "CANCELLED") {
-    throw new Error(`Order is already "${order.status}" and cannot be cancelled`);
-  }
-  if (order.status === "OUT_FOR_DELIVERY") {
-    throw new Error("Order is already out for delivery and cannot be cancelled. Please contact the hotel directly.");
-  }
+    const order = await prisma.order.findUnique({
+        where: { id },
+        include: { orderItems: true },
+    });
+    if (!order) {
+        throw new Error("Order not found");
+    }
+    if (order.customerId !== customerId) {
+        throw new Error("This order does not belong to you");
+    }
+    if (order.status === "DELIVERED" || order.status === "CANCELLED") {
+        throw new Error(`Order is already "${order.status}" and cannot be cancelled`);
+    }
+    if (order.status === "OUT_FOR_DELIVERY") {
+        throw new Error("Order is already out for delivery and cannot be cancelled. Please contact the hotel directly.");
+    }
 
-  const cancelReason = reason ? `Cancelled by customer: ${reason}` : "Cancelled by customer";
-  return updateOrderStatus(id, "CANCELLED", cancelReason, order.hotelId || undefined);
+    const cancelReason = reason ? `Cancelled by customer: ${reason}` : "Cancelled by customer";
+    return updateOrderStatus(id, "CANCELLED", cancelReason, order.hotelId || undefined);
 };
 
 /**
  * Updates payment status and amount paid for an order.
- * Guards:
- *  - REFUNDED orders cannot be changed further (terminal payment state).
- *  - CANCELLED orders: only REFUNDED or UNPAID is allowed (refund processed or write-off).
- *  - Non-cancelled orders: standard UNPAID → PARTIAL → PAID flow.
- * When marked PAID, auto-sets amountPaid = totalAmount.
- * When marked UNPAID, sets amountPaid = 0.
- * Broadcasts ORDER_PAYMENT_UPDATED via WS and writes outbox event.
+ * Delegates to the finance module's SalesRecord-backed functions.
+ * Broadcasts ORDER_PAYMENT_UPDATED via WS.
  */
-export const updateOrderPayment = async (id: string, data: { paymentStatus?: PaymentStatus; amountPaid?: number }, hotelId?: string) => {
-  const existing = await prisma.order.findFirst({
-    where: { id, ...(hotelId ? { hotelId } : {}) },
-    include: { customer: true, orderItems: true },
-  });
-  if (!existing) {
-    throw new Error("Order not found");
-  }
-  if (hotelId && existing.hotelId !== hotelId) throw new Error("Order does not belong to your hotel");
-
-  if (existing.paymentStatus === "REFUNDED") {
-    throw new Error("Payment is already marked as REFUNDED and cannot be changed.");
-  }
-
-  const total = Number(existing.totalAmount);
-  let paymentStatus = data.paymentStatus ?? existing.paymentStatus;
-  let amountPaid = data.amountPaid ?? Number(existing.amountPaid);
-  let refundedAt: Date | null = null;
-
-  // CANCELLED order payment constraints
-  if (existing.status === "CANCELLED") {
-    if (data.paymentStatus === "REFUNDED") {
-      if (Number(existing.amountPaid) <= 0) {
-        throw new Error("Cannot mark as REFUNDED — no payment was collected on this order.");
-      }
-      amountPaid = 0;
-      refundedAt = new Date();
-    } else if (data.paymentStatus === "PAID" || data.paymentStatus === "PARTIAL") {
-      throw new Error("Cannot collect payment on a cancelled order. Process a refund instead.");
-    } else if (data.paymentStatus === "UNPAID" || !data.paymentStatus) {
-      paymentStatus = "UNPAID";
-      amountPaid = 0;
-    }
-  } else {
-    if (data.paymentStatus === "REFUNDED") {
-      throw new Error("Cannot mark a non-cancelled order as REFUNDED. You must cancel the order first.");
-    }
-    if (data.paymentStatus === "PAID") {
-      amountPaid = total;
-    } else if (data.paymentStatus === "UNPAID") {
-      amountPaid = 0;
-    }
-  }
-
-  const hotel = existing.hotelId ? await prisma.hotel.findUnique({ where: { id: existing.hotelId } }) : await getDefaultHotel();
-  const hotelName = hotel?.name ?? "Ladha Deliveries";
-
-  const updated = await prisma.$transaction(async (tx) => {
-    const updatedOrder = await tx.order.update({
-      where: { id },
-      data: { paymentStatus, amountPaid, ...(refundedAt ? { refundedAt } : {}) },
-      include: { customer: true, orderItems: true },
-    });
-    await tx.eventOutbox.create({
-      data: {
-        eventName: "order_payment_updated",
-        hotelId: updatedOrder.hotelId,
-        payload: JSON.stringify({
-          orderId: updatedOrder.id,
-          orderNumber: updatedOrder.orderNumber,
-          customerName: buildCustomerDisplay(updatedOrder.customer.firstName, updatedOrder.customer.lastName, updatedOrder.customer.knownName),
-          firstName: updatedOrder.customer.firstName,
-          lastName: updatedOrder.customer.lastName,
-          customerPhone: updatedOrder.customer.phone,
-          paymentStatus,
-          amountPaid,
-          totalAmount: total,
-          hotelName,
-        }),
-        status: "initialized",
-      },
-    });
-    return updatedOrder;
-  });
-
-  const formatted = formatOrderResponse(updated);
-
-  wsHub.broadcastToHotelAdmins(existing.hotelId || undefined, {
-    type: "ORDER_PAYMENT_UPDATED",
-    payload: {
-      ...formatted,
-      paymentStatus,
-      amountPaid,
-    },
-  });
-  wsHub.broadcastToIdentities(await getOrderOwnerIdentityKeys(existing.customerId), {
-    type: "ORDER_PAYMENT_UPDATED",
-    payload: {
-      ...formatted,
-      paymentStatus,
-      amountPaid,
-    },
-  });
-
-  return formatted;
-};
-
 /**
  * Retrieves orders for a specific date with payment info surfaced.
  */
 export const getDailyOrders = async (dateStr: string, hotelId?: string) => {
-  const startDate = new Date(dateStr + "T00:00:00.000Z");
-  const endDate = new Date(dateStr + "T23:59:59.999Z");
+    const startDate = new Date(dateStr + "T00:00:00.000Z");
+    const endDate = new Date(dateStr + "T23:59:59.999Z");
 
-  const where: any = {
-    orderedAt: {
-      gte: startDate,
-      lte: endDate,
-    },
-  };
-  if (hotelId) where.hotelId = hotelId;
+    const where: any = {
+        orderedAt: {
+            gte: startDate,
+            lte: endDate,
+        },
+    };
+    if (hotelId) where.hotelId = hotelId;
 
-  const orders = await prisma.order.findMany({
-    where,
-    include: {
-      customer: true,
-      orderItems: true,
-    },
-    orderBy: { orderedAt: "desc" },
-  });
+    const orders = await prisma.order.findMany({
+        where,
+        include: {
+            customer: true,
+            orderItems: true,
+        },
+        orderBy: { orderedAt: "desc" },
+    });
 
-  return orders.map(formatOrderResponse);
+    return orders.map(formatOrderResponse);
+};
+
+/**
+ * Marks an order's reusable utensils as issued at dispatch (staff-only).
+ * Not every order goes out on reusable plates — this only records when staff
+ * actually handed any out. Independent of payment status.
+ */
+export const markUtensilsIssued = async (id: string, hotelId: string, issued: boolean) => {
+    const order = await prisma.order.findFirst({ where: { id, hotelId } });
+    if (!order) throw new Error("Order not found");
+    return formatOrderResponse(await prisma.order.update({
+        where: { id },
+        data: { utensilsIssued: issued, utensilsRequired: issued ? true : false },
+        include: { customer: true, orderItems: true },
+    }));
+};
+
+/**
+ * Records that a deliverer confirmed utensil collection — independent of, and at
+ * a possibly completely different time from, whoever records the payment.
+ */
+export const markUtensilsReturned = async (id: string, hotelId: string, adminUserId: string) => {
+    const order = await prisma.order.findFirst({ where: { id, hotelId } });
+    if (!order) throw new Error("Order not found");
+    return formatOrderResponse(await prisma.order.update({
+        where: { id },
+        data: { utensilsReturnedAt: new Date(), utensilsReturnedByAdminUserId: adminUserId },
+        include: { customer: true, orderItems: true },
+    }));
+};
+
+/**
+ * The Pending Collection worklist: every DELIVERED order that still owes payment
+ * OR still has issued-but-unreturned utensils. The two conditions resolve
+ * independently — a row tells staff which of the two is still outstanding.
+ */
+export const getPendingCollection = async (hotelId: string) => {
+    const orders = await prisma.order.findMany({
+        where: {
+            hotelId,
+            status: "DELIVERED",
+            OR: [
+                { paymentStatus: { not: "PAID" } },
+                { utensilsIssued: true, utensilsReturnedAt: null },
+            ],
+        },
+        include: { customer: true, orderItems: true },
+        orderBy: { orderedAt: "desc" },
+    });
+
+    return orders.map((order) => {
+        const amountPaid = Number(order.amountPaid);
+        const totalAmount = Number(order.totalAmount);
+        const paymentOutstanding = order.paymentStatus !== "PAID";
+        const utensilsOutstanding = order.utensilsIssued === true && order.utensilsReturnedAt === null;
+        return {
+            id: order.id,
+            orderNumber: order.orderNumber,
+            totalAmount,
+            amountPaid,
+            paymentStatus: order.paymentStatus,
+            paymentOutstanding,
+            utensilsOutstanding,
+            outstandingAmount: Math.max(0, totalAmount - amountPaid),
+            utensilsIssued: order.utensilsIssued,
+            utensilsRequired: order.utensilsRequired,
+            utensilsReturnedAt: order.utensilsReturnedAt,
+            customer: order.customer
+                ? {
+                    id: order.customer.id,
+                    accountId: order.customer.accountId,
+                    firstName: order.customer.firstName,
+                    lastName: order.customer.lastName,
+                    knownName: order.customer.knownName,
+                    phone: order.customer.phone,
+                }
+                : null,
+            orderedAt: order.orderedAt,
+            marketSection: order.marketSection,
+            locationDescription: order.locationDescription,
+            stallNumber: order.stallNumber,
+        };
+    });
+};
+
+/**
+ * The Refunds Owed worklist: every CANCELLED order that was paid but has not
+ * been fully refunded. A cancellation writes no REFUND row automatically
+ * (partial/paid cancellations are refunded by staff), so without this list
+ * money the business owes is invisible — the ledger would just sit with a
+ * net-zero CustomerAccount and nobody would notice. refundOwed is computed from
+ * the ledger (paid minus refunded) so it always matches what the balance says.
+ */
+export const getRefundsOwed = async (hotelId: string) => {
+    const orders = await prisma.order.findMany({
+        where: { hotelId, status: "CANCELLED" },
+        include: {
+            customer: true,
+            orderItems: true,
+            salesRecords: { select: { type: true, amount: true } },
+        },
+        orderBy: { orderedAt: "desc" },
+    });
+
+    return orders
+        .map((order) => {
+            const paid = order.salesRecords
+                .filter((r) => r.type === "ORDER_PAYMENT")
+                .reduce((sum, r) => sum + Number(r.amount), 0);
+            const refunded = order.salesRecords
+                .filter((r) => r.type === "REFUND")
+                .reduce((sum, r) => sum + Math.abs(Number(r.amount)), 0);
+            return { order, paid, refunded, refundOwed: Math.max(0, paid - refunded) };
+        })
+        .filter(({ refundOwed }) => refundOwed > 0)
+        .map(({ order, paid, refunded, refundOwed }) => ({
+            id: order.id,
+            orderNumber: order.orderNumber,
+            status: order.status,
+            hotelId: order.hotelId,
+            totalAmount: Number(order.totalAmount),
+            amountPaid: Number(order.amountPaid),
+            paymentStatus: order.paymentStatus,
+            paid,
+            refunded,
+            refundOwed,
+            cancelledAtStatus: order.cancelledAtStatus,
+            cancelReason: order.cancelReason,
+            refundedAt: order.refundedAt ? order.refundedAt.toISOString() : null,
+            utensilsIssued: order.utensilsIssued,
+            utensilsRequired: order.utensilsRequired,
+            utensilsReturnedAt: order.utensilsReturnedAt,
+            customer: order.customer
+                ? {
+                    id: order.customer.id,
+                    accountId: order.customer.accountId,
+                    firstName: order.customer.firstName,
+                    lastName: order.customer.lastName,
+                    knownName: order.customer.knownName,
+                    phone: order.customer.phone,
+                }
+                : null,
+            orderItems: order.orderItems?.map((item: any) => ({
+                ...item,
+                unitPrice: Number(item.unitPrice),
+                subtotal: Number(item.subtotal),
+            })),
+            orderedAt: order.orderedAt,
+            marketSection: order.marketSection,
+            locationDescription: order.locationDescription,
+            stallNumber: order.stallNumber,
+        }));
 };
 
 /**
@@ -800,27 +932,27 @@ export const getDailyOrders = async (dateStr: string, hotelId?: string) => {
  * Revenue excludes cancelled orders; pending uses an explicit allow-list.
  */
 export const getDashboardMetrics = async (hotelId?: string): Promise<DashboardMetrics> => {
-  const where = hotelId ? { hotelId } : {};
-  const allOrders = await prisma.order.findMany({
-    where,
-    include: {
-      orderItems: true,
-    },
-  });
+    const where = hotelId ? { hotelId } : {};
+    const allOrders = await prisma.order.findMany({
+        where,
+        include: {
+            orderItems: true,
+        },
+    });
 
-  return calculateDashboardMetrics(allOrders);
+    return calculateDashboardMetrics(allOrders);
 };
 
 function formatOrderResponse(order: any) {
-  return {
-    ...order,
-    totalAmount: Number(order.totalAmount),
-    amountPaid: Number(order.amountPaid),
-    refundedAt: order.refundedAt ? order.refundedAt.toISOString() : null,
-    orderItems: order.orderItems?.map((item: any) => ({
-      ...item,
-      unitPrice: Number(item.unitPrice),
-      subtotal: Number(item.subtotal),
-    })),
-  };
+    return {
+        ...order,
+        totalAmount: Number(order.totalAmount),
+        amountPaid: Number(order.amountPaid),
+        refundedAt: order.refundedAt ? order.refundedAt.toISOString() : null,
+        orderItems: order.orderItems?.map((item: any) => ({
+            ...item,
+            unitPrice: Number(item.unitPrice),
+            subtotal: Number(item.subtotal),
+        })),
+    };
 }

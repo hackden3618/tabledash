@@ -20,13 +20,32 @@ import { ordersRoute } from "./src/modules/orders/route";
 import { platformRoute } from "./src/modules/platform/routes";
 import { settingsRoute } from "./src/modules/settings/route";
 import { uploadRoute } from "./src/modules/upload/route";
+import { financeRoute } from "./src/modules/finance/route";
+import { discoveryRoute } from "./src/modules/discovery/route";
 import { messagingRoute } from "./src/modules/messaging/routes";
 import { resolveMessagingActorFromWebSocketTicket } from "./src/modules/messaging/controller";
 import { assertConversationAccess, getConversationIdentityKeys, getInbox } from "./src/modules/messaging/service";
 import { wsHub } from "./src/modules/websocket/hub";
 import { env } from "../../shared/config";
+import { logger } from "./src/lib/logger";
+import { prisma } from "../../infrastructure/database/prisma";
 
 export const app = new Elysia()
+
+  .onRequest(({ request, set }) => {
+    const requestId = request.headers.get("x-request-id") || crypto.randomUUID();
+    set.headers["x-request-id"] = requestId;
+  })
+
+  .onError(({ request, set, error }) => {
+    const requestId = set.headers["x-request-id"];
+    logger.error("Unhandled API error", {
+      requestId,
+      method: request.method,
+      path: new URL(request.url).pathname,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  })
 
   // Security headers (applied after every request)
   .onAfterHandle(({ set }) => {
@@ -47,6 +66,15 @@ export const app = new Elysia()
 
   // Platform health check endpoint
   .get("/api/v1/health", () => ({ status: "ok", timestamp: new Date().toISOString() }))
+  .get("/api/v1/ready", async ({ set }) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      return { status: "ready", timestamp: new Date().toISOString() };
+    } catch {
+      set.status = 503;
+      return { status: "not_ready", timestamp: new Date().toISOString() };
+    }
+  })
 
   // Swagger OpenAPI documentation
   .use(
@@ -134,8 +162,15 @@ export const app = new Elysia()
     async message(ws, message) {
       wsHub.touch(ws.id);
       try {
-        const event = JSON.parse(String(message)) as { type?: string; conversationId?: string };
+        const event = JSON.parse(String(message)) as { type?: string; conversationId?: string; lastSeq?: number };
         if (event.type === "PING") return;
+        if (event.type === "RESYNC") {
+          const missed = wsHub.getEventsSince(event.lastSeq ?? 0);
+          for (const payload of missed) {
+            ws.send(payload);
+          }
+          return;
+        }
         if (event.type === "JOIN_CONVERSATION") {
           if (!event.conversationId) return;
           const senderIdentity = wsHub.getIdentityKey(ws.id);
@@ -159,6 +194,7 @@ export const app = new Elysia()
   // Feature domain routes
   .use(authRoute)
   .use(hotelsRoute)
+  .use(discoveryRoute)
   .use(menuRoute)
   .use(ordersRoute)
   .use(customersRoute)
@@ -166,6 +202,7 @@ export const app = new Elysia()
   .use(uploadRoute)
   .use(platformRoute)
   .use(messagingRoute)
+  .use(financeRoute)
 
   // Serve the built frontend SPA for any non-API route
   .get("/*", ({ params }) => {

@@ -29,11 +29,12 @@ export class R2StorageProvider implements MediaStorageProvider {
     };
 
     const presignedUrl = await this.getPresignedUrl(filename, putHeaders);
-    await fetch(presignedUrl, {
+    const uploadResponse = await fetch(presignedUrl, {
       method: "PUT",
       headers: putHeaders,
       body: buffer as unknown as BodyInit,
     });
+    if (!uploadResponse.ok) throw new Error(`R2 upload failed with status ${uploadResponse.status}`);
 
     const publicUrl = `${this.baseUrl}/media/${filename}`;
     return {

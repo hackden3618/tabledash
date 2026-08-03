@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
 import { apiGet } from "../../lib/api";
-import { Truck, ChevronRight, Package } from "lucide-react";
+import { Truck, ChevronRight, Package, Wallet } from "lucide-react";
 import { Header } from "../../components/ui/Header";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { PageTransition } from "../../components/ui/PageTransition";
@@ -11,6 +11,7 @@ interface TrackingListPageProps {
   onTrackOrder: (orderId: string) => void;
   onGoToAuth?: () => void;
   placedOrderId?: string;
+  onNavigateToWallet?: () => void;
 }
 
 const ACTIVE_STATUSES = ["NEW", "ACCEPTED", "PREPARING", "READY_FOR_DELIVERY", "OUT_FOR_DELIVERY"];
@@ -23,7 +24,15 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   OUT_FOR_DELIVERY:   { label: "Out for Delivery",   color: "#4F46E5" },
 };
 
-export const TrackingListPage: React.FC<TrackingListPageProps> = ({ onTrackOrder, onGoToAuth, placedOrderId }) => {
+function getFinancialStatus(order: any): { bg: string; color: string; label: string } | null {
+  if (!order.paymentStatus) return null;
+  if (order.status === "CANCELLED" && order.refundedAt) return { bg: "#DCFCE7", color: "#15803D", label: "Account settled" };
+  if (order.paymentStatus === "REFUNDED") return { bg: "#F3F4F6", color: "#6B7280", label: "Refunded" };
+  if (Number(order.amountPaid ?? 0) >= Number(order.totalAmount)) return { bg: "#DCFCE7", color: "#15803D", label: "Fully settled" };
+  return { bg: "#FEF3C7", color: "#D97706", label: "Balance due" };
+}
+
+export const TrackingListPage: React.FC<TrackingListPageProps> = ({ onTrackOrder, onGoToAuth, placedOrderId, onNavigateToWallet }) => {
   const { customer, isLoggedIn, isLoading, refreshProfile } = useCustomerAuth();
   const [orders, setOrders] = useState<any[]>([]);
   const [guestOrder, setGuestOrder] = useState<any | null>(null);
@@ -38,23 +47,28 @@ export const TrackingListPage: React.FC<TrackingListPageProps> = ({ onTrackOrder
     } catch { /* ignore */ }
   }, []);
 
-  // Fetch guest order live data if not logged in
+  // Fetch guest order live data if not logged in. If the order no longer
+  // exists (e.g. dev DB reset), drop the stale card instead of persisting it.
   useEffect(() => {
-    if (!isLoggedIn && placedOrderId) {
-      apiGet<any>(`/orders/${placedOrderId}`).then((res) => {
+    const orderId = guestOrder?.id || placedOrderId;
+    if (!isLoggedIn && orderId) {
+      apiGet<any>(`/orders/${orderId}`).then((res) => {
         if (res.success && res.data) {
           setGuestOrder(res.data);
           localStorage.setItem("ladha_last_order", JSON.stringify(res.data));
+        } else {
+          localStorage.removeItem("ladha_last_order");
+          setGuestOrder(null);
         }
       });
     }
-  }, [placedOrderId, isLoggedIn]);
+  }, [guestOrder?.id, placedOrderId, isLoggedIn]);
 
   useEffect(() => {
-    if (customer?.recentOrders) {
-      setOrders(customer.recentOrders);
-    }
+    setOrders(customer?.recentOrders ?? []);
   }, [customer?.recentOrders]);
+
+  useEffect(() => { void refreshProfile(); }, [refreshProfile]);
 
   useEffect(() => {
     const fromAccount = orders.filter((o: any) => ACTIVE_STATUSES.includes(o.status));
@@ -109,7 +123,16 @@ export const TrackingListPage: React.FC<TrackingListPageProps> = ({ onTrackOrder
 
   return (
     <div className="app-container">
-      <Header title="Live Tracker" />
+      <Header
+        title="Live Tracker"
+        rightAction={onNavigateToWallet ? (
+          <button onClick={onNavigateToWallet}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#114B36] text-xs font-bold text-white border-none cursor-pointer transition-colors hover:bg-[#0D3D2B]"
+          >
+            <Wallet size={13} /> Wallet
+          </button>
+        ) : undefined}
+      />
 
       <PageTransition>
         <div className="px-4 py-5">
@@ -125,9 +148,11 @@ export const TrackingListPage: React.FC<TrackingListPageProps> = ({ onTrackOrder
                 {activeOrders.length} Active {activeOrders.length === 1 ? "Delivery" : "Deliveries"}
               </p>
 
-              {activeOrders.map((order: any, idx: number) => {
-                const cfg = STATUS_LABELS[order.status] || { label: order.status, color: "#6B7280" };
-                const justUpdated = lastUpdatedId === order.id;
+               {activeOrders.map((order: any, idx: number) => {
+                 const cfg = STATUS_LABELS[order.status] || { label: order.status, color: "#6B7280" };
+                 const justUpdated = lastUpdatedId === order.id;
+                 const fin = getFinancialStatus(order);
+                 const isTerminal = order.status === "DELIVERED" || order.status === "CANCELLED";
 
                 return (
                   <motion.div
@@ -173,11 +198,18 @@ export const TrackingListPage: React.FC<TrackingListPageProps> = ({ onTrackOrder
                       <span className="font-bold text-sm text-[#114B36]">KSh {order.totalAmount}</span>
                     </div>
 
-                    <div className="mt-2 flex items-center justify-end">
-                      <span className="text-xs font-semibold text-[#114B36] flex items-center gap-0.5">
-                        Track live <ChevronRight size={12} />
-                      </span>
-                    </div>
+                     <div className="mt-2 flex items-center justify-end gap-2">
+                       {fin && (
+                         <span className="text-[0.6rem] font-bold px-2 py-0.5 rounded-full"
+                           style={{ background: fin.bg, color: fin.color }}
+                         >
+                           {fin.label}
+                         </span>
+                       )}
+                       <span className="text-xs font-semibold text-[#114B36] flex items-center gap-0.5">
+                         {isTerminal ? "View details" : "Track live"} <ChevronRight size={12} />
+                       </span>
+                     </div>
                   </motion.div>
                 );
               })}

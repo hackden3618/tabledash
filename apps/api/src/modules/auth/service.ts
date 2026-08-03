@@ -39,6 +39,12 @@ function assertAdminPassword(password: string) {
   if (password.length < MIN_ADMIN_PASSWORD_LENGTH) throw new Error("Admin passwords must be at least 8 characters");
 }
 
+export interface AdminHotelSummary {
+  id: string;
+  name: string;
+  role: HotelRole;
+}
+
 export interface AdminAuthResult {
   token: string;
   user: {
@@ -48,6 +54,7 @@ export interface AdminAuthResult {
     role: HotelRole;
     hotelId: string | null;
   };
+  hotels: AdminHotelSummary[];
 }
 
 export interface AuthenticatedAdmin {
@@ -63,15 +70,21 @@ export const loginAdmin = async (
   password: string,
   jwtSign: (payload: Record<string, any>) => Promise<string>
 ): Promise<AdminAuthResult> => {
-  const user = await prisma.adminUser.findUnique({
-    where: { username },
+  // One phone can be a login at several hotels (same password everywhere). Resolve every
+  // matching account so the client can pick which hotel to sign into.
+  const users = await prisma.adminUser.findMany({
+    where: { username: username.trim() },
+    orderBy: { createdAt: "asc" },
+    include: { hotel: { select: { id: true, name: true } } },
   });
 
-  if (!user) {
+  if (users.length === 0) {
     throw new Error("Invalid username or password");
   }
 
-  const isValid = await Bun.password.verify(password, user.passwordHash);
+  const user = users[0]!;
+
+  const isValid = await Bun.password.verify(password.trim(), user.passwordHash);
   if (!isValid) {
     throw new Error("Invalid username or password");
   }
@@ -94,6 +107,47 @@ export const loginAdmin = async (
       name: user.name,
       role: user.role,
       hotelId: user.hotelId,
+    },
+    hotels: users.map((u) => ({ id: u.hotel.id, name: u.hotel.name, role: u.role })),
+  };
+};
+
+export const switchAdminHotel = async (
+  adminId: string,
+  hotelId: string,
+  jwtSign: (payload: Record<string, any>) => Promise<string>
+): Promise<Omit<AdminAuthResult, "hotels">> => {
+  const current = await prisma.adminUser.findUnique({ where: { id: adminId }, select: { username: true } });
+  if (!current) {
+    throw new Error("Invalid or expired session token");
+  }
+
+  const target = await prisma.adminUser.findFirst({
+    where: { username: current.username, hotelId },
+    include: { hotel: { select: { id: true, name: true } } },
+  });
+  if (!target) {
+    throw new Error("You do not have access to that hotel");
+  }
+
+  const token = await jwtSign({
+    sub: target.id,
+    type: "hotel_staff",
+    username: target.username,
+    name: target.name,
+    role: target.role,
+    hotelId: target.hotelId,
+    exp: Math.floor(Date.now() / 1000) + 64800, // 18 hours
+  });
+
+  return {
+    token,
+    user: {
+      id: target.id,
+      username: target.username,
+      name: target.name,
+      role: target.role,
+      hotelId: target.hotelId,
     },
   };
 };
@@ -130,15 +184,24 @@ export const verifyAdminToken = async (
 };
 
 export const updateAdminProfile = async (adminId: string, input: { name?: string; username?: string }) => {
-  const user = await prisma.adminUser.update({ where: { id: adminId }, data: { ...(input.name !== undefined ? { name: input.name.trim() } : {}), ...(input.username !== undefined ? { username: input.username.trim() } : {}) }, select: { id: true, username: true, name: true, role: true, hotelId: true } });
-  return user;
+  const user = await prisma.adminUser.findUnique({ where: { id: adminId }, select: { username: true, hotelId: true } });
+  if (!user) throw new Error("User no longer exists");
+  const newUsername = input.username !== undefined ? input.username.trim() : undefined;
+  if (newUsername !== undefined && newUsername !== user.username) {
+    const taken = await prisma.adminUser.findFirst({
+      where: { username: newUsername, hotelId: user.hotelId, NOT: { id: adminId } },
+    });
+    if (taken) throw new Error("Another login at this hotel already uses that phone number.");
+  }
+  return prisma.adminUser.update({ where: { id: adminId }, data: { ...(input.name !== undefined ? { name: input.name.trim() } : {}), ...(newUsername !== undefined ? { username: newUsername } : {}) }, select: { id: true, username: true, name: true, role: true, hotelId: true } });
 };
 
 export const changeAdminPassword = async (adminId: string, currentPassword: string, newPassword: string) => {
   assertAdminPassword(newPassword);
-  const user = await prisma.adminUser.findUnique({ where: { id: adminId }, select: { passwordHash: true } });
+  const user = await prisma.adminUser.findUnique({ where: { id: adminId }, select: { username: true, passwordHash: true } });
   if (!user || !(await Bun.password.verify(currentPassword, user.passwordHash))) throw new Error("Current password is incorrect");
-  await prisma.adminUser.update({ where: { id: adminId }, data: { passwordHash: await Bun.password.hash(newPassword) } });
+  const passwordHash = await Bun.password.hash(newPassword);
+  await prisma.adminUser.updateMany({ where: { username: user.username }, data: { passwordHash } });
 };
 
 export const loginPlatformAdmin = async (
@@ -147,14 +210,14 @@ export const loginPlatformAdmin = async (
   jwtSign: (payload: Record<string, any>) => Promise<string>
 ): Promise<{ token: string; user: { id: string; username: string; name: string } }> => {
   const user = await prisma.platformAdmin.findUnique({
-    where: { username },
+    where: { username: username.trim() },
   });
 
   if (!user) {
     throw new Error("Invalid username or password");
   }
 
-  const isValid = await Bun.password.verify(password, user.passwordHash);
+  const isValid = await Bun.password.verify(password.trim(), user.passwordHash);
   if (!isValid) {
     throw new Error("Invalid username or password");
   }
@@ -231,8 +294,8 @@ export const requestPasswordResetOtp = async (phone: string): Promise<boolean> =
   const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
 
   if (admin) {
-    await prisma.adminUser.update({
-      where: { id: admin.id },
+    await prisma.adminUser.updateMany({
+      where: { username: admin.username },
       data: { resetCode: otpCode, resetCodeExpires: new Date(expiresAt) },
     });
   } else if (customer) {
@@ -269,8 +332,8 @@ export const resetPasswordWithOtp = async (phone: string, otpCode: string, newPa
     }
     assertAdminPassword(newPassword);
     const passwordHash = await Bun.password.hash(newPassword);
-    await prisma.adminUser.update({ where: { id: admin.id }, data: { passwordHash } });
-    await prisma.adminUser.update({ where: { id: admin.id }, data: { resetCode: null, resetCodeExpires: null } });
+    await prisma.adminUser.updateMany({ where: { username: formattedPhone }, data: { passwordHash } });
+    await prisma.adminUser.updateMany({ where: { username: formattedPhone }, data: { resetCode: null, resetCodeExpires: null } });
     return true;
   }
 

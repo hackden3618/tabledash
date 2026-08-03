@@ -24,7 +24,7 @@ export const Header: React.FC<HeaderProps> = ({
   notificationCount = 0,
 }) => {
   return (
-    <header className="bg-[#114B36] text-white px-4 py-3 sticky top-0 z-40 shadow-[0_2px_8px_rgba(17,75,54,0.15)]">
+    <header className="glass-header text-white px-4 py-3 sticky top-0 z-40">
       <div className="flex items-center justify-between max-w-md mx-auto">
         <div className="flex items-center gap-3 min-w-0 flex-1">
           {onBack && (
