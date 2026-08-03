@@ -21,6 +21,7 @@ interface HotelWalletData {
   hotelId: string;
   hotelName: string;
   account: { totalOwed: number; totalPaid: number; status: "DUE" | "SETTLED" | "CREDIT" };
+  pendingRefunds: { orderId: string; orderNumber: number; amount: number; orderedAt: string }[];
   salesRecords: SalesRecord[];
 }
 
@@ -110,6 +111,30 @@ export const WalletHotelDetailPage: React.FC<WalletHotelDetailPageProps> = ({ ho
                   </div>
                 </div>
               </div>
+
+              {data.pendingRefunds && data.pendingRefunds.length > 0 && (
+                <div className="bg-[#FFF7ED] border border-[#FED7AA] rounded-2xl p-4">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle size={18} className="text-[#D97706] mt-0.5 shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-xs font-bold text-[#9A3412] uppercase tracking-wider mb-2">Refunds pending</p>
+                      <div className="space-y-2">
+                        {data.pendingRefunds.map((r) => (
+                          <div key={r.orderId} className="flex items-center justify-between text-sm">
+                            <span className="font-semibold text-[#78350F]">
+                              Order #{r.orderNumber}
+                              <span className="block text-xs font-normal text-[#B45309] mt-0.5">
+                                {new Date(r.orderedAt).toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" })} · awaiting refund from {data.hotelName}
+                              </span>
+                            </span>
+                            <span className="font-bold text-[#9A3412]">{formatKsh(r.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <h3 className="text-sm font-semibold text-[#6B7280] uppercase tracking-wider mb-3 px-1">

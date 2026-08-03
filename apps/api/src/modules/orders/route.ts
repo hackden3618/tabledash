@@ -24,6 +24,7 @@ import {
   getOrderById,
   getOrders,
   getPendingCollection,
+  getRefundsOwed,
   markUtensilsIssued,
   markUtensilsReturned,
   placeOrder,
@@ -154,6 +155,29 @@ export const ordersRoute = new Elysia({
     try {
       if (!admin.hotelId) throw new Error("This account is not assigned to a hotel");
       return { success: true, data: await getPendingCollection(admin.hotelId) };
+    } catch (err: any) {
+      set.status = 400;
+      return { success: false, error: err.message };
+    }
+  })
+  // ─── Staff: Refunds Owed worklist (cancelled + paid + not yet refunded) ───
+  .get("/refunds-owed", async ({ headers, jwt, set }) => {
+    const authHeader = headers["authorization"];
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      set.status = 401;
+      return { success: false, error: "Missing or invalid authorization header" };
+    }
+    const token = authHeader.split(" ")[1] ?? "";
+    let admin;
+    try {
+      admin = await verifyAdminToken(token, (t) => jwt.verify(t));
+    } catch {
+      set.status = 401;
+      return { success: false, error: "Invalid or expired session token" };
+    }
+    try {
+      if (!admin.hotelId) throw new Error("This account is not assigned to a hotel");
+      return { success: true, data: await getRefundsOwed(admin.hotelId) };
     } catch (err: any) {
       set.status = 400;
       return { success: false, error: err.message };

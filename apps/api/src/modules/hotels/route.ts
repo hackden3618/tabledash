@@ -150,7 +150,7 @@ export const hotelsRoute = new Elysia({
 
         const results = products.map((p) => {
           const hotel = p.hotel;
-          const productScore = fuzzyScore(q, p.name) * 3 + fuzzyScore(q, p.category) * 2 + fuzzyScore(q, p.mealCategory) * 3;
+          const productScore = fuzzyScore(q, p.name) * 3 + fuzzyScore(q, p.category) * 2 + fuzzyScore(q, (p.mealCategories || []).join(" ")) * 3;
           const hotelScore = hotel ? fuzzyScore(q, hotel.name) : 0;
           return {
           id: p.id,
@@ -161,7 +161,7 @@ export const hotelsRoute = new Elysia({
           hotelIsOpen: hotel?.isOpen ?? true,
           hotelImageUrl: hotel?.imageUrl ?? null,
           category: p.category,
-          mealCategory: p.mealCategory,
+          mealCategories: p.mealCategories,
           imageUrl: p.imageUrl,
           price: Number(p.price),
           available: p.available,

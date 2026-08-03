@@ -112,9 +112,17 @@ enum MealCategory {
     BREAKFAST
     LUNCH
     DRINKS
-    DESSERTS
     DINNER
     OTHER
+}
+
+/**
+ * Vendor group is the seam for future verticals (Grocery, Pharmacy), NOT a
+ * vertical itself. Only FOOD exists today; adding another value is the additive
+ * path for those businesses and must not be branched on elsewhere yet.
+ */
+enum VendorGroup {
+    FOOD
 }
 
 /**
@@ -148,6 +156,7 @@ model Hotel {
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz()
   deletedAt   DateTime? @map("deleted_at") @db.Timestamptz()
   zoneId      String    @map("zone_id") @db.Uuid
+  vendorGroup VendorGroup @default(FOOD) @map("vendor_group")
 
   adminUsers       AdminUser[]
   products         Product[]
@@ -306,7 +315,7 @@ model Product {
   id              String    @id @default(uuid()) @db.Uuid
   name            String
   category        String    @default("General")
-  mealCategory    MealCategory @default(OTHER) @map("meal_category")
+  mealCategories  MealCategory[] @default([OTHER]) @map("meal_categories")
   imageUrl        String    @map("image_url")
   price           Decimal   @db.Decimal(10, 2)
   available       Boolean   @default(true)

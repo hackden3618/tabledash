@@ -31,7 +31,6 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   const [unreadCount, setUnreadCount] = React.useState(0);
 
   const refreshUnread = React.useCallback(async () => {
-    if (!token) { setUnreadCount(0); return; }
     const result = await apiGet<{ unreadCount: number }>("/messaging/unread-count", token);
     if (result.success) setUnreadCount(result.data?.unreadCount || 0);
   }, [token]);

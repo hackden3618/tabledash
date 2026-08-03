@@ -160,7 +160,12 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
     };
 
     // ── Record payment (finance owns the ledger; the order cache is read-through) ──
-    const handleRecordPayment = async () => {
+    // Recording more than the outstanding amount means the business owes the
+    // customer the difference (credit on their account). Confirm that explicitly
+    // before submitting so it is never a silent accept.
+    const [excessConfirm, setExcessConfirm] = useState<number | null>(null);
+
+    const submitPayment = async () => {
         const amount = parseFloat(paymentAmount);
         if (!amount || amount <= 0) { setError("Enter a valid payment amount."); return; }
         setPaymentBusy(true);
@@ -175,9 +180,21 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
             onOrderUpdated(res.data.order);
             setShowPaymentModal(false);
             setPaymentNote("");
+            setExcessConfirm(null);
         } else {
             setError(res.error ?? "Failed to record payment.");
         }
+    };
+
+    const handleRecordPayment = () => {
+        const amount = parseFloat(paymentAmount);
+        if (!amount || amount <= 0) { setError("Enter a valid payment amount."); return; }
+        const excess = amount - outstanding;
+        if (excess > 0.005) {
+            setExcessConfirm(excess);
+            return;
+        }
+        void submitPayment();
     };
 
     // ── Refund / adjustment (always its own ledger row, reason required) ──
@@ -353,6 +370,21 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
                                     </div>
                                 )}
                             </div>
+                            {canRefund && amountPaid > 0 && (
+                                <div className="flex gap-2">
+                                    <Button
+                                        size="sm"
+                                        variant="danger"
+                                        onClick={() => {
+                                            setAdjustType("REFUND");
+                                            setAdjustAmount(String(amountPaid));
+                                            setShowAdjustModal(true);
+                                        }}
+                                    >
+                                        <Undo2 size={14} className="mr-1" /> Issue Refund ({formatKsh(amountPaid)})
+                                    </Button>
+                                </div>
+                            )}
                         </>
                     ) : (
                         <>
@@ -771,8 +803,30 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
                 </div>
             </Modal>
 
-            {/* Refund / Adjustment Modal */}
+            {/* Excess Payment Confirmation Modal */}
             <Modal
+                isOpen={excessConfirm !== null}
+                onClose={() => setExcessConfirm(null)}
+                title="Payment exceeds the balance"
+                type="warning"
+            >
+                <p className="text-sm text-[#6B7280] mb-4 leading-relaxed">
+                    This payment of {formatKsh(Number(paymentAmount) || 0)} is {formatKsh(excessConfirm ?? 0)} more than the {formatKsh(outstanding)} outstanding. The business will owe this customer the excess as credit on their account.
+                </p>
+                <div className="bg-[#FEF3C7] border border-[#FCD34D] rounded-xl px-4 py-3 mb-4 text-sm font-semibold text-[#92400E]">
+                    The customer&rsquo;s account will be credited {formatKsh(excessConfirm ?? 0)}.
+                </div>
+                <div className="flex gap-3 mt-5">
+                    <Button variant="secondary" fullWidth onClick={() => setExcessConfirm(null)}>
+                        Go Back
+                    </Button>
+                    <Button variant="primary" fullWidth onClick={() => void submitPayment()} disabled={paymentBusy}>
+                        {paymentBusy ? "Recording..." : "Confirm & Record"}
+                    </Button>
+                </div>
+            </Modal>
+
+            {/* Refund / Adjustment Modal */}            <Modal
                 isOpen={showAdjustModal}
                 onClose={() => setShowAdjustModal(false)}
                 title="Refund / Adjust"

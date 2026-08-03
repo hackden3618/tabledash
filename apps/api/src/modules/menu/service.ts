@@ -15,13 +15,15 @@ import { toPublicMediaUrl } from "../media/service";
 export interface CreateProductInput {
   name: string;
   category?: string;
-  mealCategory?: "BREAKFAST" | "LUNCH" | "DRINKS" | "DESSERTS" | "DINNER" | "OTHER";
+  mealCategories?: MealCategoryValue[];
   imageUrl: string;
   price: number;
   available?: boolean;
   stockQty?: number;
   hotelId?: string;
 }
+
+type MealCategoryValue = "BREAKFAST" | "LUNCH" | "DRINKS" | "DINNER" | "OTHER";
 
 /**
  * Retrieves all active (non-deleted) menu items ordered oldest-first.
@@ -74,7 +76,7 @@ export const createMenuItem = async (input: CreateProductInput, hotelIdFromJwt?:
     data: {
       name: input.name,
       category: input.category ?? "General",
-      mealCategory: input.mealCategory ?? "OTHER",
+      mealCategories: input.mealCategories ?? ["OTHER"],
       imageUrl: input.imageUrl,
       price: input.price,
       available: isAvailable,
@@ -169,7 +171,7 @@ export const updateProductStock = async (id: string, stockQty: number, hotelId?:
   return formattedProduct;
 };
 
-export const updateProduct = async (id: string, input: { name?: string; category?: string; mealCategory?: "BREAKFAST" | "LUNCH" | "DRINKS" | "DESSERTS" | "DINNER" | "OTHER"; imageUrl?: string; price?: number; available?: boolean }, hotelId?: string) => {
+export const updateProduct = async (id: string, input: { name?: string; category?: string; mealCategories?: MealCategoryValue[]; imageUrl?: string; price?: number; available?: boolean }, hotelId?: string) => {
   const existing = await prisma.product.findUnique({ where: { id } });
   if (!existing) throw new Error("Product not found");
   if (hotelId && existing.hotelId !== hotelId) {
@@ -179,7 +181,7 @@ export const updateProduct = async (id: string, input: { name?: string; category
   const updateData: any = {};
   if (input.name !== undefined) updateData.name = input.name;
   if (input.category !== undefined) updateData.category = input.category;
-  if (input.mealCategory !== undefined) updateData.mealCategory = input.mealCategory;
+  if (input.mealCategories !== undefined) updateData.mealCategories = input.mealCategories;
   if (input.imageUrl !== undefined) updateData.imageUrl = input.imageUrl;
   if (input.price !== undefined) updateData.price = input.price;
   if (input.available !== undefined) updateData.available = input.available;

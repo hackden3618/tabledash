@@ -643,7 +643,7 @@ export async function getHotelWalletDetail(customerId: string, hotelId: string) 
 
   const orders = await prisma.order.findMany({
     where: { customerId, hotelId },
-    select: { id: true, orderNumber: true },
+    select: { id: true, orderNumber: true, status: true, orderedAt: true },
   });
 
   const orderIds = orders.map((o) => o.id);
@@ -655,10 +655,33 @@ export async function getHotelWalletDetail(customerId: string, hotelId: string) 
 
   const hotel = account?.hotel || await prisma.hotel.findUnique({ where: { id: hotelId }, select: { id: true, name: true } });
 
+  // Cancelled-but-unrefunded orders: the business owes this customer money the
+  // ledger alone reads as "settled". Surface it explicitly so a 0 balance never
+  // hides a pending refund.
+  const pendingRefunds = orders
+    .filter((o) => o.status === "CANCELLED")
+    .map((o) => {
+      const orderRecords = records.filter((r) => r.orderId === o.id);
+      const paid = orderRecords
+        .filter((r) => r.type === "ORDER_PAYMENT")
+        .reduce((sum, r) => sum + Number(r.amount), 0);
+      const refunded = orderRecords
+        .filter((r) => r.type === "REFUND")
+        .reduce((sum, r) => sum + Math.abs(Number(r.amount)), 0);
+      const amount = Math.max(0, paid - refunded);
+      return { orderId: o.id, orderNumber: o.orderNumber, amount, orderedAt: o.orderedAt };
+    })
+    .filter((r) => r.amount > 0);
+
   return {
     hotelId: hotel?.id || hotelId,
     hotelName: hotel?.name || "Unknown",
     account: account ? { ...account, status: Number(account.totalOwed) - Number(account.totalPaid) > 0 ? "DUE" : Number(account.totalOwed) - Number(account.totalPaid) < 0 ? "CREDIT" : "SETTLED" } : { totalOwed: 0, totalPaid: 0, status: "SETTLED" },
+    pendingRefunds: pendingRefunds.map((r) => ({
+      ...r,
+      amount: Number(r.amount),
+      orderedAt: r.orderedAt.toISOString(),
+    })),
     salesRecords: records.map((r) => ({
       id: r.id,
       type: r.type,

@@ -53,7 +53,7 @@ export const UpdateOrderStatusSchema = t.Object({
 export const CreateProductSchema = t.Object({
   name: t.String({ minLength: 2, error: "Product name is required" }),
   category: t.Optional(t.String({ default: "General" })),
-  mealCategory: t.Optional(t.Union([t.Literal("BREAKFAST"), t.Literal("LUNCH"), t.Literal("DRINKS"), t.Literal("DESSERTS"), t.Literal("DINNER"), t.Literal("OTHER")])),
+  mealCategories: t.Optional(t.Array(t.Union([t.Literal("BREAKFAST"), t.Literal("LUNCH"), t.Literal("DRINKS"), t.Literal("DINNER"), t.Literal("OTHER")]))),
   imageUrl: t.String({ minLength: 5, error: "Product image URL is required" }),
   price: t.Number({ minimum: 0, error: "Price must be non-negative" }),
   available: t.Optional(t.Boolean({ default: true })),
@@ -63,7 +63,7 @@ export const CreateProductSchema = t.Object({
 export const UpdateProductSchema = t.Object({
   name: t.Optional(t.String({ minLength: 2, error: "Product name must be at least 2 characters" })),
   category: t.Optional(t.String()),
-  mealCategory: t.Optional(t.Union([t.Literal("BREAKFAST"), t.Literal("LUNCH"), t.Literal("DRINKS"), t.Literal("DESSERTS"), t.Literal("DINNER"), t.Literal("OTHER")])),
+  mealCategories: t.Optional(t.Array(t.Union([t.Literal("BREAKFAST"), t.Literal("LUNCH"), t.Literal("DRINKS"), t.Literal("DINNER"), t.Literal("OTHER")]))),
   imageUrl: t.Optional(t.String({ minLength: 5, error: "Image URL must be at least 5 characters" })),
   price: t.Optional(t.Number({ minimum: 0, error: "Price must be non-negative" })),
   available: t.Optional(t.Boolean()),

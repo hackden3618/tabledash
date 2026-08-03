@@ -104,21 +104,31 @@ export function AppContent() {
         setCurrentViewState(nextView);
     }, []);
 
+    // Same as setCurrentView but replaces the current history entry instead of
+    // pushing. Used for auth-driven redirects (login/logout/session expiry) so
+    // the back stack doesn't accumulate redirect hops and a Back press never
+    // lands the user back on a login screen they already left.
+    const replaceCurrentView = useCallback((nextView: ViewState) => {
+        window.history.replaceState({ view: nextView }, "", window.location.href);
+        setCurrentViewState(nextView);
+    }, []);
+
     useEffect(() => {
         if (!window.history.state?.view) {
             window.history.replaceState({ view: currentView }, "", window.location.href);
         }
     }, []);
 
-    // Auto-redirect admin to/from login based on auth state
+    // Auto-redirect admin to/from login based on auth state. Uses replaceState
+    // so login/logout redirects never add back-stack entries.
     useEffect(() => {
         if (adminHydrating) return;
         if (currentView.startsWith("admin_") && !isAdminLoggedIn) {
-            setCurrentView("admin_login");
+            replaceCurrentView("admin_login");
         } else if (currentView === "admin_login" && isAdminLoggedIn) {
-            setCurrentView("admin_orders");
+            replaceCurrentView("admin_orders");
         }
-    }, [isAdminLoggedIn, adminHydrating, currentView]);
+    }, [isAdminLoggedIn, adminHydrating, currentView, replaceCurrentView]);
 
     // Sync notification scope with current view
     useEffect(() => {
@@ -400,7 +410,7 @@ export function AppContent() {
                 <AdminLoginPage
                     onLoginSuccess={(token, loginUser) => {
                         adminLogin(token, loginUser);
-                        setCurrentView("admin_orders");
+                        replaceCurrentView("admin_orders");
                     }}
                 />
             )}
@@ -414,7 +424,7 @@ export function AppContent() {
                     }}
                     onLogout={() => {
                         adminLogout();
-                        setCurrentView("customer_menu");
+                        replaceCurrentView("customer_menu");
                     }}
                     onOpenPendingCollection={() => setCurrentView("admin_pending_collection")}
                 />

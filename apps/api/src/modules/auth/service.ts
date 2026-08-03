@@ -64,14 +64,14 @@ export const loginAdmin = async (
   jwtSign: (payload: Record<string, any>) => Promise<string>
 ): Promise<AdminAuthResult> => {
   const user = await prisma.adminUser.findUnique({
-    where: { username },
+    where: { username: username.trim() },
   });
 
   if (!user) {
     throw new Error("Invalid username or password");
   }
 
-  const isValid = await Bun.password.verify(password, user.passwordHash);
+  const isValid = await Bun.password.verify(password.trim(), user.passwordHash);
   if (!isValid) {
     throw new Error("Invalid username or password");
   }
@@ -147,14 +147,14 @@ export const loginPlatformAdmin = async (
   jwtSign: (payload: Record<string, any>) => Promise<string>
 ): Promise<{ token: string; user: { id: string; username: string; name: string } }> => {
   const user = await prisma.platformAdmin.findUnique({
-    where: { username },
+    where: { username: username.trim() },
   });
 
   if (!user) {
     throw new Error("Invalid username or password");
   }
 
-  const isValid = await Bun.password.verify(password, user.passwordHash);
+  const isValid = await Bun.password.verify(password.trim(), user.passwordHash);
   if (!isValid) {
     throw new Error("Invalid username or password");
   }

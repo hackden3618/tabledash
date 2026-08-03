@@ -255,7 +255,13 @@ export const InboxPage: React.FC<{ token?: string; actorId?: string; onBack: () 
         else setActionError(result.error || "Unable to publish notice");
     };
      
-    // TODO - platform support should have a scrollable view with the input fixed at the bottom, immediately above the bottom navigation tab, and this applies to all chat inputs...
+    // The active conversation is a fixed-height flex column: header (64px) on
+    // top, scrollable messages in the middle, composer pinned at the bottom
+    // immediately above the bottom nav. This is the single shared chat layout —
+    // platform support, order chats, and staff conversations all render here.
+    // env(safe-area-inset-bottom) keeps the composer clear of the nav on notched
+    // phones where the nav's own safe-area padding makes it taller than 56/72px.
+    const composerSafeArea = "env(safe-area-inset-bottom, 0px)";
 
     const startPlatformSupport = async () => {
         if (!supportBody.trim() || startingSupport) return;
@@ -392,7 +398,7 @@ export const InboxPage: React.FC<{ token?: string; actorId?: string; onBack: () 
                     )}
                 </div>
             ) : (
-                <div className="flex flex-col relative" style={{ height: `calc(100dvh - 64px - ${mode === "hotel" ? 72 : 56}px)` }}>
+                <div className="flex flex-col relative" style={{ height: `calc(100dvh - 64px - ${composerSafeArea} - ${mode === "hotel" ? 72 : 56}px)` }}>
                     <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 px-4 py-5 space-y-3 overflow-y-auto">
                         <div className="rounded-2xl border border-[#E5E7EB] bg-white px-4 py-3 flex items-start justify-between gap-2">
                             <div>

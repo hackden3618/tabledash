@@ -148,11 +148,11 @@ export const getStaffUsers = async (hotelId?: string) => {
 export const addStaffUser = async (data: StaffUserPayload, hotelId?: string) => {
   const formattedPhone = formatPhone(data.phone);
 
-  const existing = await prisma.staffUser.findUnique({
-    where: { phone: formattedPhone, hotelId},
+  const existing = await prisma.staffUser.findFirst({
+    where: { phone: formattedPhone, hotelId },
   });
   if (existing) {
-    throw new Error("A staff member with this phone number already exists.");
+    throw new Error("A staff member with this phone number already exists at this hotel.");
   }
 
   if (!hotelId) throw new Error("A hotel is required before adding staff");
@@ -189,10 +189,10 @@ export const updateStaffUser = async (id: string, data: Partial<StaffUserPayload
 
   if (formatted) {
     const dup = await prisma.staffUser.findFirst({
-      where: { phone: formatted, NOT: { id } },
+      where: { phone: formatted, hotelId, NOT: { id } },
     });
     if (dup) {
-      throw new Error("Another staff member with this phone number already exists.");
+      throw new Error("Another staff member with this phone number already exists at this hotel.");
     }
   }
 

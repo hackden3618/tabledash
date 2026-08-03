@@ -19,11 +19,11 @@ const getMealRatings = async () => {
   }
 };
 
-const formatProduct = (product: { id: string; name: string; category: string; mealCategory: string; imageUrl: string; price: unknown; available: boolean; stockQty: number; hotelId: string; hotel: { id: string; name: string; imageUrl: string | null; isOpen: boolean; zone: { id: string; name: string; type: string } } }, salesCount: number, recentSalesCount: number, rating: number | null, ratingCount: number) => ({
+const formatProduct = (product: { id: string; name: string; category: string; mealCategories: string[]; imageUrl: string; price: unknown; available: boolean; stockQty: number; hotelId: string; hotel: { id: string; name: string; imageUrl: string | null; isOpen: boolean; zone: { id: string; name: string; type: string } } }, salesCount: number, recentSalesCount: number, rating: number | null, ratingCount: number) => ({
   id: product.id,
   name: product.name,
   category: product.category,
-  mealCategory: product.mealCategory,
+  mealCategories: product.mealCategories,
   imageUrl: toPublicMediaUrl(product.imageUrl) ?? product.imageUrl,
   price: Number(product.price),
   available: product.available,

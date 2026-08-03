@@ -2,9 +2,10 @@ import React, { useEffect, useState, useCallback } from "react";
 import { apiGet, apiPost, apiPatch, apiDelete } from "../../lib/api";
 import { useNotifications } from "../../context/NotificationsContext";
 import { usePlatformAdminAuth } from "../../context/PlatformAdminAuthContext";
+import { AdminNotificationPanel } from "../../components/AdminNotificationPanel";
 import { Modal } from "../../components/ui/Modal";
 import { InboxPage } from "../InboxPage";
-import { Activity, Building2, ChevronRight, ClipboardList, LayoutDashboard, LogOut, MapPin, Menu, MessageCircle, Plus, RefreshCw, Send, UserPlus, Users, UserCircle, X } from "lucide-react";
+import { Activity, Bell, Building2, ChevronRight, ClipboardList, LayoutDashboard, LogOut, MapPin, Menu, MessageCircle, Plus, RefreshCw, Send, UserPlus, Users, UserCircle, X } from "lucide-react";
 
 type PlatformView = "login" | "overview" | "hotels" | "hotel_detail" | "create_hotel" | "regions" | "admins" | "create_admin" | "audit" | "outbox" | "communications" | "profile";
 
@@ -19,7 +20,7 @@ interface PlatformDashboard {
 // NOTE - all actions here are highly impactful to business operations; destructive actions stay behind confirmation.
 interface Hotel {
     id: string; name: string; slug: string; isOpen: boolean;
-    autoCloseAt: string | null; createdAt: string; deletedAt: string | null;
+    autoCloseAt: string | null; imageUrl: string | null; createdAt: string; deletedAt: string | null;
     adminUsers?: { id: string; name: string; username: string; role: string }[];
     _count?: { orders: number };
     events?: any[]; staffUsers?: { id: string; name: string; phone: string }[];
@@ -71,7 +72,8 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
     const [loginSubmitting, setLoginSubmitting] = useState(false);
     const [profileForm, setProfileForm] = useState({ name: "", username: "", currentPassword: "", newPassword: "", confirmPassword: "" });
     const [profileSaving, setProfileSaving] = useState(false);
-    const { pushNotification } = useNotifications();
+    const [panelOpen, setPanelOpen] = useState(false);
+    const { unreadCount, pushNotification } = useNotifications();
 
     useEffect(() => { if (user) setProfileForm((current) => ({ ...current, name: user.name, username: user.username })); }, [user]);
 
@@ -157,7 +159,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
         setLoginError("");
         setLoginSubmitting(true);
         try {
-            const res = await apiPost<{ token: string; user: PlatformMe }>("/platform/login", loginForm);
+            const res = await apiPost<{ token: string; user: PlatformMe }>("/platform/login", { ...loginForm, username: loginForm.username.trim(), password: loginForm.password.trim() });
             if (res.success && res.data) {
                 authLogin(res.data.token, res.data.user);
                 setView("overview");
@@ -342,6 +344,35 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                 aria-label="Open menu"
             >
                 <Menu size={18} color={T.textMuted} aria-hidden="true" />
+            </button>
+
+            {/* Notification bell — fixed top-right, platform-scoped */}
+            <button onClick={() => setPanelOpen(true)}
+                style={{
+                    position: "fixed", top: s(4), right: s(4), zIndex: 60,
+                    background: T.surface,
+                    border: `1px solid ${T.border}`, cursor: "pointer",
+                    width: "36px", height: "36px", display: "flex",
+                    alignItems: "center", justifyContent: "center",
+                    padding: 0, borderRadius: "10px",
+                    transition: "box-shadow 0.15s, opacity 0.2s",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                    opacity: sidebarOpen ? 0 : 1, pointerEvents: sidebarOpen ? "none" : "auto",
+                }}
+                aria-label="Notifications"
+                title="Notifications"
+            >
+                <Bell size={18} color={T.textMuted} aria-hidden="true" />
+                {unreadCount > 0 && (
+                    <span style={{
+                        position: "absolute", top: -4, right: -4,
+                        background: T.danger, color: "white",
+                        borderRadius: "50%", fontSize: "0.6rem", fontWeight: 700,
+                        minWidth: "18px", height: "18px", padding: "0 4px",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        border: `2px solid ${T.surface}`,
+                    }}>{unreadCount > 9 ? "9+" : unreadCount}</span>
+                )}
             </button>
 
             {/* Overlay backdrop */}
@@ -809,12 +840,25 @@ function HotelDetail({ hotelId, onBack, onToggle, token: tok, regions }: { hotel
     const [detailLoading, setDetailLoading] = useState(true);
     const [zoneId, setZoneId] = useState("");
     const [zoneSaving, setZoneSaving] = useState(false);
+    const [editForm, setEditForm] = useState({ name: "", slug: "", imageUrl: "", isOpen: true, autoCloseAt: "" });
+    const [editSaving, setEditSaving] = useState(false);
+    const [editError, setEditError] = useState("");
     const T2 = T;
 
     useEffect(() => {
         (async () => {
             const res = await apiGet<Hotel>(`/platform/hotels/${hotelId}`, tok);
-            if (res.success && res.data) { setHotel(res.data); setZoneId(res.data.zone?.id ?? ""); }
+            if (res.success && res.data) {
+                setHotel(res.data);
+                setZoneId(res.data.zone?.id ?? "");
+                setEditForm({
+                    name: res.data.name,
+                    slug: res.data.slug,
+                    imageUrl: res.data.imageUrl ?? "",
+                    isOpen: res.data.isOpen,
+                    autoCloseAt: res.data.autoCloseAt ? res.data.autoCloseAt.slice(0, 16) : "",
+                });
+            }
             setDetailLoading(false);
         })();
     }, [hotelId, tok]);
@@ -825,6 +869,32 @@ function HotelDetail({ hotelId, onBack, onToggle, token: tok, regions }: { hotel
         const res = await apiPatch<Hotel>(`/platform/hotels/${hotel.id}`, { zoneId }, tok);
         setZoneSaving(false);
         if (res.success && res.data) setHotel(res.data);
+    };
+
+    const saveDetails = async () => {
+        if (!hotel || editSaving) return;
+        setEditSaving(true);
+        setEditError("");
+        const res = await apiPatch<Hotel>(`/platform/hotels/${hotel.id}`, {
+            name: editForm.name.trim() || hotel.name,
+            slug: editForm.slug.trim() || hotel.slug,
+            imageUrl: editForm.imageUrl.trim(),
+            isOpen: editForm.isOpen,
+            autoCloseAt: editForm.autoCloseAt ? new Date(editForm.autoCloseAt).toISOString() : "",
+        }, tok);
+        setEditSaving(false);
+        if (res.success && res.data) {
+            setHotel(res.data);
+            setEditForm({
+                name: res.data.name,
+                slug: res.data.slug,
+                imageUrl: res.data.imageUrl ?? "",
+                isOpen: res.data.isOpen,
+                autoCloseAt: res.data.autoCloseAt ? res.data.autoCloseAt.slice(0, 16) : "",
+            });
+        } else {
+            setEditError(res.error ?? "Failed to save hotel details");
+        }
     };
 
     if (detailLoading) return <div style={{ color: T2.textDim }}>Loading…</div>;
@@ -847,6 +917,45 @@ function HotelDetail({ hotelId, onBack, onToggle, token: tok, regions }: { hotel
                         style={{ background: hotel.isOpen ? T2.dangerMuted : T2.successMuted, color: hotel.isOpen ? T2.danger : T2.success, border: `1px solid ${hotel.isOpen ? "#FECACA" : "#A7F3D0"}`, padding: `${s(2)} ${s(4)}`, borderRadius: T2.radius, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>
                         {hotel.isOpen ? "Suspend" : "Activate"}
                     </button>
+                </div>
+            </div>
+
+            <div style={{ marginBottom: s(6), padding: s(4), background: T2.surface, border: `1px solid ${T2.border}`, borderRadius: T2.radius, maxWidth: "520px" }}>
+                <h3 style={{ fontSize: "0.9rem", fontWeight: 700, color: T2.text, marginBottom: s(2) }}>Hotel Details</h3>
+                <p style={{ color: T2.textMuted, fontSize: "0.8rem", marginBottom: s(3) }}>Edit the public profile shown to customers on the marketplace.</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: s(3) }}>
+                    <div>
+                        <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: T2.textMuted, marginBottom: s(1) }}>Hotel Name</label>
+                        <input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                            className="input-field" style={{ fontFamily: T2.font }} placeholder="e.g. Riverside Food Court" />
+                    </div>
+                    <div>
+                        <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: T2.textMuted, marginBottom: s(1) }}>Slug (URL identifier)</label>
+                        <input value={editForm.slug} onChange={(e) => setEditForm({ ...editForm, slug: e.target.value })}
+                            className="input-field" style={{ fontFamily: "monospace" }} />
+                    </div>
+                    <div>
+                        <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: T2.textMuted, marginBottom: s(1) }}>Image URL</label>
+                        <input value={editForm.imageUrl} onChange={(e) => setEditForm({ ...editForm, imageUrl: e.target.value })}
+                            className="input-field" style={{ fontFamily: "monospace" }} placeholder="https://…" />
+                    </div>
+                    <div>
+                        <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: T2.textMuted, marginBottom: s(1) }}>Auto-close (optional)</label>
+                        <input type="datetime-local" value={editForm.autoCloseAt} onChange={(e) => setEditForm({ ...editForm, autoCloseAt: e.target.value })}
+                            className="input-field" style={{ fontFamily: T2.font }} />
+                        <p style={{ color: T2.textDim, fontSize: "0.75rem", marginTop: s(1) }}>Leave empty to keep the hotel open until manually closed.</p>
+                    </div>
+                    <label style={{ display: "flex", alignItems: "center", gap: s(2), fontSize: "0.85rem", fontWeight: 600, color: T2.text, cursor: "pointer" }}>
+                        <input type="checkbox" checked={editForm.isOpen} onChange={(e) => setEditForm({ ...editForm, isOpen: e.target.checked })} style={{ width: "16px", height: "16px", accentColor: T2.primary }} />
+                        Accepting orders now
+                    </label>
+                    {editError && <p style={{ color: T2.danger, fontSize: "0.8rem" }}>{editError}</p>}
+                    <div style={{ display: "flex", gap: s(2) }}>
+                        <button type="button" onClick={() => void saveDetails()} disabled={editSaving || !editForm.name.trim()}
+                            style={{ background: T2.primary, color: "white", border: "none", borderRadius: T2.radius, padding: `${s(2)} ${s(4)}`, fontWeight: 700, fontSize: "0.85rem", cursor: editSaving ? "wait" : "pointer", opacity: editSaving || !editForm.name.trim() ? 0.6 : 1 }}>
+                            {editSaving ? "Saving…" : "Save Changes"}
+                        </button>
+                    </div>
                 </div>
             </div>
 

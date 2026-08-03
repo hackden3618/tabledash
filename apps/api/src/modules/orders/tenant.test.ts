@@ -128,19 +128,18 @@ describe("Order service tenant isolation", () => {
     expect(mockOrderUpdate.mock.calls.length).toBe(0);
   });
 
-  test("blocks completion while issued utensils remain unreturned", async () => {
+  test("requires utensils confirmation before dispatch", async () => {
     await resetMocks();
     mockOrderFindFirst.mockResolvedValueOnce({
       id: "order-X",
       hotelId: "hotel-A",
-      status: "OUT_FOR_DELIVERY",
-      utensilsIssued: true,
-      utensilsReturnedAt: null,
+      status: "READY_FOR_DELIVERY",
+      utensilsRequired: null,
       orderItems: [],
     } as any);
 
     const service = await import("./service");
-    await expect(service.updateOrderStatus("order-X", "DELIVERED", undefined, "hotel-A")).rejects.toThrow("Reusable utensils must be returned");
+    await expect(service.updateOrderStatus("order-X", "OUT_FOR_DELIVERY", undefined, "hotel-A")).rejects.toThrow("Confirm whether utensils are being sent before dispatching this order.");
     expect(mockTransaction.mock.calls.length).toBe(0);
   });
 });

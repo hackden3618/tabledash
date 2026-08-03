@@ -191,9 +191,12 @@ export const placeOrder = async (input: CreateOrderInput) => {
                     firstName: input.firstName,
                     lastName: input.lastName ?? customer.lastName,
                     knownName: input.knownName ?? customer.knownName,
-                    stallNumber: input.stallNumber ?? customer.stallNumber,
-                    marketSection: input.marketSection ?? customer.marketSection,
-                    locationDescription: input.locationDescription ?? customer.locationDescription,
+                    // `||` (not `??`) so a blank form field can never silently
+                    // wipe a previously-saved value — location details persist
+                    // across orders unless a real value replaces them.
+                    stallNumber: input.stallNumber || customer.stallNumber,
+                    marketSection: input.marketSection || customer.marketSection,
+                    locationDescription: input.locationDescription || customer.locationDescription,
                 },
             });
         }
@@ -526,6 +529,17 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus, canc
         );
     }
 
+    // Utensil confirmations must never gate order completion: utensils are
+    // returned *after* delivery, so a DELIVERED-side check would deadlock every
+    // order that went out on reusable plates. The return is tracked via the
+    // Pending Collection worklist instead. The one guard that belongs here is
+    // that the dispatch-time question was actually answered (defense-in-depth
+    // for direct API calls — the frontend dispatch modal already records this
+    // before transitioning, so this only fires when the API is called directly).
+    if (newStatus === "OUT_FOR_DELIVERY" && existing.utensilsRequired === null) {
+        throw new Error("Confirm whether utensils are being sent before dispatching this order.");
+    }
+
     const updated = await prisma.$transaction(async (tx) => {
         const updateData: any = {
             status: newStatus,
@@ -834,6 +848,75 @@ export const getPendingCollection = async (hotelId: string) => {
             stallNumber: order.stallNumber,
         };
     });
+};
+
+/**
+ * The Refunds Owed worklist: every CANCELLED order that was paid but has not
+ * been fully refunded. A cancellation writes no REFUND row automatically
+ * (partial/paid cancellations are refunded by staff), so without this list
+ * money the business owes is invisible — the ledger would just sit with a
+ * net-zero CustomerAccount and nobody would notice. refundOwed is computed from
+ * the ledger (paid minus refunded) so it always matches what the balance says.
+ */
+export const getRefundsOwed = async (hotelId: string) => {
+    const orders = await prisma.order.findMany({
+        where: { hotelId, status: "CANCELLED" },
+        include: {
+            customer: true,
+            orderItems: true,
+            salesRecords: { select: { type: true, amount: true } },
+        },
+        orderBy: { orderedAt: "desc" },
+    });
+
+    return orders
+        .map((order) => {
+            const paid = order.salesRecords
+                .filter((r) => r.type === "ORDER_PAYMENT")
+                .reduce((sum, r) => sum + Number(r.amount), 0);
+            const refunded = order.salesRecords
+                .filter((r) => r.type === "REFUND")
+                .reduce((sum, r) => sum + Math.abs(Number(r.amount)), 0);
+            return { order, paid, refunded, refundOwed: Math.max(0, paid - refunded) };
+        })
+        .filter(({ refundOwed }) => refundOwed > 0)
+        .map(({ order, paid, refunded, refundOwed }) => ({
+            id: order.id,
+            orderNumber: order.orderNumber,
+            status: order.status,
+            hotelId: order.hotelId,
+            totalAmount: Number(order.totalAmount),
+            amountPaid: Number(order.amountPaid),
+            paymentStatus: order.paymentStatus,
+            paid,
+            refunded,
+            refundOwed,
+            cancelledAtStatus: order.cancelledAtStatus,
+            cancelReason: order.cancelReason,
+            refundedAt: order.refundedAt ? order.refundedAt.toISOString() : null,
+            utensilsIssued: order.utensilsIssued,
+            utensilsRequired: order.utensilsRequired,
+            utensilsReturnedAt: order.utensilsReturnedAt,
+            customer: order.customer
+                ? {
+                    id: order.customer.id,
+                    accountId: order.customer.accountId,
+                    firstName: order.customer.firstName,
+                    lastName: order.customer.lastName,
+                    knownName: order.customer.knownName,
+                    phone: order.customer.phone,
+                }
+                : null,
+            orderItems: order.orderItems?.map((item: any) => ({
+                ...item,
+                unitPrice: Number(item.unitPrice),
+                subtotal: Number(item.subtotal),
+            })),
+            orderedAt: order.orderedAt,
+            marketSection: order.marketSection,
+            locationDescription: order.locationDescription,
+            stallNumber: order.stallNumber,
+        }));
 };
 
 /**

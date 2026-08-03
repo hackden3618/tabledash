@@ -10,6 +10,7 @@ export default defineConfig({
   },
   datasource: {
       url: env.databaseUrl,
+      shadowDatabaseUrl: env.databaseUrl.replace(/\/[^/]*\?/, "/tabledash_shadow?"),
     // url: env("DATABASE_URL"),
   },
 });
