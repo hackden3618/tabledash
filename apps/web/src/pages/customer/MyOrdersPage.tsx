@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { apiGet } from "../../lib/api";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
+import { useCart } from "../../context/CartContext";
 import { ClipboardList, Package, RefreshCw, ChevronRight, Settings, Wallet } from "lucide-react";
 import { Header } from "../../components/ui/Header";
 import { EmptyState } from "../../components/ui/EmptyState";
@@ -21,6 +22,7 @@ const TERMINAL_CONFIG: Record<string, { label: string; variant: "success" | "dan
 
 export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackOrder, onGoToProfile, onNavigateToWallet }) => {
   const { customer, isLoggedIn, isLoading, logout, refreshProfile } = useCustomerAuth();
+  const { clearCart } = useCart();
   const [orders, setOrders] = useState<any[]>([]);
   const [guestOrders, setGuestOrders] = useState<any[]>([]);
   const [guestOrderId, setGuestOrderId] = useState<string | null>(null);
@@ -57,10 +59,10 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
   }, [guestOrderId, isLoggedIn]);
 
   useEffect(() => {
-    if (customer?.recentOrders) {
-      setOrders(customer.recentOrders);
-    }
+    setOrders(customer?.recentOrders ?? []);
   }, [customer?.recentOrders]);
+
+  useEffect(() => { void refreshProfile(); }, [refreshProfile]);
 
   const handleManualRefresh = async () => {
     if (isRefreshing) return;
@@ -133,7 +135,7 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
         title="My Orders"
         rightAction={isLoggedIn ? (
           <button
-            onClick={logout}
+            onClick={() => { clearCart(); logout(); }}
             className="px-3 py-1.5 rounded-xl bg-white/15 text-xs font-semibold text-white hover:bg-white/20 transition-colors bg-none border-none cursor-pointer"
           >
             Sign Out

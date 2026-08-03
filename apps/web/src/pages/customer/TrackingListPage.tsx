@@ -65,10 +65,10 @@ export const TrackingListPage: React.FC<TrackingListPageProps> = ({ onTrackOrder
   }, [guestOrder?.id, placedOrderId, isLoggedIn]);
 
   useEffect(() => {
-    if (customer?.recentOrders) {
-      setOrders(customer.recentOrders);
-    }
+    setOrders(customer?.recentOrders ?? []);
   }, [customer?.recentOrders]);
+
+  useEffect(() => { void refreshProfile(); }, [refreshProfile]);
 
   useEffect(() => {
     const fromAccount = orders.filter((o: any) => ACTIVE_STATUSES.includes(o.status));

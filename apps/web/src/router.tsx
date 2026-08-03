@@ -516,7 +516,6 @@ function AdminOrderDetailsRoute() {
         if (!orderId) return;
         if (state?.order?.id === orderId) {
             setOrder(state.order);
-            return;
         }
         let active = true;
         apiGet<any>(`/orders/${orderId}`, token).then((result) => {

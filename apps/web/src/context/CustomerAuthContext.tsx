@@ -109,6 +109,7 @@ export const CustomerAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const logout = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem("ladha_cart");
+    window.dispatchEvent(new Event("ladha:customer-logout"));
     setToken("");
     setCustomer(null);
   }, []);

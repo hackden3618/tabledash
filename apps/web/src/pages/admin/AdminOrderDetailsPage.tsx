@@ -89,6 +89,11 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
     const currentRank = STATUS_RANK[currentStatus] ?? 0;
     const isTerminal = currentStatus === "DELIVERED" || currentStatus === "CANCELLED";
 
+    useEffect(() => {
+        setCurrentStatus(order.status);
+        setCancelReason(order.cancelReason ?? null);
+    }, [order.id, order.status, order.cancelReason]);
+
     const totalAmount = Number(order.totalAmount);
     const amountPaid = Number(order.amountPaid ?? 0);
     const outstanding = Math.max(0, totalAmount - amountPaid);

@@ -187,8 +187,9 @@ describe("Finance service — ledger invariants", () => {
     ledgerRows = [
       { id: "sr-c1", hotelId: "hotel-A", orderId: "order-X", type: "ORDER_CHARGE", paymentMethod: "CREDIT", amount: 25, note: null },
       { id: "sr-c2", hotelId: "hotel-A", orderId: "order-X", type: "ORDER_PAYMENT", paymentMethod: "CASH", amount: 25, note: null },
+      { id: "sr-c3", hotelId: "hotel-A", orderId: "order-X", type: "ADJUSTMENT", paymentMethod: "CREDIT", amount: -25, note: "Order cancelled" },
     ];
-    currentAccount = { totalOwed: 25, totalPaid: 25 };
+    currentAccount = { totalOwed: 0, totalPaid: 25 };
     mockOrderFindUnique.mockResolvedValueOnce({
       ...seedOrder,
       totalAmount: 25,
@@ -199,12 +200,12 @@ describe("Finance service — ledger invariants", () => {
 
     await recordRefund("hotel-A", "cust-1", "order-X", 25, "Order cancelled but prepaid", "admin-1");
 
-    // The paid side is refunded and the residual charge is reversed as its own
-    // ledger row — never a silent cache edit — so the ledger fully explains it.
+    // The paid side is refunded and the existing charge reversal is not
+    // duplicated — the ledger fully explains the settled account.
     const refund = ledgerRows.find((r) => r.type === "REFUND");
     expect(refund?.amount).toBe(-25);
-    const reversal = ledgerRows.find((r) => r.type === "ADJUSTMENT");
-    expect(reversal?.amount).toBe(-25);
+    const reversals = ledgerRows.filter((r) => r.type === "ADJUSTMENT" && r.note === "Order cancelled");
+    expect(reversals).toHaveLength(1);
     expect(currentAccount.totalOwed).toBe(0);
     expect(currentAccount.totalPaid).toBe(0);
   });

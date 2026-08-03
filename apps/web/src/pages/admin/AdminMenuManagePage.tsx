@@ -128,8 +128,8 @@ export const AdminMenuManagePage: React.FC<AdminMenuManagePageProps> = ({
     };
 
     useEffect(() => {
-        fetchMenu();
-    }, []);
+        void fetchMenu();
+    }, [token]);
 
     const handleToggleAvailability = async (productId: string, currentStatus: boolean) => {
         const newStatus = !currentStatus;

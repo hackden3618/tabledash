@@ -152,9 +152,8 @@ export async function recordOrderCharge(
  * Reverses the residual charge of a cancelled order on the ledger — writes a
  * negative ADJUSTMENT row (so the ledger fully explains the order) and decrements
  * owed. The outstanding amount is recomputed from the whole ledger (charges +
- * existing adjustments − net paid), so the call is naturally idempotent: once the
- * charge is fully reversed it becomes a no-op. Called at cancellation time and
- * again when a cancelled order is refunded.
+ * existing adjustments), so the call is naturally idempotent: once the charge
+ * reversal exists it becomes a no-op. Called by the cancellation workflow only.
  */
 export async function recordCancellationChargeTx(
   tx: any,
@@ -163,21 +162,17 @@ export async function recordCancellationChargeTx(
   orderId: string,
   reason: string,
 ) {
-  const records: { type: string; amount: unknown }[] = await tx.salesRecord.findMany({ where: { orderId } });
+  const records: { type: string; amount: unknown; note?: string | null }[] = await tx.salesRecord.findMany({ where: { orderId } });
+  const hasChargeReversal = records.some((record) => record.type === "ADJUSTMENT" && record.note?.startsWith("Order cancelled"));
+  if (hasChargeReversal) return null;
   const charge = records
     .filter((r) => r.type === "ORDER_CHARGE")
     .reduce((sum, r) => sum + Number(r.amount), 0);
   const adjustments = records
     .filter((r) => r.type === "ADJUSTMENT")
     .reduce((sum, r) => sum + Number(r.amount), 0);
-  const paid = records
-    .filter((r) => r.type === "ORDER_PAYMENT")
-    .reduce((sum, r) => sum + Number(r.amount), 0);
-  const refunded = records
-    .filter((r) => r.type === "REFUND")
-    .reduce((sum, r) => sum + Math.abs(Number(r.amount)), 0);
-  const outstanding = charge + adjustments - (paid - refunded);
-  if (outstanding <= 0) return null;
+  const chargeToReverse = charge + adjustments;
+  if (chargeToReverse <= 0) return null;
 
   const record = await tx.salesRecord.create({
     data: {
@@ -185,12 +180,12 @@ export async function recordCancellationChargeTx(
       orderId,
       type: "ADJUSTMENT",
       paymentMethod: "CREDIT",
-      amount: -outstanding,
+      amount: -chargeToReverse,
       note: reason,
     },
   });
 
-  const account = await adjustAccountTx(tx, hotelId, customerId, -outstanding, 0);
+  const account = await adjustAccountTx(tx, hotelId, customerId, -chargeToReverse, 0);
 
   const order = await tx.order.findUniqueOrThrow({ where: { id: orderId } });
   await tx.eventOutbox.create({
@@ -202,7 +197,7 @@ export async function recordCancellationChargeTx(
         orderId,
         orderNumber: order.orderNumber,
         recordId: record.id,
-        amount: -outstanding,
+        amount: -chargeToReverse,
         type: "ADJUSTMENT",
         balance: accountBalance(account),
         hotelId,
@@ -297,29 +292,20 @@ export async function recordRefund(
       },
     });
 
-    // A refund reverses money actually paid. On a cancelled order the whole
-    // financial position is settled: the residual charge is reversed on the
-    // ledger too (an ADJUSTMENT row via recordCancellationChargeTx) so the
-    // ledger — never a silent cache edit — fully explains the order. On a live
-    // order, refunding more than was ever paid reduces what is owed, also
-    // recorded as its own ADJUSTMENT row.
+    // Refunds reverse money actually paid. Cancellation owns the charge
+    // reversal and records it once in the ledger, so this path never derives
+    // cancellation from the mutable order status.
+    const records: { type: string; amount: unknown; note?: string | null }[] = await tx.salesRecord.findMany({ where: { orderId } });
+    const hasChargeReversal = records.some((record) => record.type === "ADJUSTMENT" && record.note?.startsWith("Order cancelled"));
     const account = await tx.customerAccount.findUnique({
       where: { hotelId_customerId: { hotelId, customerId } },
     });
     const currentPaid = Number(account?.totalPaid ?? 0);
     const paidDelta = -Math.min(currentPaid, amount);
-    const owedDelta = order.status === "CANCELLED" ? 0 : -Math.max(0, amount - currentPaid);
+    const owedDelta = hasChargeReversal ? 0 : -Math.max(0, amount - currentPaid);
     await adjustAccountTx(tx, hotelId, customerId, owedDelta, paidDelta);
 
-    if (order.status === "CANCELLED") {
-      await recordCancellationChargeTx(
-        tx,
-        hotelId,
-        customerId,
-        orderId,
-        "Order cancelled — residual charge reversed with refund",
-      );
-    } else if (owedDelta < 0) {
+    if (!hasChargeReversal && owedDelta < 0) {
       await tx.salesRecord.create({
         data: {
           hotelId,

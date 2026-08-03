@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
+import { useCart } from "../../context/CartContext";
 import { Header } from "../../components/ui/Header";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
@@ -24,6 +25,7 @@ interface CustomerProfilePageProps {
 
 export const CustomerProfilePage: React.FC<CustomerProfilePageProps> = ({ onBack }) => {
   const { customer, isLoggedIn, logout, updateProfile, changePhone, verifyPhoneChange, refreshProfile, deleteAccount, forgotPin, resetPin } = useCustomerAuth();
+  const { clearCart } = useCart();
 
   const [editing, setEditing] = useState(false);
   const [firstName, setFirstName] = useState(customer?.firstName ?? "");
@@ -420,7 +422,7 @@ export const CustomerProfilePage: React.FC<CustomerProfilePageProps> = ({ onBack
         title="Sign Out?"
         message="Are you sure you want to sign out? You'll need your PIN to sign back in."
         type="confirm"
-        primaryAction={{ label: "Sign Out", onClick: () => { logout(); setShowLogoutModal(false); }, variant: "danger" }}
+        primaryAction={{ label: "Sign Out", onClick: () => { clearCart(); logout(); setShowLogoutModal(false); }, variant: "danger" }}
         secondaryAction={{ label: "Cancel", onClick: () => setShowLogoutModal(false) }}
       />
 
