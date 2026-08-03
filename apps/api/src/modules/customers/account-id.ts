@@ -3,7 +3,8 @@ import { prisma } from "../../../../../infrastructure/database/prisma";
 const PREFIX = "LD-CUST-";
 
 // PostgreSQL sequence created by
-// prisma/migrations/20260731140000_customer_account_id_sequence. nextval() is
+// The restore_customer_account_id_sequence migration creates and backfills the
+// sequence for both baseline and existing production databases. nextval() is
 // atomic, so concurrent registrations can never receive the same account ID.
 export async function generateAccountId(): Promise<string> {
     const [row] = await prisma.$queryRaw<{ nextval: bigint }[]>`

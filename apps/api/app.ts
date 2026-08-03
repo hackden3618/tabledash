@@ -68,7 +68,10 @@ export const app = new Elysia()
   .get("/api/v1/health", () => ({ status: "ok", timestamp: new Date().toISOString() }))
   .get("/api/v1/ready", async ({ set }) => {
     try {
-      await prisma.$queryRaw`SELECT 1`;
+      const [databaseCheck] = await prisma.$queryRaw<{ sequence_exists: boolean }[]>`
+        SELECT to_regclass('public.customer_account_id_seq') IS NOT NULL AS sequence_exists
+      `;
+      if (!databaseCheck?.sequence_exists) throw new Error("customer account sequence is missing");
       return { status: "ready", timestamp: new Date().toISOString() };
     } catch {
       set.status = 503;
