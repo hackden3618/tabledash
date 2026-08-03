@@ -12,6 +12,11 @@ ALTER TABLE "products" ADD COLUMN "meal_categories" "MealCategory"[] DEFAULT ARR
 
 UPDATE "products" SET "meal_categories" = ARRAY["meal_category"];
 
+-- Retire DESSERTS: remap any legacy dessert products to a surviving category
+-- before the enum is rebuilt without DESSERTS — the array cast below rejects
+-- the retired value, which would fail on databases holding real dessert data.
+UPDATE "products" SET "meal_categories" = ARRAY['OTHER']::"MealCategory"[] WHERE "meal_category" = 'DESSERTS';
+
 ALTER TABLE "products" ALTER COLUMN "meal_categories" SET NOT NULL;
 
 ALTER TABLE "products" DROP COLUMN "meal_category";
