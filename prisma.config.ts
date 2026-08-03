@@ -9,8 +9,11 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-      url: env.databaseUrl,
-      shadowDatabaseUrl: env.databaseUrl.replace(/\/[^/]*\?/, "/tabledash_shadow?"),
-    // url: env("DATABASE_URL"),
+    // No shadowDatabaseUrl is configured on purpose: production DATABASE_URLs
+    // (e.g. postgres://…/railway) often lack a query string, and the previous
+    // regex-based derivation produced a shadow URL identical to the main one,
+    // which made `prisma migrate deploy` fail at boot. Prisma auto-creates a
+    // shadow database for local `migrate dev` when none is provided.
+    url: env.databaseUrl,
   },
 });

@@ -179,6 +179,36 @@ describe("Finance service — ledger invariants", () => {
     expect(outbox).toBeTruthy();
   });
 
+  test("recordRefund on a cancelled order reverses the residual charge on the ledger", async () => {
+    resetState();
+    const { recordRefund } = await import("./service");
+
+    // A cancelled, fully-paid order: charge + payment already on the ledger.
+    ledgerRows = [
+      { id: "sr-c1", hotelId: "hotel-A", orderId: "order-X", type: "ORDER_CHARGE", paymentMethod: "CREDIT", amount: 25, note: null },
+      { id: "sr-c2", hotelId: "hotel-A", orderId: "order-X", type: "ORDER_PAYMENT", paymentMethod: "CASH", amount: 25, note: null },
+    ];
+    currentAccount = { totalOwed: 25, totalPaid: 25 };
+    mockOrderFindUnique.mockResolvedValueOnce({
+      ...seedOrder,
+      totalAmount: 25,
+      amountPaid: 25,
+      paymentStatus: "PAID",
+      status: "CANCELLED",
+    } as any);
+
+    await recordRefund("hotel-A", "cust-1", "order-X", 25, "Order cancelled but prepaid", "admin-1");
+
+    // The paid side is refunded and the residual charge is reversed as its own
+    // ledger row — never a silent cache edit — so the ledger fully explains it.
+    const refund = ledgerRows.find((r) => r.type === "REFUND");
+    expect(refund?.amount).toBe(-25);
+    const reversal = ledgerRows.find((r) => r.type === "ADJUSTMENT");
+    expect(reversal?.amount).toBe(-25);
+    expect(currentAccount.totalOwed).toBe(0);
+    expect(currentAccount.totalPaid).toBe(0);
+  });
+
   test("recordAdjustment requires a non-zero amount and a reason", async () => {
     resetState();
     const { recordAdjustment } = await import("./service");

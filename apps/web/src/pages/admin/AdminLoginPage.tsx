@@ -13,11 +13,31 @@ const formatPhone = (raw: string): string => {
   return cleaned;
 };
 
-interface AdminLoginPageProps {
-  onLoginSuccess: (token: string, user: { id: string; username: string; name: string; role: string; hotelId: string | null }) => void;
+interface AdminUser {
+  id: string;
+  username: string;
+  name: string;
+  role: string;
+  hotelId: string | null;
 }
 
-type LoginView = "login" | "forgot" | "reset" | "done";
+interface AdminHotelSummary {
+  id: string;
+  name: string;
+  role: string;
+}
+
+interface AdminLoginResponse {
+  token: string;
+  user: AdminUser;
+  hotels: AdminHotelSummary[];
+}
+
+interface AdminLoginPageProps {
+  onLoginSuccess: (token: string, user: AdminUser, hotels?: AdminHotelSummary[]) => void;
+}
+
+type LoginView = "login" | "forgot" | "reset" | "done" | "pick";
 
 export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }) => {
   const [view, setView] = useState<LoginView>("login");
@@ -25,6 +45,10 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const [loginToken, setLoginToken] = useState("");
+  const [loginUser, setLoginUser] = useState<AdminUser | null>(null);
+  const [loginHotels, setLoginHotels] = useState<AdminHotelSummary[]>([]);
 
   const [resetPhone, setResetPhone] = useState("");
   const [otp, setOtp] = useState("");
@@ -36,14 +60,41 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }
     setError("");
     setLoading(true);
 
-    const res = await apiPost<any>("/auth/login", { username: username.trim(), password: password.trim() });
+    const res = await apiPost<AdminLoginResponse>("/auth/login", { username: username.trim(), password: password.trim() });
     setLoading(false);
 
     if (res.success && res.data) {
-      localStorage.setItem("ladha_token", res.data.token);
-      onLoginSuccess(res.data.token, res.data.user);
+      if (res.data.hotels && res.data.hotels.length > 1) {
+        setLoginToken(res.data.token);
+        setLoginUser(res.data.user);
+        setLoginHotels(res.data.hotels);
+        setView("pick");
+      } else {
+        onLoginSuccess(res.data.token, res.data.user, res.data.hotels ?? []);
+      }
     } else {
       setError(res.error || "Invalid username or password");
+    }
+  };
+
+  const handlePickHotel = async (hotel: AdminHotelSummary) => {
+    setError("");
+    setLoading(true);
+    try {
+      if (!loginToken || !loginUser) return;
+      if (hotel.id === loginUser.hotelId) {
+        onLoginSuccess(loginToken, loginUser, loginHotels);
+        return;
+      }
+      const res = await apiPost<{ token: string; user: AdminUser }>("/auth/switch-hotel", { hotelId: hotel.id }, loginToken);
+      if (res.success && res.data) {
+        onLoginSuccess(res.data.token, res.data.user, loginHotels);
+      } else {
+        setError(res.error || "Unable to switch hotel");
+        setView("login");
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -95,6 +146,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }
             {view === "forgot" && "Enter your registered phone number"}
             {view === "reset" && "Enter the reset code and new password"}
             {view === "done" && "Password reset successful"}
+            {view === "pick" && "Choose which hotel to work with"}
           </p>
         </div>
 

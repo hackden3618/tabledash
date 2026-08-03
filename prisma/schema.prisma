@@ -184,7 +184,7 @@ model PlatformAdmin {
 
 model AdminUser {
   id               String    @id @default(uuid()) @db.Uuid
-  username         String    @unique
+  username         String
   passwordHash     String    @map("password_hash")
   name             String
   hotelId          String    @map("hotel_id") @db.Uuid
@@ -194,9 +194,10 @@ model AdminUser {
   resetCodeExpires DateTime? @map("reset_code_expires") @db.Timestamptz()
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz()
 
-  hotel        Hotel      @relation(fields: [hotelId], references: [id])
-  staffProfile StaffUser?
+  hotel         Hotel        @relation(fields: [hotelId], references: [id])
+  staffProfiles StaffUser[]
 
+  @@unique([username, hotelId])
   @@map("admin_users")
 }
 
@@ -528,7 +529,7 @@ model StaffUser {
   receiveSms     Boolean  @default(true) @map("receive_sms")
   isDiscoverable Boolean  @default(false) @map("is_discoverable")
   hotelId        String   @map("hotel_id") @db.Uuid
-  adminUserId    String?  @unique @map("admin_user_id") @db.Uuid
+  adminUserId    String?  @map("admin_user_id") @db.Uuid
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
   hotel     Hotel      @relation(fields: [hotelId], references: [id])

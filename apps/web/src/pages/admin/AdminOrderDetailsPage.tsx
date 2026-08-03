@@ -425,7 +425,7 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
                                         size="sm"
                                         variant="danger"
                                         disabled={paymentStatus === "REFUNDED" || (amountPaid <= 0 && outstanding <= 0)}
-                                        onClick={() => setShowAdjustModal(true)}
+                                        onClick={() => { setAdjustType("ADJUSTMENT"); setAdjustAmount(""); setShowAdjustModal(true); }}
                                     >
                                         <Undo2 size={14} className="mr-1" /> Refund / Adjust
                                     </Button>
@@ -835,20 +835,28 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
                 <p className="text-sm text-[#6B7280] mb-4 leading-relaxed">
                     Refunds return money that was paid. Adjustments correct the amount owed. Both write a permanent ledger row with your reason — they are never silent edits.
                 </p>
+                {currentStatus === "CANCELLED" && (
+                    <p className="text-xs font-semibold text-[#114B36] bg-[#F0FDF4] border border-[#BBF7D0] rounded-lg px-3 py-2 mb-4 leading-relaxed">
+                        This order is cancelled. Refunding it automatically settles both sides of the account — the payment is returned and the remaining charge is reversed on the ledger.
+                    </p>
+                )}
                 <div className="space-y-3">
                     <div>
                         <label className="text-xs font-bold text-[#6B7280] uppercase tracking-wider">Type</label>
                         <div className="flex gap-2 mt-1.5">
-                            {(["REFUND", "ADJUSTMENT"] as const).map((t) => (
-                                <button
-                                    key={t}
-                                    onClick={() => setAdjustType(t)}
-                                    className={`flex-1 py-2.5 rounded-xl border-2 text-sm font-bold transition-all cursor-pointer ${adjustType === t ? "border-[#DC2626] bg-[#FFF5F5] text-[#DC2626]" : "border-[#E5E7EB] text-[#6B7280] hover:border-[#D1D5DB]"
-                                        }`}
-                                >
-                                    {t === "REFUND" ? "Refund" : "Adjustment"}
-                                </button>
-                            ))}
+                            {(["REFUND", "ADJUSTMENT"] as const).map((t) => {
+                                const disabled = currentStatus === "CANCELLED" && t === "ADJUSTMENT";
+                                return (
+                                    <button
+                                        key={t}
+                                        disabled={disabled}
+                                        onClick={() => setAdjustType(t)}
+                                        className={`flex-1 py-2.5 rounded-xl border-2 text-sm font-bold transition-all cursor-pointer ${adjustType === t ? "border-[#DC2626] bg-[#FFF5F5] text-[#DC2626]" : "border-[#E5E7EB] text-[#6B7280] hover:border-[#D1D5DB]"} ${disabled ? "opacity-40 cursor-not-allowed" : ""}`}
+                                    >
+                                        {t === "REFUND" ? "Refund" : "Adjustment"}
+                                    </button>
+                                );
+                            })}
                         </div>
                     </div>
                     <div>

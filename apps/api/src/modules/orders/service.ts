@@ -13,7 +13,7 @@ import { getSmsRecipients } from "../settings/service";
 import { wsHub } from "../websocket/hub";
 import { formatPhone } from "../../../../../shared/phone";
 import { calculateDashboardMetrics, normalizeOrderItems } from "./logic";
-import { applyOrderChargeTx, reverseUnpaidChargeTx } from "../finance/service";
+import { applyOrderChargeTx, recordCancellationChargeTx } from "../finance/service";
 import { generateAccountId } from "../customers/account-id";
 import { getCustomerProfile } from "../customers/auth.service";
 
@@ -569,11 +569,11 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus, canc
 
         if (newStatus === "CANCELLED") {
             await restoreStockFromCancellation(tx, existing.orderItems);
-            // Reverse the outstanding charge on the ledger (ADJUSTMENT row + outbox
-            // event) so a cancelled order never leaves a phantom balance. Only runs
-            // when nothing has been paid — partial/paid cancellations are refunded by
-            // staff through the finance module.
-            await reverseUnpaidChargeTx(tx, existing.hotelId, existing.customerId, existing.id, "Order cancelled");
+            // Reverse the residual outstanding charge on the ledger (ADJUSTMENT
+            // row + outbox event) so a cancelled order never leaves a phantom
+            // balance. Unpaid and partially-paid cancellations are fully reversed
+            // here; the refund path later reverses the paid portion.
+            await recordCancellationChargeTx(tx, existing.hotelId, existing.customerId, existing.id, "Order cancelled");
         }
 
         const updatedOrder = await tx.order.findUniqueOrThrow({

@@ -149,12 +149,14 @@ export async function recordOrderCharge(
 }
 
 /**
- * Reverses an unpaid order's charge on cancellation — writes a negative
- * ADJUSTMENT row (so the ledger fully explains the order) and decrements owed.
- * Never touches the ledger when anything has been paid; those cancellations are
- * refunded manually by staff.
+ * Reverses the residual charge of a cancelled order on the ledger — writes a
+ * negative ADJUSTMENT row (so the ledger fully explains the order) and decrements
+ * owed. The outstanding amount is recomputed from the whole ledger (charges +
+ * existing adjustments − net paid), so the call is naturally idempotent: once the
+ * charge is fully reversed it becomes a no-op. Called at cancellation time and
+ * again when a cancelled order is refunded.
  */
-export async function reverseUnpaidChargeTx(
+export async function recordCancellationChargeTx(
   tx: any,
   hotelId: string,
   customerId: string,
@@ -162,13 +164,19 @@ export async function reverseUnpaidChargeTx(
   reason: string,
 ) {
   const records: { type: string; amount: unknown }[] = await tx.salesRecord.findMany({ where: { orderId } });
+  const charge = records
+    .filter((r) => r.type === "ORDER_CHARGE")
+    .reduce((sum, r) => sum + Number(r.amount), 0);
+  const adjustments = records
+    .filter((r) => r.type === "ADJUSTMENT")
+    .reduce((sum, r) => sum + Number(r.amount), 0);
   const paid = records
     .filter((r) => r.type === "ORDER_PAYMENT")
     .reduce((sum, r) => sum + Number(r.amount), 0);
   const refunded = records
     .filter((r) => r.type === "REFUND")
     .reduce((sum, r) => sum + Math.abs(Number(r.amount)), 0);
-  const outstanding = Number(records.find((r) => r.type === "ORDER_CHARGE")?.amount ?? 0) - (paid - refunded);
+  const outstanding = charge + adjustments - (paid - refunded);
   if (outstanding <= 0) return null;
 
   const record = await tx.salesRecord.create({
@@ -289,20 +297,46 @@ export async function recordRefund(
       },
     });
 
-    // A cancelled order is fully settled by reversing both sides of its
-    // financial position: the charge and the payment are both removed from
-    // the customer's running account. For a live order, a refund only reverses
-    // money actually paid; the charge remains outstanding.
+    // A refund reverses money actually paid. On a cancelled order the whole
+    // financial position is settled: the residual charge is reversed on the
+    // ledger too (an ADJUSTMENT row via recordCancellationChargeTx) so the
+    // ledger — never a silent cache edit — fully explains the order. On a live
+    // order, refunding more than was ever paid reduces what is owed, also
+    // recorded as its own ADJUSTMENT row.
     const account = await tx.customerAccount.findUnique({
       where: { hotelId_customerId: { hotelId, customerId } },
     });
     const currentPaid = Number(account?.totalPaid ?? 0);
-    const currentOwed = Number(account?.totalOwed ?? 0);
     const paidDelta = -Math.min(currentPaid, amount);
-    const owedDelta = order.status === "CANCELLED"
-      ? -Math.min(currentOwed, amount)
-      : -Math.max(0, amount - currentPaid);
-    const updatedAccount = await adjustAccountTx(tx, hotelId, customerId, owedDelta, paidDelta);
+    const owedDelta = order.status === "CANCELLED" ? 0 : -Math.max(0, amount - currentPaid);
+    await adjustAccountTx(tx, hotelId, customerId, owedDelta, paidDelta);
+
+    if (order.status === "CANCELLED") {
+      await recordCancellationChargeTx(
+        tx,
+        hotelId,
+        customerId,
+        orderId,
+        "Order cancelled — residual charge reversed with refund",
+      );
+    } else if (owedDelta < 0) {
+      await tx.salesRecord.create({
+        data: {
+          hotelId,
+          orderId,
+          type: "ADJUSTMENT",
+          paymentMethod: "CREDIT",
+          amount: owedDelta,
+          note: reason,
+          createdByAdminUserId: adminUserId,
+        },
+      });
+    }
+
+    const finalAccount = await tx.customerAccount.findUnique({
+      where: { hotelId_customerId: { hotelId, customerId } },
+    });
+    const balance = finalAccount ? accountBalance(finalAccount) : 0;
 
     const updatedOrder = await recomputeOrderCacheTx(tx, orderId);
     await tx.order.update({
@@ -322,7 +356,7 @@ export async function recordRefund(
           recordId: refundRecord.id,
           amount,
           type: "REFUND",
-          balance: accountBalance(updatedAccount),
+          balance,
           hotelId,
           reason,
         }),
@@ -330,7 +364,7 @@ export async function recordRefund(
       },
     });
 
-    return { refundRecord, account: updatedAccount, order: updatedOrder };
+    return { refundRecord, account: finalAccount ?? null, order: updatedOrder };
   }).then((result) => {
     broadcastPaymentUpdate(result.order);
     return result;

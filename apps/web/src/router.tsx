@@ -480,8 +480,8 @@ function AdminLoginRoute() {
     if (!hydrating && isLoggedIn) return <Navigate to="/kitchen/orders" replace />;
     return (
         <AdminLoginPage
-            onLoginSuccess={(token, user) => {
-                login(token, user);
+            onLoginSuccess={(token, user, hotels) => {
+                login(token, user, hotels);
                 navigate("/kitchen/orders", { replace: true });
             }}
         />

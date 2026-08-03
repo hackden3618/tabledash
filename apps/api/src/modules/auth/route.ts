@@ -10,7 +10,7 @@ import { Elysia, t } from "elysia";
 import { env } from "../../../../../shared/config";
 import { PHONE_PATTERN, PHONE_MIN, PHONE_MAX } from "../../../../../shared/phone";
 import { AdminLoginSchema } from "../../../../../shared/schemas";
-import { loginAdmin, verifyAdminToken, requestPasswordResetOtp, resetPasswordWithOtp, updateAdminProfile, changeAdminPassword, createWebSocketTicket } from "./service";
+import { loginAdmin, verifyAdminToken, requestPasswordResetOtp, resetPasswordWithOtp, updateAdminProfile, changeAdminPassword, createWebSocketTicket, switchAdminHotel } from "./service";
 import { verifyCustomerToken } from "../customers/auth.service";
 import { verifyPlatformAdminToken } from "./service";
 import { ensureGuestIdentity, isGuestId } from "../customers/guest-identity";
@@ -56,6 +56,25 @@ export const authRoute = new Elysia({
     {
       body: AdminLoginSchema,
     }
+  )
+  .post(
+    "/switch-hotel",
+    async ({ body, headers, jwt, set }) => {
+      const authHeader = headers["authorization"];
+      if (!authHeader?.startsWith("Bearer ")) {
+        set.status = 401;
+        return { success: false, error: "Missing or invalid authorization header" };
+      }
+      try {
+        const admin = await verifyAdminToken(authHeader.slice(7), (t) => jwt.verify(t));
+        const result = await switchAdminHotel(admin.id, body.hotelId, (payload) => jwt.sign(payload));
+        return { success: true, data: result };
+      } catch (err: any) {
+        set.status = 401;
+        return { success: false, error: err.message || "Unable to switch hotel" };
+      }
+    },
+    { body: t.Object({ hotelId: t.String({ minLength: 1 }) }) }
   )
   .post(
     "/forgot-password",
