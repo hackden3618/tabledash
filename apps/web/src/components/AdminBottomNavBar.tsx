@@ -1,6 +1,6 @@
 import React from "react";
 import { motion } from "framer-motion";
-import { LayoutDashboard, ShoppingBag, Utensils, Settings, Calendar, Inbox, Wallet } from "lucide-react";
+import { LayoutDashboard, ShoppingBag, Utensils, Settings, Calendar, Inbox, Wallet, Building2, ChevronUp, Check } from "lucide-react";
 import { apiGet } from "../lib/api";
 import { useAdminAuth } from "../context/AdminAuthContext";
 
@@ -49,7 +49,6 @@ export const AdminBottomNavBar: React.FC<AdminBottomNavBarProps> = ({
 
   const currentHotel = hotels.find((h) => h.id === user?.hotelId);
   const showHotelBar = hotels.length > 1;
-  const otherHotels = hotels.filter((h) => h.id !== user?.hotelId);
 
   const handleSwitchHotel = async (hotelId: string) => {
     setHotelMenuOpen(false);
@@ -64,25 +63,39 @@ export const AdminBottomNavBar: React.FC<AdminBottomNavBarProps> = ({
   return (
     <nav className="glass-nav safe-area-bottom fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[1000px] border-t z-40">
       {showHotelBar && (
-        <div className="relative px-3 pt-1">
+        <div className="relative px-3 pt-1.5">
           <button
             onClick={() => setHotelMenuOpen((open) => !open)}
-            className="w-full flex items-center justify-between gap-2 rounded-xl bg-[#F3F4F6] hover:bg-[#E5E7EB] px-3 py-1.5 text-left transition-colors cursor-pointer"
+            aria-expanded={hotelMenuOpen}
+            aria-label="Switch hotel"
+            className="w-full flex items-center justify-between gap-2 rounded-xl bg-[#EBF5F0] hover:bg-[#DCE8E2] border border-[#D1E3DA] px-3 py-2 text-left transition-colors cursor-pointer"
           >
-            <span className="text-xs font-bold text-[#114B36] truncate">{currentHotel?.name ?? "Select hotel"}</span>
-            <span className="text-[0.6rem] text-[#6B7280] shrink-0">Switch ▾</span>
+            <span className="flex items-center gap-2 min-w-0">
+              <Building2 size={14} className="text-[#114B36] shrink-0" />
+              <span className="min-w-0">
+                <span className="block text-[0.55rem] uppercase tracking-wide font-bold text-[#6B7280] leading-none mb-0.5">Working at</span>
+                <span className="block text-xs font-bold text-[#114B36] truncate">{currentHotel?.name ?? "Select hotel"}</span>
+              </span>
+            </span>
+            <ChevronUp size={16} className={`text-[#114B36] shrink-0 transition-transform ${hotelMenuOpen ? "" : "rotate-180"}`} />
           </button>
           {hotelMenuOpen && (
             <div className="absolute left-3 right-3 bottom-full mb-1 rounded-xl bg-white border border-[#E5E7EB] shadow-lg overflow-hidden">
-              {otherHotels.map((hotel) => (
-                <button
-                  key={hotel.id}
-                  onClick={() => handleSwitchHotel(hotel.id)}
-                  className="w-full text-left px-3 py-2.5 text-sm font-semibold text-[#374151] hover:bg-[#F3F4F6] cursor-pointer"
-                >
-                  {hotel.name}
-                </button>
-              ))}
+              <div className="px-3 pt-2.5 pb-1 text-[0.6rem] uppercase tracking-wide font-bold text-[#9CA3AF]">Switch hotel</div>
+              {hotels.map((hotel) => {
+                const isCurrent = hotel.id === user?.hotelId;
+                return (
+                  <button
+                    key={hotel.id}
+                    onClick={() => handleSwitchHotel(hotel.id)}
+                    disabled={isCurrent}
+                    className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 text-sm font-semibold text-left cursor-pointer ${isCurrent ? "text-[#059669] disabled:cursor-default" : "text-[#374151] hover:bg-[#F3F4F6]"}`}
+                  >
+                    <span className="truncate">{hotel.name}</span>
+                    {isCurrent && <Check size={16} className="shrink-0" />}
+                  </button>
+                );
+              })}
             </div>
           )}
           {switchError && (

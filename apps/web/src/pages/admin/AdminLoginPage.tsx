@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { apiPost } from "../../lib/api";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
-import { Lock, ChevronLeft, Phone, KeyRound, CheckCircle2 } from "lucide-react";
+import { Modal } from "../../components/ui/Modal";
+import { Lock, ChevronLeft, Phone, KeyRound, CheckCircle2, Building2 } from "lucide-react";
 
 const formatPhone = (raw: string): string => {
   const cleaned = raw.replace(/\D/g, "");
@@ -91,7 +92,6 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }
         onLoginSuccess(res.data.token, res.data.user, loginHotels);
       } else {
         setError(res.error || "Unable to switch hotel");
-        setView("login");
       }
     } finally {
       setLoading(false);
@@ -146,7 +146,6 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }
             {view === "forgot" && "Enter your registered phone number"}
             {view === "reset" && "Enter the reset code and new password"}
             {view === "done" && "Password reset successful"}
-            {view === "pick" && "Choose which hotel to work with"}
           </p>
         </div>
 
@@ -335,6 +334,43 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }
           )}
         </AnimatePresence>
       </motion.div>
+
+      <Modal
+        isOpen={view === "pick"}
+        dismissible={false}
+        type="confirm"
+        title="Select a hotel"
+        message="This account has access to more than one hotel. Choose the hotel you want to work with to continue."
+      >
+        <div className="space-y-3">
+          {loginHotels.map((hotel) => {
+            const isCurrent = hotel.id === loginUser?.hotelId;
+            return (
+              <button
+                key={hotel.id}
+                type="button"
+                onClick={() => handlePickHotel(hotel)}
+                disabled={loading}
+                className="w-full flex items-center justify-between gap-3 bg-white border border-[#E5E7EB] hover:border-[#114B36] hover:shadow-md rounded-xl px-4 py-4 text-left transition-all cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+              >
+                <span className="flex items-center gap-3 min-w-0">
+                  <span className="w-10 h-10 shrink-0 rounded-xl bg-[#EBF5F0] text-[#114B36] flex items-center justify-center">
+                    <Building2 size={18} />
+                  </span>
+                  <span className="font-semibold text-[#111827] truncate">{hotel.name}</span>
+                </span>
+                {isCurrent && <span className="text-xs font-bold text-[#059669] whitespace-nowrap">Current</span>}
+              </button>
+            );
+          })}
+
+          {error && (
+            <div className="bg-[#FEE2E2] text-[#DC2626] rounded-xl px-4 py-3 text-sm font-semibold">
+              {error}
+            </div>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 };
