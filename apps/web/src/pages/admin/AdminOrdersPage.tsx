@@ -3,13 +3,14 @@ import { motion } from "framer-motion";
 import { apiGet, apiPatch } from "../../lib/api";
 import { useNotifications } from "../../context/NotificationsContext";
 import { AdminNotificationBell, AdminNotificationPanel } from "../../components/AdminNotificationPanel";
-import { LogOut, ShoppingBag, MapPin, Phone, ChevronRight } from "lucide-react";
+import { LogOut, ShoppingBag, MapPin, Phone, ChevronRight, UtensilsCrossed } from "lucide-react";
 import { StatusBadge } from "../../components/ui/Badge";
 
 interface AdminOrdersPageProps {
   token: string;
   onSelectOrder: (order: any) => void;
   onLogout: () => void;
+  onOpenPendingCollection: () => void;
 }
 
 const TAB_CONFIG = {
@@ -22,11 +23,13 @@ export const AdminOrdersPage: React.FC<AdminOrdersPageProps> = ({
   token,
   onSelectOrder,
   onLogout,
+  onOpenPendingCollection,
 }) => {
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"NEW" | "PREPARING" | "OUT_FOR_DELIVERY">("NEW");
   const [panelOpen, setPanelOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
   const { pushNotification } = useNotifications();
 
   const fetchOrders = async () => {
@@ -39,7 +42,12 @@ export const AdminOrdersPage: React.FC<AdminOrdersPageProps> = ({
 
   useEffect(() => {
     fetchOrders();
-  }, []);
+    const fetchPendingCount = async () => {
+      const res = await apiGet<any[]>("/orders/pending-collection", token);
+      if (res.success && res.data) setPendingCount(res.data.length);
+    };
+    void fetchPendingCount();
+  }, [token]);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -122,6 +130,25 @@ export const AdminOrdersPage: React.FC<AdminOrdersPageProps> = ({
       </header>
 
       <div className="p-4 max-w-4xl mx-auto">
+        {/* Pending Collection entry — payment + utensil follow-ups after delivery */}
+        <button
+          onClick={onOpenPendingCollection}
+          className="w-full flex items-center justify-between bg-[#FEF3C7] border border-amber-200 rounded-xl px-4 py-3 mb-4 text-left hover:bg-[#FDE68A] transition-colors cursor-pointer"
+        >
+          <span className="flex items-center gap-2.5 text-sm font-bold text-[#92400E]">
+            <UtensilsCrossed size={16} />
+            Pending Collection
+          </span>
+          <span className="flex items-center gap-2">
+            {pendingCount > 0 && (
+              <span className="text-[0.65rem] font-bold px-2 py-0.5 rounded-full bg-[#DC2626] text-white">
+                {pendingCount} open
+              </span>
+            )}
+            <ChevronRight size={16} className="text-[#92400E]" />
+          </span>
+        </button>
+
         {/* Status Tabs */}
         <div className="flex gap-2 bg-[#F3F4F6] p-1 rounded-xl mb-5">
           {(["NEW", "PREPARING", "OUT_FOR_DELIVERY"] as const).map((key) => {

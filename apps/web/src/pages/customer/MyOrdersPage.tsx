@@ -2,7 +2,8 @@ import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { apiGet } from "../../lib/api";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
-import { ClipboardList, Package, RefreshCw, ChevronRight, Settings } from "lucide-react";
+import { useCart } from "../../context/CartContext";
+import { ClipboardList, Package, RefreshCw, ChevronRight, Settings, Wallet } from "lucide-react";
 import { Header } from "../../components/ui/Header";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { PageTransition } from "../../components/ui/PageTransition";
@@ -11,6 +12,7 @@ interface MyOrdersPageProps {
   onGoToAuth: () => void;
   onTrackOrder: (orderId: string) => void;
   onGoToProfile?: () => void;
+  onNavigateToWallet?: () => void;
 }
 
 const TERMINAL_CONFIG: Record<string, { label: string; variant: "success" | "danger" }> = {
@@ -18,10 +20,12 @@ const TERMINAL_CONFIG: Record<string, { label: string; variant: "success" | "dan
   CANCELLED: { label: "✕ Cancelled", variant: "danger" },
 };
 
-export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackOrder, onGoToProfile }) => {
+export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackOrder, onGoToProfile, onNavigateToWallet }) => {
   const { customer, isLoggedIn, isLoading, logout, refreshProfile } = useCustomerAuth();
+  const { clearCart } = useCart();
   const [orders, setOrders] = useState<any[]>([]);
   const [guestOrders, setGuestOrders] = useState<any[]>([]);
+  const [guestOrderId, setGuestOrderId] = useState<string | null>(null);
   const [lastUpdatedId, setLastUpdatedId] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -32,28 +36,33 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
       if (raw) {
         const parsed = JSON.parse(raw);
         setGuestOrders([parsed]);
+        setGuestOrderId(parsed.id);
       }
     } catch { /* ignore */ }
   }, []);
 
-  // Keep guest order data fresh by fetching latest
+  // Keep guest order data fresh by fetching latest. If the order no longer
+  // exists (e.g. dev DB reset), drop the stale card instead of persisting it.
   useEffect(() => {
-    if (!isLoggedIn && guestOrders.length > 0) {
-      const gid = guestOrders[0].id;
-      apiGet<any>(`/orders/${gid}`).then((res) => {
+    if (!isLoggedIn && guestOrderId) {
+      apiGet<any>(`/orders/${guestOrderId}`).then((res) => {
         if (res.success && res.data) {
           setGuestOrders([res.data]);
           localStorage.setItem("ladha_last_order", JSON.stringify(res.data));
+        } else {
+          localStorage.removeItem("ladha_last_order");
+          setGuestOrders([]);
+          setGuestOrderId(null);
         }
       });
     }
-  }, [isLoggedIn]);
+  }, [guestOrderId, isLoggedIn]);
 
   useEffect(() => {
-    if (customer?.recentOrders) {
-      setOrders(customer.recentOrders);
-    }
+    setOrders(customer?.recentOrders ?? []);
   }, [customer?.recentOrders]);
+
+  useEffect(() => { void refreshProfile(); }, [refreshProfile]);
 
   const handleManualRefresh = async () => {
     if (isRefreshing) return;
@@ -126,7 +135,7 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
         title="My Orders"
         rightAction={isLoggedIn ? (
           <button
-            onClick={logout}
+            onClick={() => { clearCart(); logout(); }}
             className="px-3 py-1.5 rounded-xl bg-white/15 text-xs font-semibold text-white hover:bg-white/20 transition-colors bg-none border-none cursor-pointer"
           >
             Sign Out
@@ -150,13 +159,22 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
                   <p className="font-bold text-sm text-[#1F2937]">Hi, {customer?.firstName}!</p>
                   <p className="text-xs text-[#6B7280]">{customer?.phone}</p>
                 </div>
-                {onGoToProfile && (
-                  <button onClick={onGoToProfile}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/60 text-xs font-bold text-[#114B36] border border-[#C2E2D3] cursor-pointer bg-none transition-colors hover:bg-white"
-                  >
-                    <Settings size={13} /> Profile
-                  </button>
-                )}
+                <div className="flex items-center gap-1.5">
+                  {onNavigateToWallet && (
+                    <button onClick={onNavigateToWallet}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#114B36] text-xs font-bold text-white border-none cursor-pointer transition-colors hover:bg-[#0D3D2B]"
+                    >
+                      <Wallet size={13} /> Wallet
+                    </button>
+                  )}
+                  {onGoToProfile && (
+                    <button onClick={onGoToProfile}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/60 text-xs font-bold text-[#114B36] border border-[#C2E2D3] cursor-pointer bg-none transition-colors hover:bg-white"
+                    >
+                      <Settings size={13} /> Profile
+                    </button>
+                  )}
+                </div>
               </div>
             </motion.div>
           )}
@@ -194,6 +212,7 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
                 lastUpdatedId={lastUpdatedId}
                 onTrackOrder={onTrackOrder}
                 terminalConfig={TERMINAL_CONFIG}
+                onNavigateToWallet={onNavigateToWallet}
               />
             </div>
           )}
@@ -203,15 +222,25 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
   );
 };
 
+function getFinancialStatus(order: any): { bg: string; color: string; label: string } | null {
+  if (!order.paymentStatus) return null;
+  if (order.status === "CANCELLED" && order.refundedAt) return { bg: "#DCFCE7", color: "#15803D", label: "Account settled" };
+  if (order.paymentStatus === "REFUNDED") return { bg: "#F3F4F6", color: "#6B7280", label: "Refunded" };
+  if (Number(order.amountPaid ?? 0) >= Number(order.totalAmount)) return { bg: "#DCFCE7", color: "#15803D", label: "Fully settled" };
+  return { bg: "#FEF3C7", color: "#D97706", label: "Balance due" };
+}
+
 function AnimateOrders({
   orders,
   lastUpdatedId,
   onTrackOrder,
+  onNavigateToWallet,
   terminalConfig,
 }: {
   orders: any[];
   lastUpdatedId: string | null;
   onTrackOrder: (id: string) => void;
+  onNavigateToWallet?: () => void;
   terminalConfig: Record<string, { label: string; variant: "success" | "danger" }>;
 }) {
   return (
@@ -220,6 +249,7 @@ function AnimateOrders({
         const isTerminal = order.status === "DELIVERED" || order.status === "CANCELLED";
         const termCfg = terminalConfig[order.status];
         const justUpdated = lastUpdatedId === order.id;
+        const fin = getFinancialStatus(order);
 
         return (
           <motion.div
@@ -270,11 +300,28 @@ function AnimateOrders({
               <span className="font-bold text-sm text-[#114B36]">KSh {order.totalAmount}</span>
             </div>
 
-            <div className="mt-2 flex items-center justify-end">
-              <span className="text-xs font-semibold text-[#114B36] flex items-center gap-0.5">
-                {!isTerminal ? "Track live" : "View details"} <ChevronRight size={12} />
-              </span>
-            </div>
+            {fin && (
+              <div className="mt-2 flex items-center justify-end gap-2">
+                <button
+                  onClick={(e) => { e.stopPropagation(); onNavigateToWallet?.(); }}
+                  className="text-[0.65rem] font-bold px-2.5 py-1 rounded-full transition-opacity hover:opacity-80 cursor-pointer border-none bg-transparent"
+                  style={{ background: fin.bg, color: fin.color }}
+                >
+                  {fin.label}
+                </button>
+                <span className="text-xs font-semibold text-[#114B36] flex items-center gap-0.5">
+                  View details <ChevronRight size={12} />
+                </span>
+              </div>
+            )}
+
+            {!fin && (
+              <div className="mt-2 flex items-center justify-end">
+                <span className="text-xs font-semibold text-[#114B36] flex items-center gap-0.5">
+                  {!isTerminal ? "Track live" : "View details"} <ChevronRight size={12} />
+                </span>
+              </div>
+            )}
           </motion.div>
         );
       })}

@@ -52,6 +52,12 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem("ladha_cart", JSON.stringify(cart));
   }, [cart]);
 
+  useEffect(() => {
+    const handleCustomerLogout = () => setCart([]);
+    window.addEventListener("ladha:customer-logout", handleCustomerLogout);
+    return () => window.removeEventListener("ladha:customer-logout", handleCustomerLogout);
+  }, []);
+
   const addToCart = (product: { id: string; name: string; price: number; imageUrl: string; hotelId?: string; hotelName?: string; stockQty?: number }) => {
     setCart((prev) => {
       const existingIndex = prev.findIndex((item) => item.id === product.id);

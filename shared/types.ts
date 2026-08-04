@@ -107,9 +107,11 @@ export interface WsMessage<T = unknown> {
 /** Logged-in customer profile returned from /customers/me */
 export interface CustomerProfileData {
   id: string;
+  accountId: string;
   firstName: string;
   lastName?: string | null;
   phone: string;
+  isVerified: boolean;
   knownName?: string | null;
   stallNumber?: string | null;
   marketSection?: string | null;

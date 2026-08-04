@@ -31,7 +31,7 @@ export const PlatformAdminAuthProvider: React.FC<{ children: React.ReactNode }> 
   const expiryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const logout = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.clear();
     setToken("");
     setUser(null);
     if (expiryTimer.current) {

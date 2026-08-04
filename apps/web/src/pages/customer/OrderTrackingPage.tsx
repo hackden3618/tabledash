@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { apiGet, apiPost } from "../../lib/api";
 import { useNotifications } from "../../context/NotificationsContext";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
-import { Truck, XCircle, Send } from "lucide-react";
+import { Truck, XCircle, Send, Star } from "lucide-react";
 import { Modal } from "../../components/ui/Modal";
 import { Header } from "../../components/ui/Header";
 import { Button } from "../../components/ui/Button";
@@ -35,6 +35,10 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({ orderId, o
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatBody, setChatBody] = useState("");
   const [sending, setSending] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [mealRatings, setMealRatings] = useState<Record<string, number>>({});
+  const [ratingSaving, setRatingSaving] = useState(false);
+  const [rated, setRated] = useState(false);
   const { pushNotification } = useNotifications();
   const { token: customerToken, isLoggedIn } = useCustomerAuth();
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -77,12 +81,17 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({ orderId, o
   }, [orderId, convId, pushNotification]);
 
   const sendChat = async () => {
-    if (!chatBody.trim() || sending || !convId) return;
+    if (!chatBody.trim() || sending) return;
     setSending(true);
-    const result = await apiPost<ChatMessage>(`/messaging/conversations/${convId}/messages`, { body: chatBody.trim() }, customerToken || undefined);
+    // The order-level endpoint lazily creates the conversation on the first
+    // message from either side; after that we reuse the existing thread.
+    const result = convId
+      ? await apiPost<ChatMessage>(`/messaging/conversations/${convId}/messages`, { body: chatBody.trim() }, customerToken || undefined)
+      : await apiPost<ChatMessage>(`/messaging/orders/${orderId}/messages`, { body: chatBody.trim() }, customerToken || undefined);
     if (result.success && result.data) {
-      setChatMessages((prev) => [...prev, result.data!]);
+      setChatMessages((prev) => prev.some((m) => m.id === result.data!.id) ? prev : [...prev, result.data!]);
       setChatBody("");
+      if (!convId) fetchConversation();
     }
     setSending(false);
   };
@@ -93,6 +102,19 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({ orderId, o
     setIsCancelling(false);
     if (res.success) { setShowCancelModal(false); pushNotification("info", "Order Cancelled", "Your order has been cancelled."); fetchOrder(); }
     else pushNotification("danger", "Error", res.error || "Unable to cancel order");
+  };
+
+  const submitRating = async () => {
+    if ((!rating && Object.keys(mealRatings).length === 0) || !customerToken || ratingSaving) return;
+    setRatingSaving(true);
+    const results = await Promise.all([
+      rating ? apiPost(`/hotels/rating/${order.hotelId}`, { orderId: order.id, rating }, customerToken) : Promise.resolve({ success: true, error: undefined }),
+      ...Object.entries(mealRatings).map(([productId, mealRating]) => apiPost(`/hotels/rating/${order.hotelId}/items/${productId}`, { orderId: order.id, rating: mealRating }, customerToken)),
+    ]);
+    setRatingSaving(false);
+    const failed = results.find((result) => !result.success);
+    if (!failed) { setRated(true); pushNotification("success", "Thanks for rating", "Your feedback helps customers choose with confidence."); }
+    else pushNotification("danger", "Rating not saved", failed.error || "Unable to save your rating");
   };
 
   if (loading) return <div className="app-container"><Header title="Order Tracking" onBack={onBackToHome} /><div className="flex-1 flex items-center justify-center"><p className="text-sm text-[#6B7280]">Loading order...</p></div></div>;
@@ -125,9 +147,12 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({ orderId, o
               {STATUSES.map((step, idx) => {
                 const isCompleted = idx <= currentIndex;
                 const isCurrent = idx === currentIndex;
-                return <div key={step.key} className="flex items-center gap-4 relative"><motion.div initial={isCurrent ? { scale: 0 } : undefined} animate={isCurrent ? { scale: 1 } : undefined} transition={{ type: "spring", damping: 10, stiffness: 200 }} className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm z-10 shrink-0 ${isCompleted ? "bg-[#114B36] text-white" : "bg-[#E5E7EB] text-[#9CA3AF]"} ${isCurrent ? "shadow-[0_0_0_4px_rgba(17,75,54,0.15)]" : ""}`}>{isCompleted ? "✓" : idx + 1}</motion.div><div><p className={`font-semibold text-sm ${isCompleted ? "text-[#1F2937]" : "text-[#9CA3AF]"}`}>{step.label}</p>{isCurrent && <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-xs font-bold text-[#22C55E] mt-0.5 flex items-center gap-1"><span className="w-1.5 h-1.5 bg-[#22C55E] rounded-full inline-block animate-pulse" /> Current Status</motion.p>}</div></div>;
+                return <React.Fragment key={step.key}><div className="flex items-center gap-4 relative"><motion.div initial={isCurrent ? { scale: 0 } : undefined} animate={isCurrent ? { scale: 1 } : undefined} transition={{ type: "spring", damping: 10, stiffness: 200 }} className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm z-10 shrink-0 ${isCompleted ? "bg-[#114B36] text-white" : "bg-[#E5E7EB] text-[#9CA3AF]"} ${isCurrent ? "shadow-[0_0_0_4px_rgba(17,75,54,0.15)]" : ""}`}>{isCompleted ? "✓" : idx + 1}</motion.div><div><p className={`font-semibold text-sm ${isCompleted ? "text-[#1F2937]" : "text-[#9CA3AF]"}`}>{step.label}</p>{isCurrent && <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-xs font-bold text-[#22C55E] mt-0.5 flex items-center gap-1"><span className="w-1.5 h-1.5 bg-[#22C55E] rounded-full inline-block animate-pulse" /> Current Status</motion.p>}</div></div>{step.key === "READY_FOR_DELIVERY" && <div className="ml-12 border-l-2 border-dashed border-[#D1D5DB] py-2 pl-4 text-xs font-semibold text-[#9CA3AF]">Cancellation closes once the kitchen marks the order ready for dispatch.</div>}</React.Fragment>;
               })}
             </div>
+
+            {order.status === "DELIVERED" && isLoggedIn && !rated && <div className="mt-7 rounded-2xl border border-[#E8DED2] bg-white p-4 shadow-sm"><p className="text-sm font-black text-[#1F2937]">How was your experience?</p><p className="mt-1 text-xs text-[#6B7280]">Rate the hotel and any meals you want to recommend. This takes one step after delivery.</p><div className="mt-4"><p className="text-xs font-bold uppercase tracking-wide text-[#789083]">Hotel experience</p><div className="mt-1 flex items-center gap-1" role="radiogroup" aria-label="Rate hotel experience">{[1, 2, 3, 4, 5].map((value) => <button key={value} type="button" aria-label={`${value} star${value > 1 ? "s" : ""}`} aria-pressed={rating === value} onClick={() => setRating(value)} className={`rounded-lg border-none bg-transparent p-1 ${value <= rating ? "text-[#C58A1A]" : "text-[#D1D5DB]"}`}><Star size={23} fill="currentColor" /></button>)}</div></div><div className="mt-4 space-y-2">{(order.orderItems ?? []).map((item: any) => <div key={item.productId} className="flex items-center justify-between gap-2 rounded-xl bg-[#FFFDF9] px-3 py-2"><span className="min-w-0 truncate text-xs font-bold text-[#1F2937]">{item.name}</span><div className="flex shrink-0 items-center gap-0.5" role="radiogroup" aria-label={`Rate ${item.name}`}>{[1, 2, 3, 4, 5].map((value) => <button key={value} type="button" aria-label={`${value} stars for ${item.name}`} aria-pressed={mealRatings[item.productId] === value} onClick={() => setMealRatings((current) => ({ ...current, [item.productId]: value }))} className={`border-none bg-transparent p-0.5 ${value <= (mealRatings[item.productId] ?? 0) ? "text-[#C58A1A]" : "text-[#D1D5DB]"}`}><Star size={16} fill="currentColor" /></button>)}</div></div>)}</div><Button size="sm" className="mt-4" onClick={() => void submitRating()} disabled={!rating && Object.keys(mealRatings).length === 0} loading={ratingSaving}>Submit feedback</Button></div>}
+            {order.status === "DELIVERED" && (rated || order.review) && <div className="mt-7 rounded-2xl bg-[#EBF5F0] p-4 text-sm font-bold text-[#114B36]">Thanks — your experience has been rated.</div>}
 
             {(order.status === "NEW" || order.status === "ACCEPTED" || order.status === "PREPARING") && isLoggedIn && (
               <Button onClick={() => setShowCancelModal(true)} variant="danger" fullWidth size="md" icon={<XCircle size={18} />} className="mt-6">Cancel Order</Button>
@@ -136,7 +161,7 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({ orderId, o
         )}
 
         {/* Inline order chat */}
-        {convId && !isTerminal && <div className="mt-6 border border-[#E5E7EB] rounded-2xl overflow-hidden"><div className="bg-[#EBF5F0] px-4 py-2.5 border-b border-[#D1E4D8]"><p className="text-[0.6rem] font-bold text-[#114B36]">ORDER CHAT</p><p className="text-xs text-[#6B7280]">Chat with the kitchen about this order</p></div><div className="max-h-48 overflow-y-auto px-4 py-3 space-y-2 bg-white">{chatMessages.length === 0 ? <p className="text-xs text-[#9CA3AF] text-center py-4">No messages yet. Send a note to the kitchen.</p> : chatMessages.map((msg) => <div key={msg.id} className="text-xs"><span className="text-[#9CA3AF]">{new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span><p className="text-sm text-[#1F2937] mt-0.5">{msg.body}</p></div>)}<div ref={chatEndRef} /></div><div className="flex gap-2 p-3 bg-[#FFF8F0] border-t border-[#E5E7EB]"><input value={chatBody} onChange={(e) => setChatBody(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void sendChat(); } }} placeholder="Type a message..." className="flex-1 rounded-xl border-2 border-[#E5E7EB] bg-white px-3 py-2 text-sm outline-none focus:border-[#114B36]" /><Button size="sm" onClick={() => void sendChat()} loading={sending} disabled={!chatBody.trim()} icon={<Send size={14} />}>Send</Button></div></div>}
+        {!isTerminal && <div className="mt-6 border border-[#E5E7EB] rounded-2xl overflow-hidden"><div className="bg-[#EBF5F0] px-4 py-2.5 border-b border-[#D1E4D8]"><p className="text-[0.6rem] font-bold text-[#114B36]">ORDER CHAT</p><p className="text-xs text-[#6B7280]">Chat with the kitchen about this order</p></div><div className="max-h-48 overflow-y-auto px-4 py-3 space-y-2 bg-white">{chatMessages.length === 0 ? <p className="text-xs text-[#9CA3AF] text-center py-4">No messages yet. Send a note to the kitchen.</p> : chatMessages.map((msg) => <div key={msg.id} className="text-xs"><span className="text-[#9CA3AF]">{new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span><p className="text-sm text-[#1F2937] mt-0.5">{msg.body}</p></div>)}<div ref={chatEndRef} /></div><div className="flex gap-2 p-3 bg-[#FFF8F0] border-t border-[#E5E7EB]"><input value={chatBody} onChange={(e) => setChatBody(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void sendChat(); } }} placeholder="Type a message..." className="flex-1 rounded-xl border-2 border-[#E5E7EB] bg-white px-3 py-2 text-sm outline-none focus:border-[#114B36]" /><Button size="sm" onClick={() => void sendChat()} loading={sending} disabled={!chatBody.trim()} icon={<Send size={14} />}>Send</Button></div></div>}
 
         <Button onClick={onBackToHome} variant="secondary" fullWidth size="md" className="mt-3">Back to Menu</Button>
       </PageTransition>

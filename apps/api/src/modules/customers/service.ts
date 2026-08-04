@@ -6,6 +6,35 @@
  */
 
 import { prisma } from "../../../../../infrastructure/database/prisma";
+import { formatPhone } from "../../../../../shared/phone";
+
+/**
+ * Looks up a customer by phone for the "ordering on behalf of someone else"
+ * flow. Returns only public display fields — the account ID, display name and
+ * verification status — never the phone used to look up, or any sensitive data.
+ * Not-found is a normal answer (a guest), not an error.
+ */
+export const lookupCustomerByPhone = async (phone: string) => {
+  const customer = await prisma.customer.findUnique({
+    where: { phone: formatPhone(phone) },
+    select: { id: true, accountId: true, firstName: true, lastName: true, knownName: true, verifiedAt: true, pinHash: true },
+  });
+
+  if (!customer) return { found: false };
+
+  return {
+    found: true,
+    customer: {
+      id: customer.id,
+      accountId: customer.accountId,
+      firstName: customer.firstName,
+      lastName: customer.lastName,
+      knownName: customer.knownName,
+      isVerified: Boolean(customer.verifiedAt),
+      hasPin: Boolean(customer.pinHash),
+    },
+  };
+};
 
 /**
  * Retrieves registered customer records, optionally scoped to a hotel.

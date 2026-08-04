@@ -118,9 +118,33 @@
   overflow-x: hidden;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
-  background: #FFF8F0;
+  background: linear-gradient(180deg, #FFFDF9 0%, #FFF8F0 42%, #F8F4EC 100%);
   position: relative;
   padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px));
+}
+
+.glass-header {
+  background: linear-gradient(135deg, rgba(17, 75, 54, 0.9), rgba(11, 66, 45, 0.76));
+  -webkit-backdrop-filter: blur(18px) saturate(145%);
+  backdrop-filter: blur(18px) saturate(145%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 8px 24px rgba(6, 53, 34, 0.16);
+}
+
+.glass-nav {
+  background: rgba(255, 253, 249, 0.78);
+  -webkit-backdrop-filter: blur(20px) saturate(135%);
+  backdrop-filter: blur(20px) saturate(135%);
+  border-color: rgba(234, 223, 211, 0.8);
+  box-shadow: 0 -8px 28px rgba(17, 75, 54, 0.08);
+}
+
+.glass-surface {
+  background: rgba(255, 255, 255, 0.74);
+  -webkit-backdrop-filter: blur(14px) saturate(125%);
+  backdrop-filter: blur(14px) saturate(125%);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  box-shadow: 0 8px 24px rgba(17, 75, 54, 0.07), inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 .admin-container {
@@ -145,6 +169,11 @@
   overflow-x: hidden;
   overflow-wrap: anywhere;
 }
+.platform-login-card {
+  box-shadow: 0 24px 70px rgba(17, 75, 54, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
 
 .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
 
@@ -167,6 +196,20 @@
 /* Platform console: keep navigation useful on phones without covering the workspace. */
 .platform-main { width: 100%; }
 .platform-sidebar-overlay { backdrop-filter: blur(2px); }
+.platform-shell {
+  background:
+    radial-gradient(circle at 85% 0%, rgba(194, 226, 211, 0.42), transparent 30rem),
+    linear-gradient(180deg, #F8FBF7 0%, #FFF8F0 100%);
+}
+.platform-sidebar {
+  background: rgba(255, 255, 255, 0.86) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(125%);
+  backdrop-filter: blur(20px) saturate(125%);
+  border-right: 1px solid rgba(234, 223, 211, 0.9);
+}
+.platform-sidebar button:not([aria-label="Close menu"]):hover {
+  background: rgba(235, 245, 240, 0.72) !important;
+}
 .platform-shell input:not([type="checkbox"]) {
   min-height: 44px;
   border: 1px solid #EADFD3;
@@ -177,6 +220,32 @@
   outline: none;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
+.platform-shell select,
+.platform-shell textarea,
+.platform-shell .input-field {
+  min-height: 44px;
+  border: 1px solid #EADFD3;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.84);
+  color: #1F2937;
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.platform-shell select { padding: 0 2.5rem 0 0.85rem; appearance: auto; }
+.platform-shell textarea { padding: 0.75rem 0.85rem; }
+.platform-shell input:not([type="checkbox"]):focus,
+.platform-shell select:focus,
+.platform-shell textarea:focus,
+.platform-shell .input-field:focus {
+  border-color: #5CB08E;
+  background: #FFFFFF;
+  box-shadow: 0 0 0 4px rgba(92, 176, 142, 0.16), 0 8px 20px rgba(17, 75, 54, 0.06);
+}
+.platform-shell button { transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease; }
+.platform-shell button:not(:disabled):active { transform: translateY(1px); }
+.platform-main > h1,
+.platform-main > div > h1 { letter-spacing: -0.025em; }
 .platform-shell input:not([type="checkbox"]):focus {
   border-color: #94CCB5;
   box-shadow: 0 0 0 3px rgba(148, 204, 181, 0.22);
@@ -189,7 +258,7 @@
 @media (min-width: 900px) {
   .platform-sidebar { transform: translateX(0) !important; }
   .platform-sidebar-overlay { display: none; }
-  .platform-main { max-width: 1120px !important; padding-left: 280px !important; }
+  .platform-main { max-width: 1280px !important; padding: 3.5rem 3.5rem 4rem 300px !important; }
 }
 
 @media (max-width: 899px) {

@@ -2,11 +2,12 @@ import React, { useEffect, useState, useCallback } from "react";
 import { apiGet, apiPost, apiPatch, apiDelete } from "../../lib/api";
 import { useNotifications } from "../../context/NotificationsContext";
 import { usePlatformAdminAuth } from "../../context/PlatformAdminAuthContext";
+import { AdminNotificationPanel } from "../../components/AdminNotificationPanel";
 import { Modal } from "../../components/ui/Modal";
 import { InboxPage } from "../InboxPage";
-import { Activity, Building2, ChevronRight, ClipboardList, LayoutDashboard, LogOut, Menu, MessageCircle, Plus, RefreshCw, Send, UserPlus, Users, UserCircle, X } from "lucide-react";
+import { Activity, Bell, Building2, ChevronRight, ClipboardList, LayoutDashboard, LogOut, MapPin, Menu, MessageCircle, Plus, RefreshCw, Send, UserPlus, Users, UserCircle, X } from "lucide-react";
 
-type PlatformView = "login" | "overview" | "hotels" | "hotel_detail" | "create_hotel" | "admins" | "create_admin" | "audit" | "outbox" | "communications" | "profile";
+type PlatformView = "login" | "overview" | "hotels" | "hotel_detail" | "create_hotel" | "regions" | "admins" | "create_admin" | "audit" | "outbox" | "communications" | "profile";
 
 interface PlatformMe {
     id: string; username: string; name: string;
@@ -19,12 +20,14 @@ interface PlatformDashboard {
 // NOTE - all actions here are highly impactful to business operations; destructive actions stay behind confirmation.
 interface Hotel {
     id: string; name: string; slug: string; isOpen: boolean;
-    autoCloseAt: string | null; createdAt: string; deletedAt: string | null;
+    autoCloseAt: string | null; imageUrl: string | null; createdAt: string; deletedAt: string | null;
     adminUsers?: { id: string; name: string; username: string; role: string }[];
     _count?: { orders: number };
     events?: any[]; staffUsers?: { id: string; name: string; phone: string }[];
+    zone?: DeliveryRegion;
 }
 interface AdminUser { id: string; name: string; username: string; createdAt: string; }
+interface DeliveryRegion { id: string; name: string; type: string; locationLabel: string; locationPlaceholder: string; active?: boolean; }
 
 const T = {
     bg: "#FFF8F0",
@@ -60,13 +63,17 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
     const [admins, setAdmins] = useState<AdminUser[]>([]);
     const [auditRows, setAuditRows] = useState<any[]>([]);
     const [outboxRows, setOutboxRows] = useState<any[]>([]);
+    const [regions, setRegions] = useState<DeliveryRegion[]>([]);
+    const [heroImageUrl, setHeroImageUrl] = useState("");
+    const [heroSaving, setHeroSaving] = useState(false);
     const [loading, setLoading] = useState(true);
     const [searchQ, setSearchQ] = useState("");
     const [sidebarOpen, setSidebarOpen] = useState(() => typeof window !== "undefined" && window.innerWidth >= 900);
     const [loginSubmitting, setLoginSubmitting] = useState(false);
     const [profileForm, setProfileForm] = useState({ name: "", username: "", currentPassword: "", newPassword: "", confirmPassword: "" });
     const [profileSaving, setProfileSaving] = useState(false);
-    const { pushNotification } = useNotifications();
+    const [panelOpen, setPanelOpen] = useState(false);
+    const { unreadCount, pushNotification } = useNotifications();
 
     useEffect(() => { if (user) setProfileForm((current) => ({ ...current, name: user.name, username: user.username })); }, [user]);
 
@@ -82,10 +89,13 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
 
     // ── Create Hotel ──
     const [hotelForm, setHotelForm] = useState({
-        name: "", slug: "", adminUsername: "", adminName: "", adminPhone: "", isOpen: true, autoCloseAt: "",
+        name: "", slug: "", adminUsername: "", adminName: "", adminPhone: "", zoneId: "", isOpen: true, autoCloseAt: "",
     });
     const [createResult, setCreateResult] = useState<any>(null);
     const [submitting, setSubmitting] = useState(false);
+    const [showRegionForm, setShowRegionForm] = useState(false);
+    const [regionSaving, setRegionSaving] = useState(false);
+    const [regionForm, setRegionForm] = useState({ name: "", type: "MARKET", locationLabel: "Delivery point", locationPlaceholder: "e.g. stall, bay, floor or office" });
 
     // ── Create Admin ──
     const [adminForm, setAdminForm] = useState({ username: "", name: "", phone: "" });
@@ -98,14 +108,16 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
     const fetch = useCallback(async () => {
         if (!token) { setLoading(false); return; }
         setLoading(true);
-        const [dashRes, hotelsRes, adminsRes, auditRes, outboxRes] = await Promise.all([
+        const [dashRes, hotelsRes, adminsRes, auditRes, outboxRes, regionsRes, heroRes] = await Promise.all([
             apiGet<PlatformDashboard>("/platform/dashboard", token),
             apiGet<Hotel[]>("/platform/hotels", token),
             apiGet<AdminUser[]>("/platform/admins", token),
             apiGet<any[]>("/platform/audit", token),
             apiGet<any[]>("/platform/outbox", token),
+            apiGet<DeliveryRegion[]>("/platform/zones", token),
+            apiGet<{ imageUrl: string }>("/platform/hero", token),
         ]);
-        const authFailed = [dashRes, hotelsRes, adminsRes, auditRes, outboxRes].some((res) =>
+        const authFailed = [dashRes, hotelsRes, adminsRes, auditRes, outboxRes, regionsRes, heroRes].some((res) =>
             !res.success && /invalid|expired|session/i.test(res.error ?? "")
         );
         if (authFailed) {
@@ -119,8 +131,22 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
         if (adminsRes.success && adminsRes.data) setAdmins(adminsRes.data);
         if (auditRes.success && auditRes.data) setAuditRows(auditRes.data);
         if (outboxRes.success && outboxRes.data) setOutboxRows(outboxRes.data);
+        if (regionsRes.success && regionsRes.data) {
+            setRegions(regionsRes.data);
+            setHotelForm((form) => form.zoneId ? form : { ...form, zoneId: regionsRes.data![0]?.id ?? "" });
+        }
+        if (heroRes.success && heroRes.data) setHeroImageUrl(heroRes.data.imageUrl);
         setLoading(false);
     }, [token]);
+
+    const saveHeroImage = async () => {
+        if (heroSaving) return;
+        setHeroSaving(true);
+        const res = await apiPatch<{ imageUrl: string }>("/platform/hero", { imageUrl: heroImageUrl.trim() }, token);
+        setHeroSaving(false);
+        if (res.success) pushNotification("success", "Hero image updated", "The new marketplace hero is now live.", { scope: "platform" });
+        else pushNotification("danger", "Hero image not saved", res.error || "Unable to update the hero image", { scope: "platform" });
+    };
 
     useEffect(() => { fetch(); }, [fetch]);
     useEffect(() => {
@@ -133,7 +159,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
         setLoginError("");
         setLoginSubmitting(true);
         try {
-            const res = await apiPost<{ token: string; user: PlatformMe }>("/platform/login", loginForm);
+            const res = await apiPost<{ token: string; user: PlatformMe }>("/platform/login", { ...loginForm, username: loginForm.username.trim(), password: loginForm.password.trim() });
             if (res.success && res.data) {
                 authLogin(res.data.token, res.data.user);
                 setView("overview");
@@ -159,6 +185,21 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
             setCreateResult(res.data);
         } else {
             pushNotification("danger", "Failed to create hotel", res.error || "Unknown error", { scope: "platform" });
+        }
+    };
+
+    const handleCreateRegion = async () => {
+        if (!regionForm.name.trim() || regionSaving) return;
+        setRegionSaving(true);
+        const res = await apiPost<DeliveryRegion>("/platform/zones", regionForm, token);
+        setRegionSaving(false);
+        if (res.success && res.data) {
+            setRegions((current) => [...current, res.data!].sort((a, b) => a.name.localeCompare(b.name)));
+            setHotelForm((form) => ({ ...form, zoneId: res.data!.id }));
+            setRegionForm({ name: "", type: "MARKET", locationLabel: "Delivery point", locationPlaceholder: "e.g. stall, bay, floor or office" });
+            setShowRegionForm(false);
+        } else {
+            pushNotification("danger", "Failed to create region", res.error || "Unknown error", { scope: "platform" });
         }
     };
 
@@ -224,6 +265,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
             case "overview": return <LayoutDashboard size={17} />;
             case "hotels": return <Building2 size={17} />;
             case "create_hotel": return <Plus size={17} />;
+            case "regions": return <MapPin size={17} />;
             case "admins": return <Users size={17} />;
             case "create_admin": return <UserPlus size={17} />;
             case "audit": return <ClipboardList size={17} />;
@@ -255,7 +297,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
     if (view === "login") {
         return (
             <div className="platform-shell" style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: T.font, padding: s(4) }}>
-                <div style={{ width: "100%", maxWidth: "400px", background: T.surface, borderRadius: "16px", padding: s(8), border: `1px solid ${T.border}` }}>
+                <div className="platform-login-card" style={{ width: "100%", maxWidth: "400px", background: T.surface, borderRadius: "16px", padding: s(8), border: `1px solid ${T.border}` }}>
                     <div style={{ textAlign: "center", marginBottom: s(6) }}>
                         <div style={{ width: "48px", height: "48px", borderRadius: "12px", background: T.primary, color: "white", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px", fontWeight: 800, fontSize: "1.2rem" }}>TD</div>
                         <h1 style={{ fontSize: "1.3rem", fontWeight: 700, color: T.text, margin: 0 }}>Ladha Deliveries</h1>
@@ -302,6 +344,34 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                 aria-label="Open menu"
             >
                 <Menu size={18} color={T.textMuted} aria-hidden="true" />
+            </button>
+
+            {/* Notification bell — fixed top-right, platform-scoped */}
+            <button onClick={() => setPanelOpen(true)}
+                style={{
+                    position: "fixed", top: s(4), right: "calc(16px + 44px)", zIndex: 60,
+                    background: T.surface,
+                    border: `1px solid ${T.border}`, cursor: "pointer",
+                    width: "36px", height: "36px", display: "flex",
+                    alignItems: "center", justifyContent: "center",
+                    padding: 0, borderRadius: "10px",
+                    transition: "box-shadow 0.15s",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                }}
+                aria-label="Notifications"
+                title="Notifications"
+            >
+                <Bell size={18} color={T.textMuted} aria-hidden="true" />
+                {unreadCount > 0 && (
+                    <span style={{
+                        position: "absolute", top: -4, right: -4,
+                        background: T.danger, color: "white",
+                        borderRadius: "50%", fontSize: "0.6rem", fontWeight: 700,
+                        minWidth: "18px", height: "18px", padding: "0 4px",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        border: `2px solid ${T.surface}`,
+                    }}>{unreadCount > 9 ? "9+" : unreadCount}</span>
+                )}
             </button>
 
             {/* Overlay backdrop */}
@@ -351,6 +421,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                 {navItem("overview", "Overview")}
                 {navItem("hotels", "Hotels")}
                 {navItem("create_hotel", "Add Hotel")}
+                {navItem("regions", "Serving Regions")}
                 {navItem("admins", "Platform Admins")}
                 {navItem("create_admin", "Add Admin")}
                 {navItem("audit", "Audit Log")}
@@ -395,6 +466,12 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                 ))}
                             </div>
                         )}
+                        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: "20px", padding: s(5), marginBottom: s(5) }}>
+                            <div style={{ color: T.textDim, fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase" }}>Marketplace presentation</div>
+                            <h2 style={{ color: T.text, fontSize: "1.05rem", margin: `${s(2)} 0 ${s(1)}` }}>Homepage hero image</h2>
+                            <p style={{ color: T.textMuted, fontSize: "0.82rem", margin: `0 0 ${s(3)}` }}>Use a calm, well-lit food or local-kitchen image. Leave blank to use the discovery fallback.</p>
+                            <div style={{ display: "flex", gap: s(2), flexWrap: "wrap" }}><input aria-label="Homepage hero image URL" value={heroImageUrl} onChange={(e) => setHeroImageUrl(e.target.value)} placeholder="https://…" style={{ flex: "1 1 280px", padding: s(3), border: `1px solid ${T.border}`, borderRadius: T.radius, fontFamily: T.font }} /><button type="button" onClick={() => void saveHeroImage()} disabled={heroSaving} style={{ background: T.primary, color: "white", border: "none", padding: `${s(2)} ${s(4)}`, borderRadius: T.radius, fontWeight: 700 }}>{heroSaving ? "Saving…" : "Save hero image"}</button></div>
+                        </div>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))", gap: s(4), marginBottom: s(5) }}>
                             <div style={{ background: T.primary, color: "white", borderRadius: "20px", padding: s(5), boxShadow: "0 12px 28px rgba(17,75,54,0.18)" }}>
                                 <div style={{ fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", opacity: 0.7 }}>Tenant operations</div>
@@ -442,7 +519,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                             <div>
                                                 <div style={{ fontWeight: 700, color: T.text }}>{h.name}</div>
                                                 <div style={{ fontSize: "0.8rem", color: T.textMuted, marginTop: s(1) }}>
-                                                    {h.slug} · {h.isOpen ? "Open" : "Closed"} · Onboarded {new Date(h.createdAt).toLocaleDateString()}
+                                                    {h.slug} · {h.isOpen ? "Open" : "Closed"} · {h.zone?.name ?? "Unassigned region"} · Onboarded {new Date(h.createdAt).toLocaleDateString()}
                                                 </div>
                                             </div>
                                             <ChevronRight size={18} color={T.textDim} />
@@ -458,7 +535,9 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                         )}
                     </>
                 ) : view === "hotel_detail" && selectedHotel ? (
-                    <HotelDetail hotelId={selectedHotel.id} onBack={() => setView("hotels")} onToggle={handleToggleHotel} token={token} />
+                    <HotelDetail hotelId={selectedHotel.id} onBack={() => setView("hotels")} onToggle={handleToggleHotel} token={token} regions={regions} />
+                ) : view === "regions" ? (
+                    <ServingRegionsPage regions={regions} token={token} onChanged={setRegions} />
                 ) : view === "create_hotel" ? (
                     createResult ? (
                         <div style={{ textAlign: "center", padding: s(10) }}>
@@ -471,7 +550,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                 <div style={{ color: T.textMuted }}>Username: <strong>{hotelForm.adminUsername}</strong></div>
                                 <div style={{ color: T.textMuted }}>Temp password: <strong style={{ fontFamily: "monospace" }}>{createResult.tempPassword}</strong></div>
                             </div>
-                            <button onClick={() => { setCreateResult(null); setHotelForm({ name: "", slug: "", adminUsername: "", adminName: "", adminPhone: "", isOpen: true, autoCloseAt: "" }); setView("hotels"); }}
+                            <button onClick={() => { setCreateResult(null); setHotelForm({ name: "", slug: "", adminUsername: "", adminName: "", adminPhone: "", zoneId: regions[0]?.id ?? "", isOpen: true, autoCloseAt: "" }); setView("hotels"); }}
                                 style={{ background: T.primary, color: "white", border: "none", padding: `${s(3)} ${s(6)}`, borderRadius: T.radius, fontWeight: 700, cursor: "pointer", marginTop: s(4) }}>Done</button>
                         </div>
                     ) : (
@@ -491,6 +570,22 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                             <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: T.textMuted, marginBottom: s(1) }}>Slug (URL identifier)</label>
                                             <input value={hotelForm.slug} onChange={(e) => setHotelForm({ ...hotelForm, slug: e.target.value })}
                                                 className="input-field" style={{ fontFamily: "monospace" }} />
+                                        </div>
+                                        <div>
+                                            <label htmlFor="hotelRegion" style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: T.textMuted, marginBottom: s(1) }}>Delivery Region</label>
+                                            <select id="hotelRegion" value={hotelForm.zoneId} onChange={(e) => setHotelForm({ ...hotelForm, zoneId: e.target.value })} className="input-field" style={{ fontFamily: T.font }}>
+                                                <option value="">Select a region</option>
+                                                {regions.map((region) => <option key={region.id} value={region.id}>{region.name} · {region.type.replaceAll("_", " ")}</option>)}
+                                            </select>
+                                            {regions.length === 0 && <p style={{ color: T.warning, fontSize: "0.75rem", marginTop: s(1) }}>Create a delivery region before onboarding a hotel.</p>}
+                                            <button type="button" onClick={() => setShowRegionForm((open) => !open)} style={{ marginTop: s(2), background: "transparent", border: "none", color: T.primary, fontWeight: 700, cursor: "pointer", padding: 0 }}>{showRegionForm ? "Cancel new region" : "+ Add a new region"}</button>
+                                            {showRegionForm && <div style={{ marginTop: s(2), padding: s(3), border: `1px solid ${T.border}`, borderRadius: T.radius, display: "flex", flexDirection: "column", gap: s(2) }}>
+                                                <input value={regionForm.name} onChange={(e) => setRegionForm({ ...regionForm, name: e.target.value })} className="input-field" style={{ fontFamily: T.font }} placeholder="Region name e.g. Machakos Bus Station" />
+                                                <select value={regionForm.type} onChange={(e) => setRegionForm({ ...regionForm, type: e.target.value })} className="input-field" style={{ fontFamily: T.font }}><option value="MARKET">Market</option><option value="BUS_STATION">Bus station</option><option value="OFFICE_BUILDING">Office building</option><option value="RESIDENTIAL">Residential area</option><option value="OTHER">Other</option></select>
+                                                <input value={regionForm.locationLabel} onChange={(e) => setRegionForm({ ...regionForm, locationLabel: e.target.value })} className="input-field" style={{ fontFamily: T.font }} placeholder="Customer location label" />
+                                                <input value={regionForm.locationPlaceholder} onChange={(e) => setRegionForm({ ...regionForm, locationPlaceholder: e.target.value })} className="input-field" style={{ fontFamily: T.font }} placeholder="Customer location example" />
+                                                <button type="button" onClick={() => void handleCreateRegion()} disabled={regionSaving || !regionForm.name.trim()} style={{ background: T.primary, color: "white", border: "none", padding: s(2), borderRadius: T.radius, fontWeight: 700, cursor: "pointer", opacity: regionSaving || !regionForm.name.trim() ? 0.6 : 1 }}>{regionSaving ? "Saving…" : "Save region"}</button>
+                                            </div>}
                                         </div>
                                     </div>
                                 </div>
@@ -519,8 +614,8 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                         </div>
                                     </div>
                                 </div>
-                                <button onClick={handleCreateHotel} disabled={submitting || !hotelForm.name || !hotelForm.slug || !hotelForm.adminUsername || !hotelForm.adminName || !hotelForm.adminPhone}
-                                    style={{ background: T.primary, color: "white", border: "none", padding: s(4), borderRadius: T.radius, fontWeight: 700, fontSize: "0.95rem", cursor: submitting ? "not-allowed" : "pointer", opacity: submitting || !hotelForm.name || !hotelForm.slug || !hotelForm.adminUsername || !hotelForm.adminName || !hotelForm.adminPhone ? 0.6 : 1, alignSelf: "flex-start", minWidth: "200px" }}>
+                                <button onClick={handleCreateHotel} disabled={submitting || !hotelForm.name || !hotelForm.slug || !hotelForm.zoneId || !hotelForm.adminUsername || !hotelForm.adminName || !hotelForm.adminPhone}
+                                    style={{ background: T.primary, color: "white", border: "none", padding: s(4), borderRadius: T.radius, fontWeight: 700, fontSize: "0.95rem", cursor: submitting ? "not-allowed" : "pointer", opacity: submitting || !hotelForm.name || !hotelForm.slug || !hotelForm.zoneId || !hotelForm.adminUsername || !hotelForm.adminName || !hotelForm.adminPhone ? 0.6 : 1, alignSelf: "flex-start", minWidth: "200px" }}>
                                     {submitting ? "Creating…" : "Create Hotel & Seed Admin"}
                                 </button>
                             </div>
@@ -683,23 +778,126 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                     secondaryAction={{ label: "Cancel", onClick: () => setConfirm(null) }}
                 />
             )}
+
+            {/* Notification panel */}
+            <AdminNotificationPanel isOpen={panelOpen} onClose={() => setPanelOpen(false)} />
         </div>
     );
 };
 
+function ServingRegionsPage({ regions, token, onChanged }: { regions: DeliveryRegion[]; token: string; onChanged: (regions: DeliveryRegion[]) => void }) {
+    const [drafts, setDrafts] = useState<Record<string, DeliveryRegion>>({});
+    const [newRegion, setNewRegion] = useState({ name: "", type: "MARKET", locationLabel: "Delivery point", locationPlaceholder: "e.g. stall, bay, floor or office" });
+    const [saving, setSaving] = useState<string | null>(null);
+    const [creating, setCreating] = useState(false);
+
+    const draftFor = (region: DeliveryRegion) => drafts[region.id] ?? region;
+    const saveRegion = async (region: DeliveryRegion) => {
+        setSaving(region.id);
+        const res = await apiPatch<DeliveryRegion>(`/platform/zones/${region.id}`, draftFor(region), token);
+        setSaving(null);
+        if (res.success && res.data) onChanged(regions.map((item) => item.id === region.id ? res.data! : item));
+    };
+    const createRegion = async () => {
+        if (!newRegion.name.trim() || creating) return;
+        setCreating(true);
+        const res = await apiPost<DeliveryRegion>("/platform/zones", newRegion, token);
+        setCreating(false);
+        if (res.success && res.data) {
+            onChanged([...regions, res.data].sort((a, b) => a.name.localeCompare(b.name)));
+            setNewRegion({ name: "", type: "MARKET", locationLabel: "Delivery point", locationPlaceholder: "e.g. stall, bay, floor or office" });
+        }
+    };
+
+    return <div>
+        <div style={{ marginBottom: s(6) }}><p style={{ color: T.primary, fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase" }}>Marketplace geography</p><h1 style={{ fontSize: "1.6rem", fontWeight: 800, color: T.text, margin: 0 }}>Serving Regions</h1><p style={{ color: T.textMuted, fontSize: "0.9rem", marginTop: s(1) }}>Create and maintain delivery areas. Hotels are assigned to one region and appear there first for customers.</p></div>
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radius, padding: s(4), marginBottom: s(5) }}>
+            <h2 style={{ fontSize: "1rem", fontWeight: 700, color: T.text, marginTop: 0 }}>Add serving region</h2>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: s(2) }}>
+                <input className="input-field" value={newRegion.name} onChange={(e) => setNewRegion({ ...newRegion, name: e.target.value })} placeholder="Region name" />
+                <select className="input-field" value={newRegion.type} onChange={(e) => setNewRegion({ ...newRegion, type: e.target.value })}><option value="MARKET">Market</option><option value="BUS_STATION">Bus station</option><option value="OFFICE_BUILDING">Office building</option><option value="RESIDENTIAL">Residential</option><option value="OTHER">Other</option></select>
+                <input className="input-field" value={newRegion.locationLabel} onChange={(e) => setNewRegion({ ...newRegion, locationLabel: e.target.value })} placeholder="Location label" />
+                <input className="input-field" value={newRegion.locationPlaceholder} onChange={(e) => setNewRegion({ ...newRegion, locationPlaceholder: e.target.value })} placeholder="Location example" />
+            </div>
+            <button type="button" onClick={() => void createRegion()} disabled={creating || !newRegion.name.trim()} style={{ marginTop: s(3), background: T.primary, color: "white", border: "none", padding: `${s(2)} ${s(4)}`, borderRadius: T.radius, fontWeight: 700, opacity: creating || !newRegion.name.trim() ? 0.6 : 1 }}>{creating ? "Adding…" : "Add Region"}</button>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: s(3) }}>
+            {regions.map((region) => { const draft = draftFor(region); return <div key={region.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radius, padding: s(4) }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: s(2) }}>
+                    <input className="input-field" value={draft.name} onChange={(e) => setDrafts({ ...drafts, [region.id]: { ...draft, name: e.target.value } })} />
+                    <select className="input-field" value={draft.type} onChange={(e) => setDrafts({ ...drafts, [region.id]: { ...draft, type: e.target.value } })}><option value="MARKET">Market</option><option value="BUS_STATION">Bus station</option><option value="OFFICE_BUILDING">Office building</option><option value="RESIDENTIAL">Residential</option><option value="OTHER">Other</option></select>
+                    <input className="input-field" value={draft.locationLabel} onChange={(e) => setDrafts({ ...drafts, [region.id]: { ...draft, locationLabel: e.target.value } })} />
+                    <input className="input-field" value={draft.locationPlaceholder} onChange={(e) => setDrafts({ ...drafts, [region.id]: { ...draft, locationPlaceholder: e.target.value } })} />
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: s(3), marginTop: s(3) }}><label style={{ display: "flex", alignItems: "center", gap: s(2), color: T.textMuted, fontSize: "0.85rem" }}><input type="checkbox" checked={draft.active !== false} onChange={(e) => setDrafts({ ...drafts, [region.id]: { ...draft, active: e.target.checked } })} /> Available to customers</label><button type="button" onClick={() => void saveRegion(region)} disabled={saving === region.id} style={{ marginLeft: "auto", background: T.primary, color: "white", border: "none", padding: `${s(2)} ${s(4)}`, borderRadius: T.radius, fontWeight: 700 }}>{saving === region.id ? "Saving…" : "Save changes"}</button></div>
+            </div>; })}
+            {regions.length === 0 && <div style={{ color: T.textMuted, padding: s(6), textAlign: "center" }}>No serving regions configured.</div>}
+        </div>
+    </div>;
+}
+
 // ── Hotel Detail sub-view ──
-function HotelDetail({ hotelId, onBack, onToggle, token: tok }: { hotelId: string; onBack: () => void; onToggle: (id: string) => void; token: string }) {
+function HotelDetail({ hotelId, onBack, onToggle, token: tok, regions }: { hotelId: string; onBack: () => void; onToggle: (id: string) => void; token: string; regions: DeliveryRegion[] }) {
     const [hotel, setHotel] = useState<Hotel | null>(null);
     const [detailLoading, setDetailLoading] = useState(true);
+    const [zoneId, setZoneId] = useState("");
+    const [zoneSaving, setZoneSaving] = useState(false);
+    const [editForm, setEditForm] = useState({ name: "", slug: "", imageUrl: "", isOpen: true, autoCloseAt: "" });
+    const [editSaving, setEditSaving] = useState(false);
+    const [editError, setEditError] = useState("");
     const T2 = T;
 
     useEffect(() => {
         (async () => {
             const res = await apiGet<Hotel>(`/platform/hotels/${hotelId}`, tok);
-            if (res.success && res.data) setHotel(res.data);
+            if (res.success && res.data) {
+                setHotel(res.data);
+                setZoneId(res.data.zone?.id ?? "");
+                setEditForm({
+                    name: res.data.name,
+                    slug: res.data.slug,
+                    imageUrl: res.data.imageUrl ?? "",
+                    isOpen: res.data.isOpen,
+                    autoCloseAt: res.data.autoCloseAt ? res.data.autoCloseAt.slice(0, 16) : "",
+                });
+            }
             setDetailLoading(false);
         })();
     }, [hotelId, tok]);
+
+    const saveRegion = async () => {
+        if (!hotel || !zoneId || zoneSaving) return;
+        setZoneSaving(true);
+        const res = await apiPatch<Hotel>(`/platform/hotels/${hotel.id}`, { zoneId }, tok);
+        setZoneSaving(false);
+        if (res.success && res.data) setHotel(res.data);
+    };
+
+    const saveDetails = async () => {
+        if (!hotel || editSaving) return;
+        setEditSaving(true);
+        setEditError("");
+        const res = await apiPatch<Hotel>(`/platform/hotels/${hotel.id}`, {
+            name: editForm.name.trim() || hotel.name,
+            slug: editForm.slug.trim() || hotel.slug,
+            imageUrl: editForm.imageUrl.trim(),
+            isOpen: editForm.isOpen,
+            autoCloseAt: editForm.autoCloseAt ? new Date(editForm.autoCloseAt).toISOString() : "",
+        }, tok);
+        setEditSaving(false);
+        if (res.success && res.data) {
+            setHotel(res.data);
+            setEditForm({
+                name: res.data.name,
+                slug: res.data.slug,
+                imageUrl: res.data.imageUrl ?? "",
+                isOpen: res.data.isOpen,
+                autoCloseAt: res.data.autoCloseAt ? res.data.autoCloseAt.slice(0, 16) : "",
+            });
+        } else {
+            setEditError(res.error ?? "Failed to save hotel details");
+        }
+    };
 
     if (detailLoading) return <div style={{ color: T2.textDim }}>Loading…</div>;
     if (!hotel) return <div style={{ color: T2.danger }}>Hotel not found.</div>;
@@ -721,6 +919,57 @@ function HotelDetail({ hotelId, onBack, onToggle, token: tok }: { hotelId: strin
                         style={{ background: hotel.isOpen ? T2.dangerMuted : T2.successMuted, color: hotel.isOpen ? T2.danger : T2.success, border: `1px solid ${hotel.isOpen ? "#FECACA" : "#A7F3D0"}`, padding: `${s(2)} ${s(4)}`, borderRadius: T2.radius, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>
                         {hotel.isOpen ? "Suspend" : "Activate"}
                     </button>
+                </div>
+            </div>
+
+            <div style={{ marginBottom: s(6), padding: s(4), background: T2.surface, border: `1px solid ${T2.border}`, borderRadius: T2.radius, maxWidth: "520px" }}>
+                <h3 style={{ fontSize: "0.9rem", fontWeight: 700, color: T2.text, marginBottom: s(2) }}>Hotel Details</h3>
+                <p style={{ color: T2.textMuted, fontSize: "0.8rem", marginBottom: s(3) }}>Edit the public profile shown to customers on the marketplace.</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: s(3) }}>
+                    <div>
+                        <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: T2.textMuted, marginBottom: s(1) }}>Hotel Name</label>
+                        <input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                            className="input-field" style={{ fontFamily: T2.font }} placeholder="e.g. Riverside Food Court" />
+                    </div>
+                    <div>
+                        <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: T2.textMuted, marginBottom: s(1) }}>Slug (URL identifier)</label>
+                        <input value={editForm.slug} onChange={(e) => setEditForm({ ...editForm, slug: e.target.value })}
+                            className="input-field" style={{ fontFamily: "monospace" }} />
+                    </div>
+                    <div>
+                        <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: T2.textMuted, marginBottom: s(1) }}>Image URL</label>
+                        <input value={editForm.imageUrl} onChange={(e) => setEditForm({ ...editForm, imageUrl: e.target.value })}
+                            className="input-field" style={{ fontFamily: "monospace" }} placeholder="https://…" />
+                    </div>
+                    <div>
+                        <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: T2.textMuted, marginBottom: s(1) }}>Auto-close (optional)</label>
+                        <input type="datetime-local" value={editForm.autoCloseAt} onChange={(e) => setEditForm({ ...editForm, autoCloseAt: e.target.value })}
+                            className="input-field" style={{ fontFamily: T2.font }} />
+                        <p style={{ color: T2.textDim, fontSize: "0.75rem", marginTop: s(1) }}>Leave empty to keep the hotel open until manually closed.</p>
+                    </div>
+                    <label style={{ display: "flex", alignItems: "center", gap: s(2), fontSize: "0.85rem", fontWeight: 600, color: T2.text, cursor: "pointer" }}>
+                        <input type="checkbox" checked={editForm.isOpen} onChange={(e) => setEditForm({ ...editForm, isOpen: e.target.checked })} style={{ width: "16px", height: "16px", accentColor: T2.primary }} />
+                        Accepting orders now
+                    </label>
+                    {editError && <p style={{ color: T2.danger, fontSize: "0.8rem" }}>{editError}</p>}
+                    <div style={{ display: "flex", gap: s(2) }}>
+                        <button type="button" onClick={() => void saveDetails()} disabled={editSaving || !editForm.name.trim()}
+                            style={{ background: T2.primary, color: "white", border: "none", borderRadius: T2.radius, padding: `${s(2)} ${s(4)}`, fontWeight: 700, fontSize: "0.85rem", cursor: editSaving ? "wait" : "pointer", opacity: editSaving || !editForm.name.trim() ? 0.6 : 1 }}>
+                            {editSaving ? "Saving…" : "Save Changes"}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div style={{ marginBottom: s(6), padding: s(4), background: T2.surface, border: `1px solid ${T2.border}`, borderRadius: T2.radius, maxWidth: "520px" }}>
+                <h3 style={{ fontSize: "0.9rem", fontWeight: 700, color: T2.text, marginBottom: s(2) }}>Delivery Region</h3>
+                <p style={{ color: T2.textMuted, fontSize: "0.8rem", marginBottom: s(2) }}>Customers see this hotel when they choose this delivery area.</p>
+                <div style={{ display: "flex", gap: s(2) }}>
+                    <select value={zoneId} onChange={(event) => setZoneId(event.target.value)} className="input-field" style={{ fontFamily: T2.font, flex: 1 }}>
+                        <option value="">Select a region</option>
+                        {regions.map((region) => <option key={region.id} value={region.id}>{region.name}</option>)}
+                    </select>
+                    <button type="button" onClick={() => void saveRegion()} disabled={zoneSaving || !zoneId} style={{ background: T2.primary, color: "white", border: "none", borderRadius: T2.radius, padding: `0 ${s(3)}`, fontWeight: 700, opacity: zoneSaving || !zoneId ? 0.6 : 1 }}>{zoneSaving ? "Saving…" : "Save"}</button>
                 </div>
             </div>
 

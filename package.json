@@ -18,7 +18,7 @@
         "server": "bun --watch ./apps/api/server.ts",
         "web": "cd ./apps/web/ && bun run dev",
         "test": "bun test",
-        "typecheck": "bunx tsc --noEmit -p apps/api/tsconfig.json && bunx tsc --noEmit -p apps/web/tsconfig.json",
+        "typecheck": "bunx tsc --noEmit -p apps/api/tsconfig.json && bunx tsc --noEmit -p apps/web/tsconfig.app.json && bunx tsc --noEmit -p apps/web/tsconfig.node.json",
         "validate": "bun run typecheck && bunx prisma validate && bun test"
     }
 }
