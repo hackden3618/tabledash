@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { QuantitySelector, AddToCartButton } from "./QuantitySelector";
 import { Badge } from "./Badge";
+import { RatingStars } from "./RatingStars";
 
 export interface ProductCardItem {
   id: string;
@@ -13,6 +14,8 @@ export interface ProductCardItem {
   stockQty: number;
   lastRestockedAt?: string | null;
   outOfStockSince?: string | null;
+  rating?: number | null;
+  ratingCount?: number;
 }
 
 interface ProductCardProps {
@@ -59,7 +62,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       className={`
-        relative flex gap-4 items-center p-4 bg-white rounded-2xl
+        glass-surface relative flex gap-4 items-center p-4 rounded-2xl
         transition-shadow duration-200
         ${isOutOfStock ? "opacity-55 bg-[#FAFAFA]" : "shadow-[0_2px_8px_rgba(17,75,54,0.06)] hover:shadow-[0_8px_24px_rgba(17,75,54,0.1)]"}
       `}
@@ -83,6 +86,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         <h3 className={`font-semibold text-sm ${isOutOfStock ? "text-[#6B7280]" : "text-[#1F2937]"}`}>
           {item.name}
         </h3>
+        <RatingStars rating={item.rating} count={item.ratingCount} className="mt-0.5" />
         <p className={`font-bold text-base mt-0.5 ${isOutOfStock ? "text-[#6B7280]" : "text-[#114B36]"}`}>
           KSh {item.price}
         </p>

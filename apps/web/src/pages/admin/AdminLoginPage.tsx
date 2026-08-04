@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { apiPost } from "../../lib/api";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
-import { Lock, ChevronLeft, Phone, KeyRound, CheckCircle2 } from "lucide-react";
+import { Modal } from "../../components/ui/Modal";
+import { Lock, ChevronLeft, Phone, KeyRound, CheckCircle2, Building2 } from "lucide-react";
 
 const formatPhone = (raw: string): string => {
   const cleaned = raw.replace(/\D/g, "");
@@ -13,11 +14,31 @@ const formatPhone = (raw: string): string => {
   return cleaned;
 };
 
-interface AdminLoginPageProps {
-  onLoginSuccess: (token: string, user: { id: string; username: string; name: string; role: string; hotelId: string | null }) => void;
+interface AdminUser {
+  id: string;
+  username: string;
+  name: string;
+  role: string;
+  hotelId: string | null;
 }
 
-type LoginView = "login" | "forgot" | "reset" | "done";
+interface AdminHotelSummary {
+  id: string;
+  name: string;
+  role: string;
+}
+
+interface AdminLoginResponse {
+  token: string;
+  user: AdminUser;
+  hotels: AdminHotelSummary[];
+}
+
+interface AdminLoginPageProps {
+  onLoginSuccess: (token: string, user: AdminUser, hotels?: AdminHotelSummary[]) => void;
+}
+
+type LoginView = "login" | "forgot" | "reset" | "done" | "pick";
 
 export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }) => {
   const [view, setView] = useState<LoginView>("login");
@@ -25,6 +46,10 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const [loginToken, setLoginToken] = useState("");
+  const [loginUser, setLoginUser] = useState<AdminUser | null>(null);
+  const [loginHotels, setLoginHotels] = useState<AdminHotelSummary[]>([]);
 
   const [resetPhone, setResetPhone] = useState("");
   const [otp, setOtp] = useState("");
@@ -36,14 +61,40 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }
     setError("");
     setLoading(true);
 
-    const res = await apiPost<any>("/auth/login", { username, password });
+    const res = await apiPost<AdminLoginResponse>("/auth/login", { username: username.trim(), password: password.trim() });
     setLoading(false);
 
     if (res.success && res.data) {
-      localStorage.setItem("ladha_token", res.data.token);
-      onLoginSuccess(res.data.token, res.data.user);
+      if (res.data.hotels && res.data.hotels.length > 1) {
+        setLoginToken(res.data.token);
+        setLoginUser(res.data.user);
+        setLoginHotels(res.data.hotels);
+        setView("pick");
+      } else {
+        onLoginSuccess(res.data.token, res.data.user, res.data.hotels ?? []);
+      }
     } else {
       setError(res.error || "Invalid username or password");
+    }
+  };
+
+  const handlePickHotel = async (hotel: AdminHotelSummary) => {
+    setError("");
+    setLoading(true);
+    try {
+      if (!loginToken || !loginUser) return;
+      if (hotel.id === loginUser.hotelId) {
+        onLoginSuccess(loginToken, loginUser, loginHotels);
+        return;
+      }
+      const res = await apiPost<{ token: string; user: AdminUser }>("/auth/switch-hotel", { hotelId: hotel.id }, loginToken);
+      if (res.success && res.data) {
+        onLoginSuccess(res.data.token, res.data.user, loginHotels);
+      } else {
+        setError(res.error || "Unable to switch hotel");
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -283,6 +334,43 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }
           )}
         </AnimatePresence>
       </motion.div>
+
+      <Modal
+        isOpen={view === "pick"}
+        dismissible={false}
+        type="confirm"
+        title="Select a hotel"
+        message="This account has access to more than one hotel. Choose the hotel you want to work with to continue."
+      >
+        <div className="space-y-3">
+          {loginHotels.map((hotel) => {
+            const isCurrent = hotel.id === loginUser?.hotelId;
+            return (
+              <button
+                key={hotel.id}
+                type="button"
+                onClick={() => handlePickHotel(hotel)}
+                disabled={loading}
+                className="w-full flex items-center justify-between gap-3 bg-white border border-[#E5E7EB] hover:border-[#114B36] hover:shadow-md rounded-xl px-4 py-4 text-left transition-all cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+              >
+                <span className="flex items-center gap-3 min-w-0">
+                  <span className="w-10 h-10 shrink-0 rounded-xl bg-[#EBF5F0] text-[#114B36] flex items-center justify-center">
+                    <Building2 size={18} />
+                  </span>
+                  <span className="font-semibold text-[#111827] truncate">{hotel.name}</span>
+                </span>
+                {isCurrent && <span className="text-xs font-bold text-[#059669] whitespace-nowrap">Current</span>}
+              </button>
+            );
+          })}
+
+          {error && (
+            <div className="bg-[#FEE2E2] text-[#DC2626] rounded-xl px-4 py-3 text-sm font-semibold">
+              {error}
+            </div>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 };

@@ -148,29 +148,33 @@ export const getStaffUsers = async (hotelId?: string) => {
 export const addStaffUser = async (data: StaffUserPayload, hotelId?: string) => {
   const formattedPhone = formatPhone(data.phone);
 
-  const existing = await prisma.staffUser.findUnique({
-    where: { phone: formattedPhone },
+  const existing = await prisma.staffUser.findFirst({
+    where: { phone: formattedPhone, hotelId },
   });
   if (existing) {
-    throw new Error("A staff member with this phone number already exists.");
+    throw new Error("A staff member with this phone number already exists at this hotel.");
   }
 
   if (!hotelId) throw new Error("A hotel is required before adding staff");
-  const existingLogin = await prisma.adminUser.findUnique({ where: { username: formattedPhone } });
-  if (existingLogin) throw new Error("A login already exists for this phone number.");
   const hotel = await prisma.hotel.findUnique({ where: { id: hotelId }, select: { name: true } });
   if (!hotel) throw new Error("Hotel not found");
-  const tempPassword = crypto.randomUUID().split("-")[0]!;
-  const passwordHash = await Bun.password.hash(tempPassword);
+
+  // One phone may now be staff (and a login) at many hotels. Reuse an existing login instead of
+  // throwing: same password everywhere, and no temp password is sent for a login they already have.
+  const existingLogin = await prisma.adminUser.findFirst({ where: { username: formattedPhone } });
+  const localLogin = existingLogin && existingLogin.hotelId === hotelId ? existingLogin : null;
+  const remoteLogin = existingLogin && existingLogin.hotelId !== hotelId ? existingLogin : null;
+  const tempPassword = localLogin || remoteLogin ? undefined : crypto.randomUUID().split("-")[0]!;
+  const passwordHash = localLogin ? localLogin.passwordHash : remoteLogin ? remoteLogin.passwordHash : await Bun.password.hash(tempPassword!);
 
   return prisma.$transaction(async (tx) => {
-    const adminUser = await tx.adminUser.create({ data: { username: formattedPhone, passwordHash, name: data.name, role: "HOTEL_STAFF", hotelId } });
+    const adminUser = localLogin ?? (await tx.adminUser.create({ data: { username: formattedPhone, passwordHash, name: data.name, role: "HOTEL_STAFF", hotelId } }));
     const staff = await tx.staffUser.create({ data: { name: data.name, phone: formattedPhone, receiveSms: data.receiveSms, hotelId, adminUserId: adminUser.id } });
     await tx.eventOutbox.create({
       data: {
         eventName: "hotel_staff_created",
         hotelId,
-        payload: JSON.stringify({ staffName: data.name, staffPhone: formattedPhone, hotelName: hotel.name, username: formattedPhone, tempPassword, role: "HOTEL_STAFF", appLink: "https://tabledash.up.railway.app/kitchen" }),
+        payload: JSON.stringify({ staffName: data.name, staffPhone: formattedPhone, hotelName: hotel.name, username: localLogin || remoteLogin ? undefined : formattedPhone, tempPassword, role: "HOTEL_STAFF", appLink: "https://tabledash.up.railway.app/kitchen" }),
         status: "initialized",
       },
     });
@@ -189,10 +193,10 @@ export const updateStaffUser = async (id: string, data: Partial<StaffUserPayload
 
   if (formatted) {
     const dup = await prisma.staffUser.findFirst({
-      where: { phone: formatted, NOT: { id } },
+      where: { phone: formatted, hotelId, NOT: { id } },
     });
     if (dup) {
-      throw new Error("Another staff member with this phone number already exists.");
+      throw new Error("Another staff member with this phone number already exists at this hotel.");
     }
   }
 
@@ -202,6 +206,12 @@ export const updateStaffUser = async (id: string, data: Partial<StaffUserPayload
       data: { ...data, phone: formatted ?? data.phone },
     });
     if (formatted && existing.adminUserId) {
+      const usernameTaken = await tx.adminUser.findFirst({
+        where: { username: formatted, hotelId: existing.hotelId, NOT: { id: existing.adminUserId } },
+      });
+      if (usernameTaken) {
+        throw new Error("Another login at this hotel already uses that phone number.");
+      }
       await tx.adminUser.update({ where: { id: existing.adminUserId }, data: { username: formatted } });
     }
     return updated;
@@ -214,15 +224,20 @@ export const provisionStaffLogin = async (id: string, hotelId?: string) => {
   if (hotelId && existing.hotelId !== hotelId) throw new Error("Staff member does not belong to your hotel");
   if (existing.adminUserId) throw new Error("This staff member already has a login");
   if (!existing.hotelId) throw new Error("Staff member is not assigned to a hotel");
-  if (await prisma.adminUser.findUnique({ where: { username: existing.phone } })) throw new Error("A login already exists for this phone number");
   const hotel = await prisma.hotel.findUnique({ where: { id: existing.hotelId }, select: { name: true } });
   if (!hotel) throw new Error("Hotel not found");
-  const tempPassword = crypto.randomUUID().split("-")[0]!;
-  const passwordHash = await Bun.password.hash(tempPassword);
+
+  // The phone may already be a login elsewhere — reuse that password instead of generating one.
+  const existingLogin = await prisma.adminUser.findFirst({ where: { username: existing.phone } });
+  const localLogin = existingLogin && existingLogin.hotelId === existing.hotelId ? existingLogin : null;
+  const remoteLogin = existingLogin && existingLogin.hotelId !== existing.hotelId ? existingLogin : null;
+  const tempPassword = localLogin || remoteLogin ? undefined : crypto.randomUUID().split("-")[0]!;
+  const passwordHash = localLogin ? localLogin.passwordHash : remoteLogin ? remoteLogin.passwordHash : await Bun.password.hash(tempPassword!);
+
   return prisma.$transaction(async (tx) => {
-    const adminUser = await tx.adminUser.create({ data: { username: existing.phone, passwordHash, name: existing.name, role: "HOTEL_STAFF", hotelId: existing.hotelId! } });
+    const adminUser = localLogin ?? (await tx.adminUser.create({ data: { username: existing.phone, passwordHash, name: existing.name, role: "HOTEL_STAFF", hotelId: existing.hotelId! } }));
     const staff = await tx.staffUser.update({ where: { id }, data: { adminUserId: adminUser.id } });
-    await tx.eventOutbox.create({ data: { eventName: "hotel_staff_created", hotelId: existing.hotelId, payload: JSON.stringify({ staffName: existing.name, staffPhone: existing.phone, hotelName: hotel.name, username: existing.phone, tempPassword, role: "HOTEL_STAFF", appLink: "https://tabledash.up.railway.app/kitchen" }), status: "initialized" } });
+    await tx.eventOutbox.create({ data: { eventName: "hotel_staff_created", hotelId: existing.hotelId, payload: JSON.stringify({ staffName: existing.name, staffPhone: existing.phone, hotelName: hotel.name, username: localLogin || remoteLogin ? undefined : existing.phone, tempPassword, role: "HOTEL_STAFF", appLink: "https://tabledash.up.railway.app/kitchen" }), status: "initialized" } });
     return staff;
   });
 };
@@ -235,7 +250,12 @@ export const deleteStaffUser = async (id: string, hotelId?: string) => {
   }
 
   return prisma.$transaction(async (tx) => {
-    if (existing.adminUserId) await tx.adminUser.delete({ where: { id: existing.adminUserId } });
+    if (existing.adminUserId) {
+      const sharedCount = await tx.staffUser.count({ where: { adminUserId: existing.adminUserId } });
+      if (sharedCount <= 1) {
+        await tx.adminUser.delete({ where: { id: existing.adminUserId } });
+      }
+    }
     return tx.staffUser.delete({ where: { id } });
   });
 };
@@ -258,14 +278,14 @@ export const getSmsRecipients = async (hotelId?: string): Promise<string[]> => {
     return staff.map((s) => s.phone);
   }
 
-  // The legacy setting is only safe for the original single-tenant/default flow.
-  // Never route a tenant-scoped event to a process-wide fallback recipient.
   if (hotelId) {
-    const defaultHotel = await getDefaultHotel();
-    if (!defaultHotel || defaultHotel.id !== hotelId) return [];
+    const fallback = await prisma.staffUser.findFirst({
+      where: { hotelId },
+      orderBy: { createdAt: "asc" },
+      select: { phone: true },
+    });
+    if (fallback?.phone) return [fallback.phone];
   }
 
-  // Fallback to legacy single setting if no specific staff users are configured
-  const legacyPhone = await getStaffPhone();
-  return legacyPhone ? [legacyPhone] : [];
+  return [];
 };

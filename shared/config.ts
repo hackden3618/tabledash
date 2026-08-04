@@ -58,7 +58,15 @@ export class Environment {
     if (jwtSecret.length < 32) errors.push("JWT_SECRET must be at least 32 characters");
     if (!this.corsOrigin || this.corsOrigin === "*") errors.push("CORS_ORIGIN must be an explicit frontend origin");
     if (this.seedAdminUsername === "admin" || this.seedAdminPassword === "adminpass") errors.push("SEED_ADMIN_USERNAME and SEED_ADMIN_PASSWORD must not use defaults");
-    if (process.env.MEDIA_STORAGE !== "s3") errors.push("MEDIA_STORAGE must be s3-compatible in production");
+    if (!(["s3", "r2"] as const).includes(process.env.MEDIA_STORAGE as "s3" | "r2")) {
+      errors.push("MEDIA_STORAGE must be s3 or r2 in production");
+    }
+    if (process.env.MEDIA_STORAGE === "r2" && (!process.env.R2_ACCOUNT_ID || !process.env.R2_ACCESS_KEY_ID || !process.env.R2_SECRET_ACCESS_KEY || !process.env.R2_BUCKET_NAME || !process.env.MEDIA_BASE_URL)) {
+      errors.push("R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, and MEDIA_BASE_URL are required for R2 storage");
+    }
+    if (process.env.MEDIA_STORAGE === "s3" && (!process.env.S3_ENDPOINT || !process.env.S3_BUCKET || !process.env.S3_ACCESS_KEY_ID || !process.env.S3_SECRET_ACCESS_KEY)) {
+      errors.push("S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, and S3_SECRET_ACCESS_KEY are required for S3 storage");
+    }
     if (this.smsProvider === "textsms" && (!this.textSmsApiKey || !this.textSmsPartnerId)) errors.push("TextSMS credentials are required when SMS_PROVIDER=textsms");
     if (this.smsProvider === "console") errors.push("SMS_PROVIDER=console is not allowed in production");
 

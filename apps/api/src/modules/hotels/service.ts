@@ -12,6 +12,10 @@ export const getHotelBySlug = async (slug: string) => {
   return prisma.hotel.findUnique({ where: { slug } });
 };
 
-export const getAllHotels = async () => {
-  return prisma.hotel.findMany({ where: { deletedAt: null }, orderBy: { name: "asc" } });
+export const getAllHotels = async (zoneId?: string) => {
+  return prisma.hotel.findMany({
+    where: { deletedAt: null, ...(zoneId ? { zoneId } : {}) },
+    select: { id: true, name: true, slug: true, imageUrl: true, isOpen: true, zone: { select: { id: true, name: true, type: true } } },
+    orderBy: { name: "asc" },
+  });
 };

@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { isJwtExpired, getJwtExpiry } from "../lib/jwt";
-import { apiGet } from "../lib/api";
+import { apiGet, apiPost } from "../lib/api";
 
 const STORAGE_KEY = "ladha_token";
 
@@ -12,13 +12,21 @@ interface AdminUser {
   hotelId: string | null;
 }
 
+interface AdminHotelSummary {
+  id: string;
+  name: string;
+  role: string;
+}
+
 interface AdminAuthContextValue {
   token: string;
   user: AdminUser | null;
+  hotels: AdminHotelSummary[];
   isLoggedIn: boolean;
   hydrating: boolean;
-  login: (token: string, userData?: AdminUser) => void;
+  login: (token: string, userData?: AdminUser, hotels?: AdminHotelSummary[]) => void;
   logout: () => void;
+  switchHotel: (hotelId: string) => Promise<void>;
 }
 
 const AdminAuthContext = createContext<AdminAuthContextValue | null>(null);
@@ -32,13 +40,15 @@ export const useAdminAuth = (): AdminAuthContextValue => {
 export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [token, setToken] = useState<string>(() => localStorage.getItem(STORAGE_KEY) ?? "");
   const [user, setUser] = useState<AdminUser | null>(null);
+  const [hotels, setHotels] = useState<AdminHotelSummary[]>([]);
   const [hydrating, setHydrating] = useState(() => Boolean(localStorage.getItem(STORAGE_KEY)));
   const expiryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const logout = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.clear();
     setToken("");
     setUser(null);
+    setHotels([]);
     setHydrating(false);
     if (expiryTimer.current) {
       clearTimeout(expiryTimer.current);
@@ -49,9 +59,12 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, []);
 
-  const login = useCallback((newToken: string, userData?: AdminUser) => {
+  const login = useCallback((newToken: string, userData?: AdminUser, hotelList?: AdminHotelSummary[]) => {
     localStorage.setItem(STORAGE_KEY, newToken);
     setToken(newToken);
+    if (hotelList) {
+      setHotels(hotelList);
+    }
     if (userData) {
       setUser(userData);
     } else {
@@ -62,6 +75,18 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       });
     }
   }, []);
+
+  const switchHotel = useCallback(async (hotelId: string) => {
+    if (!token) return;
+    const res = await apiPost<{ token: string; user: AdminUser }>("/auth/switch-hotel", { hotelId }, token);
+    if (!res.success || !res.data) {
+      throw new Error(res.error || "Unable to switch hotel");
+    }
+    localStorage.setItem(STORAGE_KEY, res.data.token);
+    setToken(res.data.token);
+    setUser(res.data.user);
+    window.location.href = "/kitchen/orders";
+  }, [token]);
 
   // Hydrate profile on mount — only logout on explicit auth failure, not network errors
   useEffect(() => {
@@ -113,7 +138,7 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [token, logout]);
 
   return (
-    <AdminAuthContext.Provider value={{ token, user, isLoggedIn: Boolean(token && user), hydrating, login, logout }}>
+    <AdminAuthContext.Provider value={{ token, user, hotels, isLoggedIn: Boolean(token && user), hydrating, login, logout, switchHotel }}>
       {children}
     </AdminAuthContext.Provider>
   );

@@ -2,5 +2,5 @@
 builder = "DOCKERFILE"
 
 [deploy]
-startCommand = "bun run apps/api/server.ts"
-healthcheckPath = "/api/v1/health"
+# startCommand = "sh -c 'bunx prisma migrate deploy && bun run apps/api/server.ts'"
+healthcheckPath = "/api/v1/ready"

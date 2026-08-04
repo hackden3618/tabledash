@@ -84,6 +84,73 @@ export const platformRoute = new Elysia({
       };
     }
   )
+  .get("/zones", async ({ headers, jwt, set }) => {
+    const { token, error } = extractToken(headers, jwt);
+    if (error) { set.status = 401; return error; }
+    try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
+    catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+    return { success: true, data: await prisma.zone.findMany({ orderBy: [{ active: "desc" }, { name: "asc" }] }) };
+  })
+  .get("/hero", async ({ headers, jwt, set }) => {
+    const { token, error } = extractToken(headers, jwt);
+    if (error) { set.status = 401; return error; }
+    try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
+    catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+    const setting = await prisma.setting.findUnique({ where: { key: "platform_hero_image_url" } });
+    return { success: true, data: { imageUrl: setting?.value ?? "" } };
+  })
+  .patch("/hero", async ({ body, headers, jwt, set }) => {
+    const { token, error } = extractToken(headers, jwt);
+    if (error) { set.status = 401; return error; }
+    try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
+    catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+    const imageUrl = body.imageUrl.trim();
+    const setting = await prisma.setting.upsert({ where: { key: "platform_hero_image_url" }, update: { value: imageUrl }, create: { key: "platform_hero_image_url", value: imageUrl } });
+    return { success: true, data: { imageUrl: setting.value } };
+  }, { body: t.Object({ imageUrl: t.String({ maxLength: 2000 }) }) })
+  .post("/zones", async ({ body, headers, jwt, set }) => {
+    const { token, error } = extractToken(headers, jwt);
+    if (error) { set.status = 401; return error; }
+    try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
+    catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+    try {
+      const zone = await prisma.zone.create({ data: body });
+      set.status = 201;
+      return { success: true, data: zone };
+    } catch (err: any) {
+      set.status = 400;
+      return { success: false, error: err.message || "Unable to create region" };
+    }
+  }, {
+    body: t.Object({
+      name: t.String({ minLength: 2 }),
+      type: t.Union([t.Literal("MARKET"), t.Literal("BUS_STATION"), t.Literal("OFFICE_BUILDING"), t.Literal("RESIDENTIAL"), t.Literal("OTHER")]),
+      locationLabel: t.String({ minLength: 2 }),
+      locationPlaceholder: t.String({ minLength: 2 }),
+    }),
+  })
+  .patch("/zones/:id", async ({ params, body, headers, jwt, set }) => {
+    const { token, error } = extractToken(headers, jwt);
+    if (error) { set.status = 401; return error; }
+    try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
+    catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+    try {
+      const zone = await prisma.zone.update({ where: { id: params.id }, data: body });
+      return { success: true, data: zone };
+    } catch (err: any) {
+      set.status = 400;
+      return { success: false, error: err.message || "Unable to update region" };
+    }
+  }, {
+    params: t.Object({ id: t.String({ format: "uuid" }) }),
+    body: t.Object({
+      name: t.Optional(t.String({ minLength: 2 })),
+      type: t.Optional(t.Union([t.Literal("MARKET"), t.Literal("BUS_STATION"), t.Literal("OFFICE_BUILDING"), t.Literal("RESIDENTIAL"), t.Literal("OTHER")])),
+      locationLabel: t.Optional(t.String({ minLength: 2 })),
+      locationPlaceholder: t.Optional(t.String({ minLength: 2 })),
+      active: t.Optional(t.Boolean()),
+    }),
+  })
   .get(
     "/hotels",
     async ({ headers, jwt, set, query }) => {
@@ -127,6 +194,7 @@ export const platformRoute = new Elysia({
         include: {
           adminUsers: { select: { id: true, name: true, username: true, role: true, createdAt: true } },
           staffUsers: { select: { id: true, name: true, phone: true, createdAt: true } },
+          zone: true,
           _count: { select: { orders: true } },
         },
       });
@@ -163,6 +231,7 @@ export const platformRoute = new Elysia({
               slug: body.slug,
               isOpen: body.isOpen ?? true,
               autoCloseAt: body.autoCloseAt ? new Date(body.autoCloseAt) : null,
+              zone: { connect: { id: body.zoneId } },
             },
           });
 
@@ -228,6 +297,7 @@ export const platformRoute = new Elysia({
         adminPhone: t.String({ minLength: 10, maxLength: 13 }),
         isOpen: t.Optional(t.Boolean()),
         autoCloseAt: t.Optional(t.String()),
+        zoneId: t.String({ format: "uuid" }),
       }),
     }
   )
@@ -394,6 +464,7 @@ export const platformRoute = new Elysia({
           isOpen: body.isOpen !== undefined ? body.isOpen : hotel.isOpen,
           imageUrl: body.imageUrl !== undefined ? body.imageUrl : hotel.imageUrl,
           autoCloseAt: body.autoCloseAt !== undefined ? (body.autoCloseAt ? new Date(body.autoCloseAt) : null) : hotel.autoCloseAt,
+          ...(body.zoneId ? { zoneId: body.zoneId } : {}),
         },
       });
 
@@ -407,6 +478,7 @@ export const platformRoute = new Elysia({
         isOpen: t.Optional(t.Boolean()),
         imageUrl: t.Optional(t.String()),
         autoCloseAt: t.Optional(t.String()),
+        zoneId: t.Optional(t.String({ format: "uuid" })),
       }),
     }
   )

@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { apiGet } from "../../lib/api";
 import {
   ArrowLeft, CheckCircle2, Clock, Settings,
-  ShoppingBag, TrendingUp, Utensils, Wallet, XCircle, Calendar
+  ShoppingBag, TrendingUp, Utensils, Wallet, XCircle, Calendar, BarChart3
 } from "lucide-react";
 import { PageTransition } from "../../components/ui/PageTransition";
 import { Badge } from "../../components/ui/Badge";
@@ -15,6 +15,7 @@ interface AdminDashboardPageProps {
   onNavigateToMenu?: () => void;
   onNavigateToSettings?: () => void;
   onNavigateToHistory?: () => void;
+  onNavigateToFinance?: () => void;
 }
 
 const METRIC_CARDS = [
@@ -30,6 +31,7 @@ const METRIC_CARDS = [
 const ACTIONS = [
   { label: "Orders", icon: ShoppingBag, color: "#4F46E5", bg: "#EEF2FF" },
   { label: "Menu", icon: Utensils, color: "#D97706", bg: "#FEF3C7" },
+  { label: "Finance", icon: BarChart3, color: "#15803D", bg: "#DCFCE7" },
   { label: "Settings", icon: Settings, color: "#114B36", bg: "#EBF5F0" },
   { label: "History", icon: Calendar, color: "#7C3AED", bg: "#EDE9FE" },
 ];
@@ -41,6 +43,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   onNavigateToMenu,
   onNavigateToSettings,
   onNavigateToHistory,
+  onNavigateToFinance,
 }) => {
   const [metrics, setMetrics] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -75,6 +78,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     switch (label) {
       case "Orders": return onNavigateToOrders ?? onBackToOrders;
       case "Menu": return onNavigateToMenu ?? onBackToOrders;
+      case "Finance": return onNavigateToFinance ?? onBackToOrders;
       case "Settings": return onNavigateToSettings ?? onBackToOrders;
       case "History": return onNavigateToHistory ?? onBackToOrders;
       default: return onBackToOrders;
