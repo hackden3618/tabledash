@@ -14,11 +14,15 @@ export type OrderStatus =
   | "DELIVERED"
   | "CANCELLED";
 
+export type PaymentStatus = "UNPAID" | "PARTIAL" | "PAID" | "REFUNDED";
+
 export interface CustomerData {
   id: string;
   firstName: string;
   lastName?: string | null;
   phone: string;
+  knownName?: string | null;
+  stallNumber?: string | null;
   locationDescription?: string | null;
   marketSection?: string | null;
   createdAt: string;
@@ -32,6 +36,8 @@ export interface ProductData {
   price: number;
   available: boolean;
   stockQty: number;
+  lastRestockedAt?: string | null;
+  outOfStockSince?: string | null;
   createdAt: string;
 }
 
@@ -51,10 +57,17 @@ export interface OrderData {
   customerId: string;
   status: OrderStatus;
   totalAmount: number;
+  paymentStatus: PaymentStatus;
+  amountPaid: number;
   marketSection?: string | null;
   locationDescription?: string | null;
+  stallNumber?: string | null;
+  knownName?: string | null;
   orderedAt: string;
   completedAt?: string | null;
+  cancelReason?: string | null;
+  cancelledAtStatus?: string | null;
+  refundedAt?: string | null;
   customer?: CustomerData;
   orderItems?: OrderItemData[];
 }
@@ -63,7 +76,12 @@ export interface DashboardMetrics {
   totalOrders: number;
   deliveredOrders: number;
   pendingOrders: number;
+  cancelledOrders: number;
+  refundsProcessed: number;
   totalSales: number;
+  outstandingBalance: number;
+  refundsDue: number;
+  averageOrderValue: number;
   topItems: {
     name: string;
     count: number;
@@ -75,7 +93,11 @@ export type WsEventType =
   | "ORDER_CREATED"
   | "ORDER_STATUS_UPDATED"
   | "MENU_AVAILABILITY_UPDATED"
-  | "ORDER_BOUNCED";   // Fired when an order fails at placement (e.g. stock shortage); urgent flag for admins.
+  | "ORDER_BOUNCED"    // Fired when an order fails at placement (e.g. stock shortage); urgent flag for admins.
+  | "HOTEL_STATUS_UPDATED"  // Fired when hotel open/close status changes
+  | "HOTEL_CLOSING"         // Fired when hotel is closing — carries closingIn seconds for frontend countdown
+  | "ORDER_PAYMENT_UPDATED" // Fired when payment status changes
+  | "NOTIFICATION";         // Fired for general in-app notifications (dispatch, cancellation, payment, OOS)
 
 export interface WsMessage<T = unknown> {
   type: WsEventType;
@@ -85,11 +107,15 @@ export interface WsMessage<T = unknown> {
 /** Logged-in customer profile returned from /customers/me */
 export interface CustomerProfileData {
   id: string;
+  accountId: string;
   firstName: string;
   lastName?: string | null;
   phone: string;
+  isVerified: boolean;
+  knownName?: string | null;
+  stallNumber?: string | null;
   marketSection?: string | null;
   locationDescription?: string | null;
-  hasPin: boolean;       // true when a pinHash exists (i.e. the customer has an account)
+  hasPin: boolean;
   recentOrders?: OrderData[];
 }

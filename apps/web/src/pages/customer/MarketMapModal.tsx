@@ -1,5 +1,5 @@
 /**
- * Purpose: Interactive Market Map Location Selector modal for tableDash.
+ * Purpose: Interactive Market Map Location Selector modal for Ladha.
  * Responsibilities: Renders visual market zones (Entrance, Food Section, Clothes Section, Hardware Section, Other Stalls, Exit) and captures user zone pin selection.
  * Dependencies: React useState.
  * When to modify: When changing market section layouts or stall zone maps.

@@ -1,245 +1,330 @@
-/**
- * Purpose: Customer "My Orders" history page for tableDash.
- * Responsibilities: Shows the logged-in customer's recent orders with live real-time status updates
- *   via WebSockets. On ORDER_STATUS_UPDATED, surgically patches the specific order in local state
- *   immediately. Only terminal statuses (DELIVERED, CANCELLED) show a badge — active orders show
- *   a pulsing "In Progress" indicator so stale labels are never shown.
- * Dependencies: React, CustomerAuthContext, useWebSocket hook.
- * When to modify: When adding order detail drill-down or altering order status indicators.
- */
-
 import React, { useEffect, useState } from "react";
+import { motion } from "framer-motion";
+import { apiGet } from "../../lib/api";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
-import { useWebSocket } from "../../lib/websocket";
-import { ClipboardList, LogIn, Package, RefreshCw } from "lucide-react";
+import { useCart } from "../../context/CartContext";
+import { ClipboardList, Package, RefreshCw, ChevronRight, Settings, Wallet } from "lucide-react";
+import { Header } from "../../components/ui/Header";
+import { EmptyState } from "../../components/ui/EmptyState";
+import { PageTransition } from "../../components/ui/PageTransition";
 
 interface MyOrdersPageProps {
   onGoToAuth: () => void;
   onTrackOrder: (orderId: string) => void;
+  onGoToProfile?: () => void;
+  onNavigateToWallet?: () => void;
 }
 
-/** Only used for terminal states where we are 100% certain of the label. */
-const TERMINAL_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-  DELIVERED: { label: "✓ Delivered", color: "#15803D", bg: "#DCFCE7" },
-  CANCELLED: { label: "✕ Cancelled", color: "#DC2626", bg: "#FEE2E2" },
+const TERMINAL_CONFIG: Record<string, { label: string; variant: "success" | "danger" }> = {
+  DELIVERED: { label: "✓ Delivered", variant: "success" },
+  CANCELLED: { label: "✕ Cancelled", variant: "danger" },
 };
 
-export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackOrder }) => {
-  const { customer, isLoggedIn, isLoading, logout } = useCustomerAuth();
-
-  // Local orders state — seeded from profile, then patched live via WebSocket
+export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackOrder, onGoToProfile, onNavigateToWallet }) => {
+  const { customer, isLoggedIn, isLoading, logout, refreshProfile } = useCustomerAuth();
+  const { clearCart } = useCart();
   const [orders, setOrders] = useState<any[]>([]);
+  const [guestOrders, setGuestOrders] = useState<any[]>([]);
+  const [guestOrderId, setGuestOrderId] = useState<string | null>(null);
   const [lastUpdatedId, setLastUpdatedId] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Seed from customer profile whenever it loads / changes
+  // Hydrate guest orders from localStorage
   useEffect(() => {
-    if (customer?.recentOrders) {
-      setOrders(customer.recentOrders);
+    try {
+      const raw = localStorage.getItem("ladha_last_order");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setGuestOrders([parsed]);
+        setGuestOrderId(parsed.id);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  // Keep guest order data fresh by fetching latest. If the order no longer
+  // exists (e.g. dev DB reset), drop the stale card instead of persisting it.
+  useEffect(() => {
+    if (!isLoggedIn && guestOrderId) {
+      apiGet<any>(`/orders/${guestOrderId}`).then((res) => {
+        if (res.success && res.data) {
+          setGuestOrders([res.data]);
+          localStorage.setItem("ladha_last_order", JSON.stringify(res.data));
+        } else {
+          localStorage.removeItem("ladha_last_order");
+          setGuestOrders([]);
+          setGuestOrderId(null);
+        }
+      });
     }
+  }, [guestOrderId, isLoggedIn]);
+
+  useEffect(() => {
+    setOrders(customer?.recentOrders ?? []);
   }, [customer?.recentOrders]);
 
-  // Live WebSocket patch — surgically update only the affected order in-place
-  useWebSocket("customer", undefined, (event) => {
-    if (event.type === "ORDER_STATUS_UPDATED") {
-      const updated = event.payload as any;
-      setOrders((prev) => {
-        const exists = prev.some((o) => o.id === updated.id);
-        if (exists) {
-          return prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o));
-        }
-        return [updated, ...prev];
-      });
-      setLastUpdatedId(updated.id);
-      setTimeout(() => setLastUpdatedId(null), 3000);
-    } else if (event.type === "ORDER_CREATED") {
-      const newOrder = event.payload as any;
-      setOrders((prev) => {
-        if (prev.some((o) => o.id === newOrder.id)) return prev;
-        return [newOrder, ...prev];
-      });
-      setLastUpdatedId(newOrder.id);
-      setTimeout(() => setLastUpdatedId(null), 3000);
-    }
-  });
+  useEffect(() => { void refreshProfile(); }, [refreshProfile]);
 
-  // ─── Loading state ─────────────────────────────────────────────────────────
+  const handleManualRefresh = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await refreshProfile();
+    } catch (err) {
+      console.error("Failed to manually refresh profile:", err);
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 800);
+    }
+  };
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail.type === "ORDER_STATUS_UPDATED") {
+        const updated = detail.payload;
+        setOrders((prev) => {
+          const exists = prev.some((o) => o.id === updated.id);
+          if (exists) return prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o));
+          return [updated, ...prev];
+        });
+        setLastUpdatedId(updated.id);
+        setTimeout(() => setLastUpdatedId(null), 3000);
+      } else if (detail.type === "ORDER_CREATED") {
+        const newOrder = detail.payload;
+        setOrders((prev) => {
+          if (prev.some((o) => o.id === newOrder.id)) return prev;
+          return [newOrder, ...prev];
+        });
+        setLastUpdatedId(newOrder.id);
+        setTimeout(() => setLastUpdatedId(null), 3000);
+      }
+    };
+    window.addEventListener("tabledash:realtime", handler);
+    return () => window.removeEventListener("tabledash:realtime", handler);
+  }, []);
+
   if (isLoading) {
     return (
-      <div className="app-container" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
-        <p style={{ color: "#9CA3AF" }}>Loading…</p>
+      <div className="app-container">
+        <Header title="My Orders" />
+        <div className="flex items-center justify-center py-24">
+          <div className="w-10 h-10 border-4 border-[#E5E7EB] border-t-[#114B36] rounded-full animate-spin" />
+        </div>
       </div>
     );
   }
 
-  // ─── Logged-out state ──────────────────────────────────────────────────────
-  if (!isLoggedIn) {
+  // Logged-out state — show guest order if available, otherwise prompt sign-in
+  if (!isLoggedIn && guestOrders.length === 0) {
     return (
       <div className="app-container">
-        <header className="header-bar">
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <ClipboardList size={20} color="white" />
-            <div className="header-title">My Orders</div>
-          </div>
-        </header>
-
-        <div style={{ padding: "40px 24px", display: "flex", flexDirection: "column", alignItems: "center", gap: "20px", textAlign: "center" }}>
-          <div style={{ width: "80px", height: "80px", borderRadius: "50%", background: "#EBF4F0", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <ClipboardList size={36} color="#1E4D36" />
-          </div>
-          <div>
-            <h2 style={{ fontSize: "1.3rem", fontWeight: 700, color: "#1F2937", marginBottom: "8px" }}>Track your orders</h2>
-            <p style={{ fontSize: "0.9rem", color: "#6B7280", lineHeight: 1.6, maxWidth: "300px" }}>
-              Sign in or create a free account to see your order history and have your delivery location saved for next time.
-            </p>
-          </div>
-          <div style={{ background: "#F0FDF4", border: "1.5px solid #BBF7D0", borderRadius: "14px", padding: "16px", width: "100%", maxWidth: "340px" }}>
-            <p style={{ fontSize: "0.85rem", color: "#15803D", fontWeight: 600, marginBottom: "8px" }}>✓ Why create an account?</p>
-            <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "6px" }}>
-              {[
-                "Your location & stall saved for faster checkout",
-                "See all past orders at a glance",
-                "Track active orders from this tab",
-              ].map((point) => (
-                <li key={point} style={{ fontSize: "0.85rem", color: "#374151", display: "flex", alignItems: "flex-start", gap: "8px" }}>
-                  <span style={{ color: "#22C55E", flexShrink: 0 }}>•</span> {point}
-                </li>
-              ))}
-            </ul>
-          </div>
-          <button onClick={onGoToAuth} className="btn btn-primary" style={{ width: "100%", maxWidth: "340px", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
-            <LogIn size={18} /> Sign In / Create Account
-          </button>
-        </div>
+        <Header title="My Orders" />
+        <EmptyState
+          icon={<ClipboardList size={36} />}
+          title="Track your orders"
+          description="Sign in or create a free account to see your order history and have your delivery location saved for next time."
+          action={{ label: "Sign In / Create Account", onClick: onGoToAuth }}
+        />
       </div>
     );
   }
+  const allOrders = isLoggedIn ? orders : [...guestOrders, ...orders.filter((o) => !guestOrders.some((g) => g.id === o.id))];
 
-  // ─── Logged-in state ───────────────────────────────────────────────────────
   return (
     <div className="app-container">
-      <header className="header-bar">
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <ClipboardList size={20} color="white" />
-          <div className="header-title">My Orders</div>
-        </div>
-        <button
-          onClick={logout}
-          style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "white", borderRadius: "8px", padding: "6px 12px", fontWeight: 600, fontSize: "0.8rem", cursor: "pointer" }}
-        >
-          Sign Out
-        </button>
-      </header>
+      <Header
+        title="My Orders"
+        rightAction={isLoggedIn ? (
+          <button
+            onClick={() => { clearCart(); logout(); }}
+            className="px-3 py-1.5 rounded-xl bg-white/15 text-xs font-semibold text-white hover:bg-white/20 transition-colors bg-none border-none cursor-pointer"
+          >
+            Sign Out
+          </button>
+        ) : undefined}
+      />
 
-      <div style={{ padding: "20px" }}>
-        {/* Welcome strip */}
-        <div style={{ background: "#EBF4F0", borderRadius: "12px", padding: "14px 16px", marginBottom: "20px", display: "flex", alignItems: "center", gap: "12px" }}>
-          <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: "#1E4D36", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: 700, fontSize: "1rem", flexShrink: 0 }}>
-            {customer?.firstName?.[0]?.toUpperCase()}
-          </div>
-          <div>
-            <div style={{ fontWeight: 700, color: "#1F2937" }}>Hi, {customer?.firstName}!</div>
-            <div style={{ fontSize: "0.8rem", color: "#6B7280" }}>{customer?.phone}</div>
-          </div>
-        </div>
-
-        {orders.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "40px 0", color: "#9CA3AF" }}>
-            <Package size={40} style={{ marginBottom: "12px", opacity: 0.4 }} />
-            <p style={{ fontWeight: 600 }}>No orders yet</p>
-            <p style={{ fontSize: "0.85rem" }}>Your order history will appear here.</p>
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-              <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1E4D36" }}>Recent Orders</h2>
-              <span style={{ fontSize: "0.72rem", color: "#16A34A", fontWeight: 700, display: "flex", alignItems: "center", gap: "4px" }}>
-                <RefreshCw size={11} /> Live
-              </span>
-            </div>
-
-            {orders.map((order: any) => {
-              const isTerminal  = order.status === "DELIVERED" || order.status === "CANCELLED";
-              const termCfg     = TERMINAL_CONFIG[order.status];
-              const justUpdated = lastUpdatedId === order.id;
-
-              return (
-                <div
-                  key={order.id}
-                  className="card"
-                  onClick={() => onTrackOrder(order.id)}
-                  style={{
-                    cursor: "pointer",
-                    transition: "transform 0.15s, box-shadow 0.15s, border-color 0.4s",
-                    border: justUpdated ? "2px solid #22C55E" : undefined,
-                    boxShadow: justUpdated ? "0 0 0 3px rgba(34,197,94,0.12)" : undefined,
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
-                    <div>
-                      <div style={{ fontWeight: 700, color: "#1F2937", display: "flex", alignItems: "center", gap: "8px" }}>
-                        Order #{order.orderNumber}
-                        {justUpdated && (
-                          <span style={{ fontSize: "0.68rem", background: "#DCFCE7", color: "#15803D", padding: "2px 7px", borderRadius: "20px", fontWeight: 700 }}>
-                            Just updated!
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ fontSize: "0.8rem", color: "#9CA3AF", marginTop: "2px" }}>
-                        {new Date(order.orderedAt).toLocaleDateString("en-KE", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-                      </div>
-                    </div>
-
-                    {/* Only show a badge for terminal statuses. Active orders get a pulsing dot. */}
-                    {isTerminal ? (
-                      <span style={{
-                        background: termCfg.bg, color: termCfg.color,
-                        borderRadius: "8px", padding: "4px 10px",
-                        fontWeight: 700, fontSize: "0.78rem", flexShrink: 0,
-                      }}>
-                        {termCfg.label}
-                      </span>
-                    ) : (
-                      <span style={{
-                        display: "flex", alignItems: "center", gap: "6px",
-                        background: "#FEF3C7", color: "#D97706",
-                        borderRadius: "8px", padding: "4px 10px",
-                        fontWeight: 700, fontSize: "0.78rem", flexShrink: 0,
-                      }}>
-                        {/* Pulsing live dot */}
-                        <span style={{
-                          width: "7px", height: "7px", borderRadius: "50%",
-                          background: "#F59E0B", display: "inline-block",
-                          animation: "pulse 1.4s ease-in-out infinite",
-                        }} />
-                        In Progress
-                      </span>
-                    )}
-                  </div>
-
-                  <div style={{ borderTop: "1px solid #F3F4F6", paddingTop: "10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div style={{ fontSize: "0.85rem", color: "#6B7280" }}>
-                      {order.orderItems?.length ?? 0} item(s)
-                    </div>
-                    <div style={{ fontWeight: 700, color: "#1E4D36" }}>KSh {order.totalAmount}</div>
-                  </div>
-
-                  <div style={{ marginTop: "8px", fontSize: "0.8rem", color: "#1E4D36", fontWeight: 600 }}>
-                    {!isTerminal ? "Tap to track live →" : "View details →"}
-                  </div>
+      <PageTransition>
+        <div className="px-4 py-5">
+          {isLoggedIn && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-[#EBF5F0] rounded-2xl p-4 mb-5"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-[#114B36] flex items-center justify-center text-white font-bold text-base shrink-0">
+                  {customer?.firstName?.[0]?.toUpperCase() || "?"}
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                <div className="flex-1">
+                  <p className="font-bold text-sm text-[#1F2937]">Hi, {customer?.firstName}!</p>
+                  <p className="text-xs text-[#6B7280]">{customer?.phone}</p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {onNavigateToWallet && (
+                    <button onClick={onNavigateToWallet}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#114B36] text-xs font-bold text-white border-none cursor-pointer transition-colors hover:bg-[#0D3D2B]"
+                    >
+                      <Wallet size={13} /> Wallet
+                    </button>
+                  )}
+                  {onGoToProfile && (
+                    <button onClick={onGoToProfile}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/60 text-xs font-bold text-[#114B36] border border-[#C2E2D3] cursor-pointer bg-none transition-colors hover:bg-white"
+                    >
+                      <Settings size={13} /> Profile
+                    </button>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
 
-      {/* Pulse animation keyframes */}
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50%       { opacity: 0.4; transform: scale(0.75); }
-        }
-      `}</style>
+          {!isLoggedIn && guestOrders.length > 0 && (
+            <div className="bg-[#FEF3C7] border border-[#FCD34D] rounded-2xl p-3.5 mb-5">
+              <p className="text-xs font-semibold text-[#92400E]">Guest session — your order is saved on this device. <button onClick={onGoToAuth} className="underline font-bold bg-none border-none cursor-pointer text-[#92400E]">Sign in</button> to keep it forever.</p>
+            </div>
+          )}
+
+          {allOrders.length === 0 ? (
+            <div className="flex flex-col items-center py-12 text-center">
+              <Package size={40} className="text-[#D1D5DB] mb-3" />
+              <p className="font-semibold text-[#6B7280]">No orders yet</p>
+              <p className="text-sm text-[#9CA3AF]">Your order history will appear here.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between mb-1">
+                <h2 className="font-bold text-[#114B36] text-sm">Recent Orders</h2>
+                {isLoggedIn && (
+                  <button
+                    onClick={handleManualRefresh}
+                    disabled={isRefreshing}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#EBF5F0] text-xs font-bold text-[#16A34A] border border-[#C2E2D3] cursor-pointer disabled:opacity-50 bg-none transition-colors hover:bg-[#C2E2D3]"
+                  >
+                    <RefreshCw size={11} className={isRefreshing ? "animate-spin" : ""} />
+                    {isRefreshing ? "Syncing..." : "Sync"}
+                  </button>
+                )}
+              </div>
+
+              <AnimateOrders
+                orders={allOrders}
+                lastUpdatedId={lastUpdatedId}
+                onTrackOrder={onTrackOrder}
+                terminalConfig={TERMINAL_CONFIG}
+                onNavigateToWallet={onNavigateToWallet}
+              />
+            </div>
+          )}
+        </div>
+      </PageTransition>
     </div>
   );
 };
+
+function getFinancialStatus(order: any): { bg: string; color: string; label: string } | null {
+  if (!order.paymentStatus) return null;
+  if (order.status === "CANCELLED" && order.refundedAt) return { bg: "#DCFCE7", color: "#15803D", label: "Account settled" };
+  if (order.paymentStatus === "REFUNDED") return { bg: "#F3F4F6", color: "#6B7280", label: "Refunded" };
+  if (Number(order.amountPaid ?? 0) >= Number(order.totalAmount)) return { bg: "#DCFCE7", color: "#15803D", label: "Fully settled" };
+  return { bg: "#FEF3C7", color: "#D97706", label: "Balance due" };
+}
+
+function AnimateOrders({
+  orders,
+  lastUpdatedId,
+  onTrackOrder,
+  onNavigateToWallet,
+  terminalConfig,
+}: {
+  orders: any[];
+  lastUpdatedId: string | null;
+  onTrackOrder: (id: string) => void;
+  onNavigateToWallet?: () => void;
+  terminalConfig: Record<string, { label: string; variant: "success" | "danger" }>;
+}) {
+  return (
+    <>
+      {orders.map((order: any, idx: number) => {
+        const isTerminal = order.status === "DELIVERED" || order.status === "CANCELLED";
+        const termCfg = terminalConfig[order.status];
+        const justUpdated = lastUpdatedId === order.id;
+        const fin = getFinancialStatus(order);
+
+        return (
+          <motion.div
+            key={order.id}
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: idx * 0.03 }}
+            whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.99 }}
+            onClick={() => onTrackOrder(order.id)}
+            className={`
+              p-4 bg-white rounded-2xl cursor-pointer transition-all duration-200
+              shadow-[0_2px_8px_rgba(17,75,54,0.06)] hover:shadow-[0_8px_24px_rgba(17,75,54,0.1)]
+              ${justUpdated ? "ring-2 ring-[#22C55E] ring-offset-2" : ""}
+            `}
+          >
+            <div className="flex items-start justify-between mb-2.5">
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="font-bold text-sm text-[#1F2937]">Order #{order.orderNumber}</p>
+                  {justUpdated && (
+                    <span className="text-[0.6rem] font-bold bg-[#DCFCE7] text-[#15803D] px-2 py-0.5 rounded-full">
+                      Just updated!
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-[#9CA3AF] mt-0.5">
+                  {new Date(order.orderedAt).toLocaleDateString("en-KE", {
+                    day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+                  })}
+                </p>
+              </div>
+
+              {isTerminal && termCfg ? (
+                <span className={`text-[0.6rem] font-bold px-2.5 py-1 rounded-full ${
+                  termCfg.variant === "success" ? "bg-[#DCFCE7] text-[#15803D]" : "bg-[#FEE2E2] text-[#DC2626]"
+                }`}>{termCfg.label}</span>
+              ) : (
+                <span className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FEF3C7] text-[#D97706] rounded-lg text-xs font-bold">
+                  <span className="w-1.5 h-1.5 bg-[#F59E0B] rounded-full animate-pulse" />
+                  In Progress
+                </span>
+              )}
+            </div>
+
+            <div className="border-t border-[#F3F4F6] pt-2.5 flex items-center justify-between">
+              <span className="text-xs text-[#6B7280]">{order.orderItems?.length ?? 0} item(s)</span>
+              <span className="font-bold text-sm text-[#114B36]">KSh {order.totalAmount}</span>
+            </div>
+
+            {fin && (
+              <div className="mt-2 flex items-center justify-end gap-2">
+                <button
+                  onClick={(e) => { e.stopPropagation(); onNavigateToWallet?.(); }}
+                  className="text-[0.65rem] font-bold px-2.5 py-1 rounded-full transition-opacity hover:opacity-80 cursor-pointer border-none bg-transparent"
+                  style={{ background: fin.bg, color: fin.color }}
+                >
+                  {fin.label}
+                </button>
+                <span className="text-xs font-semibold text-[#114B36] flex items-center gap-0.5">
+                  View details <ChevronRight size={12} />
+                </span>
+              </div>
+            )}
+
+            {!fin && (
+              <div className="mt-2 flex items-center justify-end">
+                <span className="text-xs font-semibold text-[#114B36] flex items-center gap-0.5">
+                  {!isTerminal ? "Track live" : "View details"} <ChevronRight size={12} />
+                </span>
+              </div>
+            )}
+          </motion.div>
+        );
+      })}
+    </>
+  );
+}

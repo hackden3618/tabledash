@@ -6,6 +6,7 @@
  */
 
 import React from "react";
+import { ChevronLeft } from "lucide-react";
 
 interface AdminMapViewPageProps {
   order: any;
@@ -13,32 +14,19 @@ interface AdminMapViewPageProps {
 }
 
 export const AdminMapViewPage: React.FC<AdminMapViewPageProps> = ({ order, onBack }) => {
-  const selectedZone = order?.marketSection ?? "Food Section";
-
-  const zones = [
-    { id: "Food Section", name: "Food Section", color: "#FEF08A" },
-    { id: "Clothes Section", name: "Clothes Section", color: "#DBEAFE" },
-    { id: "Hardware Section", name: "Hardware Section", color: "#FEF3C7" },
-    { id: "Other Stalls", name: "Other Stalls", color: "#E0E7FF" },
-  ];
+  const deliveryArea = order?.marketSection || order?.hotel?.zone?.name || "Delivery area not recorded";
 
   return (
     <div className="admin-container">
-      <header className="header-bar">
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+      <header className="bg-[#114B36] text-white px-4 py-3 sticky top-0 z-40 shadow-[0_2px_8px_rgba(17,75,54,0.15)]">
+        <div className="flex items-center gap-3 max-w-4xl mx-auto">
           <button
             onClick={onBack}
-            style={{
-              background: "none",
-              border: "none",
-              color: "white",
-              fontSize: "1.2rem",
-              cursor: "pointer",
-            }}
+            className="p-1 -ml-1 rounded-lg hover:bg-white/10 transition-colors bg-none border-none cursor-pointer text-white"
           >
-            ←
+            <ChevronLeft size={20} />
           </button>
-          <div className="header-title">Location on Map</div>
+          <h1 className="font-bold text-lg">Location on Map</h1>
         </div>
       </header>
 
@@ -52,7 +40,6 @@ export const AdminMapViewPage: React.FC<AdminMapViewPageProps> = ({ order, onBac
           </div>
         </div>
 
-        {/* Visual Map rendering */}
         <div
           style={{
             border: "2px solid #E5E7EB",
@@ -62,59 +49,12 @@ export const AdminMapViewPage: React.FC<AdminMapViewPageProps> = ({ order, onBac
             textAlign: "center",
           }}
         >
-          <div style={{ fontWeight: 600, fontSize: "0.8rem", color: "#9CA3AF", marginBottom: "16px" }}>
-            ⬆ ENTRANCE
+          <div style={{ fontWeight: 700, fontSize: "0.8rem", color: "#9CA3AF", textTransform: "uppercase" }}>
+            Map coordinates unavailable
           </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "16px" }}>
-            {zones.map((zone) => {
-              const isTarget = selectedZone === zone.id;
-              return (
-                <div
-                  key={zone.id}
-                  style={{
-                    height: "120px",
-                    background: zone.color,
-                    borderRadius: "14px",
-                    border: isTarget ? "3.5px solid #EF4444" : "1px solid #D1D5DB",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontWeight: 700,
-                    fontSize: "0.95rem",
-                    color: "#1F2937",
-                    position: "relative",
-                  }}
-                >
-                  {zone.name}
-                  {isTarget && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: "10px",
-                        right: "10px",
-                        background: "#EF4444",
-                        color: "white",
-                        borderRadius: "50%",
-                        width: "28px",
-                        height: "28px",
-                        fontSize: "14px",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontWeight: 900,
-                        boxShadow: "0 4px 10px rgba(239,68,68,0.5)",
-                      }}
-                    >
-                      📍
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          <div style={{ fontWeight: 600, fontSize: "0.8rem", color: "#9CA3AF" }}>⬇ EXIT</div>
+          <p style={{ margin: "10px auto 0", maxWidth: "32rem", color: "#6B7280", lineHeight: 1.5 }}>
+            This order has a text delivery location. Use the verified area and directions below; no unverified map position is shown.
+          </p>
         </div>
 
         <div
@@ -130,7 +70,7 @@ export const AdminMapViewPage: React.FC<AdminMapViewPageProps> = ({ order, onBac
             Delivery Location Details
           </div>
           <div style={{ fontWeight: 700, fontSize: "1.05rem", color: "#1F2937", marginTop: "4px" }}>
-            📍 {order?.marketSection} — {order?.locationDescription}
+            📍 {deliveryArea} — {order?.locationDescription || "No additional directions provided"}
           </div>
         </div>
 
