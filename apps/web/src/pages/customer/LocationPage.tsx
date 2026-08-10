@@ -681,7 +681,7 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
               disabled={lockPhone || (isLoggedIn && !orderingForOther)}
               hint={lockPhone ? "This phone number was used to identify the recipient." : isLoggedIn && !orderingForOther ? "Your account phone number identifies this order." : undefined}
             />
-            <Input label={deliveryZone?.locationLabel ?? "Delivery point"} placeholder={deliveryZone?.locationPlaceholder ?? "e.g. building, landmark or shop name"} value={stallNumber} onChange={(e) => setStallNumber(e.target.value)} />
+            <Input label={deliveryZone?.locationLabel ?? "Delivery point"} placeholder={deliveryZone?.locationPlaceholder ?? "e.g. building, landmark, market stall number e.g stall 93 or shop name"} value={stallNumber} onChange={(e) => setStallNumber(e.target.value)} />
             <Textarea label="Add directions" placeholder="e.g. near the main entrance or reception" value={locationDescription} onChange={(e) => setLocationDescription(e.target.value)} rows={3} />
           </div>
 

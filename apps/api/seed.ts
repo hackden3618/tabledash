@@ -29,7 +29,7 @@ export const seedDatabase = async () => {
             name: "General delivery area",
             type: "OTHER",
             locationLabel: "Delivery point",
-            locationPlaceholder: "e.g. building, landmark or shop name",
+            locationPlaceholder: "e.g. building, landmark, stall number e.g stall 93 or shop name",
         },
     });
 
