@@ -80,7 +80,20 @@ export const AdminBottomNavBar: React.FC<AdminBottomNavBarProps> = ({
   };
 
   return (
-    <nav ref={navRef} className="glass-nav safe-area-bottom fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[1000px] border-t z-40">
+    <>
+      {hotelMenuOpen && (
+        <div
+          onClick={() => setHotelMenuOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.3)",
+            backdropFilter: "blur(2px)",
+            zIndex: 39,
+          }}
+        />
+      )}
+      <nav ref={navRef} className="glass-nav safe-area-bottom fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[1000px] border-t z-40">
       {showHotelBar && (
         <div className="relative px-3 pt-1.5">
           <button
@@ -130,7 +143,7 @@ export const AdminBottomNavBar: React.FC<AdminBottomNavBarProps> = ({
           return (
             <button
               key={key}
-              onClick={() => onSelectTab(key)}
+              onClick={() => { setHotelMenuOpen(false); onSelectTab(key); }}
               className={`
                 relative flex flex-col items-center justify-center gap-0.5 px-2 py-1.5
                 rounded-xl transition-colors bg-none border-none cursor-pointer min-w-[56px]
@@ -165,5 +178,6 @@ export const AdminBottomNavBar: React.FC<AdminBottomNavBarProps> = ({
         })}
       </div>
     </nav>
+    </>
   );
 };

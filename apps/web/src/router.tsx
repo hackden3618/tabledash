@@ -478,12 +478,12 @@ function WalletActivityRoute() {
 function AdminLoginRoute() {
     const navigate = useNavigate();
     const { isLoggedIn, hydrating, login } = useAdminAuth();
-    if (!hydrating && isLoggedIn) return <Navigate to="/kitchen/orders" replace />;
+    if (!hydrating && isLoggedIn) return <Navigate to="/kitchen/dashboard" replace />;
     return (
         <AdminLoginPage
             onLoginSuccess={(token, user, hotels) => {
                 login(token, user, hotels);
-                navigate("/kitchen/orders", { replace: true });
+                navigate("/kitchen/dashboard", { replace: true });
             }}
         />
     );
