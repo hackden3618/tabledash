@@ -1,5 +1,5 @@
 /**
- * Purpose: Initial database seeder for tableDash.
+ * Purpose: Initial database seeder for ladha.
  * Responsibilities: Seeds default hotel, platform admin, hotel admin, menu items, and staff phone setting.
  * Dependencies: Prisma database client, Bun.password API.
  * When to modify: When adding default data or updating initial credentials.
@@ -57,7 +57,7 @@ export const seedDatabase = async () => {
             data: {
                 username: platformAdminUsername,
                 passwordHash: platformPasswordHash,
-                name: "TableDash Platform Admin",
+                name: "ladha Platform Admin",
             },
         });
         console.log(`[Seeder] Created platform admin: ${platformAdminUsername}`);

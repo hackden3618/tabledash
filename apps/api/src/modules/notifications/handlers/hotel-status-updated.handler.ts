@@ -1,5 +1,6 @@
 import { prisma } from "../../../../../../infrastructure/database/prisma";
 import { smsService } from "../sms.service";
+import { hotelStatusChanged } from "../templates";
 
 interface HotelStatusUpdatedPayload {
   hotelId: string;
@@ -20,7 +21,11 @@ export async function handleHotelStatusUpdated(payload: Record<string, unknown>)
 
   if (staff.length === 0) return true;
 
-  const msg = `[Ladha Deliveries] ${data.hotelName} has been ${action} by ${data.changedBy}. Please check the kitchen dashboard.`;
+  const msg = hotelStatusChanged({
+    hotelName: data.hotelName,
+    action,
+    changedBy: data.changedBy,
+  });
 
   const results = await Promise.allSettled(
     staff.map((s) => smsService.sendSms(s.phone, msg))

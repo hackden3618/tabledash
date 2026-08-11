@@ -76,8 +76,8 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({ orderId, o
         setChatMessages((prev) => prev.some((m) => m.id === detail.payload.id) ? prev : [...prev, detail.payload as ChatMessage]);
       }
     };
-    window.addEventListener("tabledash:realtime", handler);
-    return () => window.removeEventListener("tabledash:realtime", handler);
+    window.addEventListener("ladha:realtime", handler);
+    return () => window.removeEventListener("ladha:realtime", handler);
   }, [orderId, convId, pushNotification]);
 
   const sendChat = async () => {

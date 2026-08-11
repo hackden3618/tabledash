@@ -1,5 +1,5 @@
 /**
- * Purpose: Prisma database schema definition for tableDash.
+ * Purpose: Prisma database schema definition for ladha.
  * Responsibilities: Defines database tables, relations, enums, and generator configs.
  * Dependencies: PostgreSQL database, Prisma ORM generator.
  * When to modify: When adding new entity models, changing field constraints, or modifying order lifecycle statuses.
@@ -537,4 +537,22 @@ model StaffUser {
 
 @@unique([phone, hotelId])
   @@map("staff_users")
+}
+
+/**
+ * One-time password-setup links sent by SMS after a new admin/staff account is
+ * provisioned. SMS is not a secure channel, so the raw token is only ever
+ * transmitted over SMS and only its hash is stored here. Used at /set-password.
+ */
+model PasswordSetupToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  userType  String    @map("user_type")
+  tokenHash String    @map("token_hash") @unique
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz()
+  usedAt    DateTime? @map("used_at") @db.Timestamptz()
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@index([userId, userType])
+  @@map("password_setup_tokens")
 }

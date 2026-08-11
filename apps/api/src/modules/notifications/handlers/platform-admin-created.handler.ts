@@ -1,11 +1,13 @@
 import { smsService } from "../sms.service";
+import { buildSetupLink } from "../../auth/password-setup.service";
+import { platformAdminWelcome } from "../templates";
 
 interface PlatformAdminCreatedPayload {
   platformAdminId: string;
   name: string;
   username: string;
   phone?: string;
-  tempPassword: string;
+  setupToken: string;
   createdBy: string;
 }
 
@@ -14,7 +16,10 @@ export async function handlePlatformAdminCreated(payload: Record<string, unknown
 
   if (!data.phone) return true;
 
-  const message = `Welcome to Ladha Deliveries! You've been assigned as a Platform Administrator by ${data.createdBy}. Your temporary password is ${data.tempPassword}. Please log in at https://tabledash.up.railway.app/platform and change it immediately.`;
+  const message = platformAdminWelcome({
+    createdBy: data.createdBy,
+    setupLink: buildSetupLink(data.setupToken),
+  });
 
   const result = await smsService.sendSms(data.phone, message);
   return result;

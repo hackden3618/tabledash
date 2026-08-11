@@ -11,7 +11,7 @@ export class R2StorageProvider implements MediaStorageProvider {
 
   constructor() {
     this.baseUrl = MEDIA_STORAGE_CONFIG.baseUrl;
-    this.bucketName = MEDIA_STORAGE_CONFIG.bucket || "tabledash-media";
+    this.bucketName = MEDIA_STORAGE_CONFIG.bucket || "ladha-media";
     this.accountId = MEDIA_STORAGE_CONFIG.r2AccountId || MEDIA_STORAGE_CONFIG.accessKeyId || "";
     this.accessKeyId = MEDIA_STORAGE_CONFIG.accessKeyId || "";
     this.secretAccessKey = MEDIA_STORAGE_CONFIG.secretAccessKey || "";

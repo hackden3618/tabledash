@@ -1,5 +1,5 @@
 /**
- * Purpose: Application Settings Service for tableDash.
+ * Purpose: Application Settings Service for ladha.
  * Responsibilities: Handles reading and updating key-value application settings
  *   (e.g. hotel staff phone number for SMS alerts, and hotel open/closed status with auto-close schedule).
  * Dependencies: Prisma database client, WebSocket hub.
@@ -10,6 +10,7 @@ import { prisma } from "../../../../../infrastructure/database/prisma";
 import { wsHub } from "../websocket/hub";
 import { formatPhone } from "../../../../../shared/phone";
 import { getDefaultHotel } from "../hotels/service";
+import { createPasswordSetupToken } from "../auth/password-setup.service";
 
 export const getStaffPhone = async (): Promise<string> => {
   const setting = await prisma.setting.findUnique({
@@ -160,21 +161,22 @@ export const addStaffUser = async (data: StaffUserPayload, hotelId?: string) => 
   if (!hotel) throw new Error("Hotel not found");
 
   // One phone may now be staff (and a login) at many hotels. Reuse an existing login instead of
-  // throwing: same password everywhere, and no temp password is sent for a login they already have.
+  // throwing: same password everywhere, and no setup link is sent for a login they already have.
   const existingLogin = await prisma.adminUser.findFirst({ where: { username: formattedPhone } });
   const localLogin = existingLogin && existingLogin.hotelId === hotelId ? existingLogin : null;
   const remoteLogin = existingLogin && existingLogin.hotelId !== hotelId ? existingLogin : null;
-  const tempPassword = localLogin || remoteLogin ? undefined : crypto.randomUUID().split("-")[0]!;
-  const passwordHash = localLogin ? localLogin.passwordHash : remoteLogin ? remoteLogin.passwordHash : await Bun.password.hash(tempPassword!);
+  const passwordHash = localLogin ? localLogin.passwordHash : remoteLogin ? remoteLogin.passwordHash : await Bun.password.hash(crypto.randomUUID());
 
   return prisma.$transaction(async (tx) => {
     const adminUser = localLogin ?? (await tx.adminUser.create({ data: { username: formattedPhone, passwordHash, name: data.name, role: "HOTEL_STAFF", hotelId } }));
     const staff = await tx.staffUser.create({ data: { name: data.name, phone: formattedPhone, receiveSms: data.receiveSms, hotelId, adminUserId: adminUser.id } });
+    // A brand-new login starts locked; the SMS carries a one-time setup link.
+    const { rawToken } = localLogin || remoteLogin ? { rawToken: undefined as string | undefined } : await createPasswordSetupToken(adminUser.id, "HOTEL_STAFF", tx);
     await tx.eventOutbox.create({
       data: {
         eventName: "hotel_staff_created",
         hotelId,
-        payload: JSON.stringify({ staffName: data.name, staffPhone: formattedPhone, hotelName: hotel.name, username: localLogin || remoteLogin ? undefined : formattedPhone, tempPassword, role: "HOTEL_STAFF", appLink: "https://tabledash.up.railway.app/kitchen" }),
+        payload: JSON.stringify({ staffName: data.name, staffPhone: formattedPhone, hotelName: hotel.name, username: localLogin || remoteLogin ? undefined : formattedPhone, setupToken: rawToken, role: "HOTEL_STAFF" }),
         status: "initialized",
       },
     });
@@ -227,17 +229,17 @@ export const provisionStaffLogin = async (id: string, hotelId?: string) => {
   const hotel = await prisma.hotel.findUnique({ where: { id: existing.hotelId }, select: { name: true } });
   if (!hotel) throw new Error("Hotel not found");
 
-  // The phone may already be a login elsewhere — reuse that password instead of generating one.
+  // The phone may already be a login elsewhere — reuse that password instead of creating a new one.
   const existingLogin = await prisma.adminUser.findFirst({ where: { username: existing.phone } });
   const localLogin = existingLogin && existingLogin.hotelId === existing.hotelId ? existingLogin : null;
   const remoteLogin = existingLogin && existingLogin.hotelId !== existing.hotelId ? existingLogin : null;
-  const tempPassword = localLogin || remoteLogin ? undefined : crypto.randomUUID().split("-")[0]!;
-  const passwordHash = localLogin ? localLogin.passwordHash : remoteLogin ? remoteLogin.passwordHash : await Bun.password.hash(tempPassword!);
+  const passwordHash = localLogin ? localLogin.passwordHash : remoteLogin ? remoteLogin.passwordHash : await Bun.password.hash(crypto.randomUUID());
 
   return prisma.$transaction(async (tx) => {
     const adminUser = localLogin ?? (await tx.adminUser.create({ data: { username: existing.phone, passwordHash, name: existing.name, role: "HOTEL_STAFF", hotelId: existing.hotelId! } }));
     const staff = await tx.staffUser.update({ where: { id }, data: { adminUserId: adminUser.id } });
-    await tx.eventOutbox.create({ data: { eventName: "hotel_staff_created", hotelId: existing.hotelId, payload: JSON.stringify({ staffName: existing.name, staffPhone: existing.phone, hotelName: hotel.name, username: localLogin || remoteLogin ? undefined : existing.phone, tempPassword, role: "HOTEL_STAFF", appLink: "https://tabledash.up.railway.app/kitchen" }), status: "initialized" } });
+    const { rawToken } = localLogin || remoteLogin ? { rawToken: undefined as string | undefined } : await createPasswordSetupToken(adminUser.id, "HOTEL_STAFF", tx);
+    await tx.eventOutbox.create({ data: { eventName: "hotel_staff_created", hotelId: existing.hotelId, payload: JSON.stringify({ staffName: existing.name, staffPhone: existing.phone, hotelName: hotel.name, username: localLogin || remoteLogin ? undefined : existing.phone, setupToken: rawToken, role: "HOTEL_STAFF" }), status: "initialized" } });
     return staff;
   });
 };

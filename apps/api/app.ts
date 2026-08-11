@@ -1,5 +1,5 @@
 /**
- * Purpose: Main Elysia Application instance assembly for tableDash.
+ * Purpose: Main Elysia Application instance assembly for ladha.
  * Responsibilities: Registers middleware (CORS, OpenAPI/Swagger), configures WebSockets `/ws`, and registers feature domain routes (auth, menu, orders, customers).
  * Dependencies: Elysia, @elysia/openapi, @elysia/cors, feature module routes, wsHub.
  * When to modify: When adding new domain modules, global middleware, or modifying WebSocket subscription channels.

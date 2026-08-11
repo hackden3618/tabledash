@@ -55,6 +55,32 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ token, onB
         isOpen: false, title: "", message: "", type: "success",
     });
 
+    // An open/closed flip impacts live order flow, so it is never applied from
+    // the selector directly — the change is confirmed first, then applied
+    // immediately (no separate Save step for the status itself).
+    const [statusConfirm, setStatusConfirm] = useState<boolean | null>(null);
+    const [statusApplying, setStatusApplying] = useState(false);
+
+    const requestStatusChange = (target: boolean) => {
+        if (target === hotelIsOpen || statusApplying) return;
+        setStatusConfirm(target);
+    };
+
+    const confirmStatusChange = async () => {
+        if (statusConfirm === null) return;
+        const target = statusConfirm;
+        setStatusConfirm(null);
+        setStatusApplying(true);
+        const res = await apiPatch<any>("/settings", { hotelIsOpen: target, autoCloseAt: null }, token);
+        setStatusApplying(false);
+        if (res.success) {
+            setHotelIsOpen(target);
+            setModal({ isOpen: true, title: target ? "Hotel Opened" : "Hotel Closed", message: target ? "Your hotel is now open for orders." : "Your hotel is now closed. Customers can no longer place new orders.", type: "success" });
+        } else {
+            setModal({ isOpen: true, title: "Update Failed", message: res.error || "Failed to update hotel status.", type: "danger" });
+        }
+    };
+
     const fetchSettingsAndStaff = async () => {
         setLoading(true);
         const [settingsRes, staffRes, profileRes] = await Promise.all([
@@ -227,11 +253,11 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ token, onB
                                             <Store size={16} className="text-primary" /> Hotel Status
                                         </h3>
                                         <div className="flex gap-3 mb-4">
-                                            <button type="button" onClick={() => setHotelIsOpen(true)}
+                                            <button type="button" onClick={() => requestStatusChange(true)}
                                                 className={`flex-1 py-3 rounded-xl font-extrabold text-sm cursor-pointer transition-all border-none ${hotelIsOpen ? "bg-[#DCFCE7] text-[#15803D] border-2 border-success" : "bg-white text-muted border-2 border-[#E5E7EB] hover:border-[#D1D5DB]"
                                                     }`}
                                             >🟢 OPEN</button>
-                                            <button type="button" onClick={() => setHotelIsOpen(false)}
+                                            <button type="button" onClick={() => requestStatusChange(false)}
                                                 className={`flex-1 py-3 rounded-xl font-extrabold text-sm cursor-pointer transition-all border-none ${!hotelIsOpen ? "bg-[#FEE2E2] text-[#B91C1C] border-2 border-danger" : "bg-white text-muted border-2 border-[#E5E7EB] hover:border-[#D1D5DB]"
                                                     }`}
                                             >🔴 CLOSED</button>
@@ -387,6 +413,23 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ token, onB
             <Modal isOpen={modal.isOpen} onClose={() => setModal((prev) => ({ ...prev, isOpen: false }))}
                 type={modal.type} title={modal.title} message={modal.message}
                 primaryAction={{ label: "OK", onClick: () => setModal((prev) => ({ ...prev, isOpen: false })) }}
+            />
+
+            <Modal
+                isOpen={statusConfirm !== null}
+                onClose={() => setStatusConfirm(null)}
+                type={statusConfirm === false ? "danger" : "warning"}
+                title={statusConfirm === false ? "Close your hotel?" : "Open your hotel?"}
+                message={statusConfirm === false
+                    ? "Customers will no longer be able to place orders and the kitchen will stop receiving new orders. Staff are notified by SMS."
+                    : "Customers will be able to place orders from your hotel again immediately."}
+                primaryAction={{
+                    label: statusConfirm === false ? "Yes, Close" : "Yes, Open",
+                    variant: statusConfirm === false ? "danger" : "primary",
+                    onClick: () => void confirmStatusChange(),
+                    loading: statusApplying,
+                }}
+                secondaryAction={{ label: "Cancel", onClick: () => setStatusConfirm(null) }}
             />
         </div>
     );

@@ -6,10 +6,10 @@
  */
 
 export const API_BASE = import.meta.env.VITE_API_BASE ?? "/api/v1";
-const GUEST_ID_KEY = "tableDash_guest_id";
+const GUEST_ID_KEY = "ladha_guest_id";
 
 const GUEST_STORAGE_KEYS = [
-  "tableDash_guest_id",
+  "ladha_guest_id",
   "ladha_last_order",
   "ladha_guest_delivery",
   "ladha_zone_id",

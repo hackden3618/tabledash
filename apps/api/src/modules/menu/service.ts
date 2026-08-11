@@ -1,5 +1,5 @@
 /**
- * Purpose: Menu & Product Management Service for tableDash.
+ * Purpose: Menu & Product Management Service for ladha.
  * Responsibilities: Handles querying menu items, creating products, updating details/stock, soft-deleting, and toggling availability with real-time WebSocket broadcast.
  *   Automatically sets available=false when stockQty reaches 0 or below, and available=true when stock is replenished > 0.
  *   Soft deletes items so foreign key relations in order history are preserved.

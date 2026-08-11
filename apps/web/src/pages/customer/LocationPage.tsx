@@ -131,8 +131,8 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
         if (status.hotelId) setClosedHotelIds((prev) => status.isOpen ? prev.filter((id) => id !== status.hotelId) : prev.includes(status.hotelId!) ? prev : [...prev, status.hotelId!]);
       }
     };
-    window.addEventListener("tabledash:realtime", handler);
-    return () => window.removeEventListener("tabledash:realtime", handler);
+    window.addEventListener("ladha:realtime", handler);
+    return () => window.removeEventListener("ladha:realtime", handler);
   }, [setClosedHotelIds]);
 
   useEffect(() => {

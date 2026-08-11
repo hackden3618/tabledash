@@ -92,8 +92,8 @@ export const TrackingListPage: React.FC<TrackingListPageProps> = ({ onTrackOrder
         if (detail.type === "ORDER_STATUS_UPDATED") refreshProfile();
       }
     };
-    window.addEventListener("tabledash:realtime", handler);
-    return () => window.removeEventListener("tabledash:realtime", handler);
+    window.addEventListener("ladha:realtime", handler);
+    return () => window.removeEventListener("ladha:realtime", handler);
   }, [refreshProfile]);
 
   if (isLoading) {

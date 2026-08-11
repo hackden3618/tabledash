@@ -1,5 +1,5 @@
 /**
- * Purpose: Centralized WebSocket Broadcast Hub for tableDash real-time updates.
+ * Purpose: Centralized WebSocket Broadcast Hub for ladha real-time updates.
  * Responsibilities: Manages WebSocket client connections, channel subscriptions, and event broadcasting to admin & customer clients.
  * Dependencies: shared/types.ts for WsMessage contracts.
  * When to modify: When adding new WebSocket channels or event notification types.

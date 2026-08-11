@@ -1,4 +1,4 @@
-# tableDash Finance Module — Order Sales Ledger (scoped)
+# ladha Finance Module — Order Sales Ledger (scoped)
 
 Modeled on `Diner-ledger-pro`'s `transactions` table for the discipline pattern (one append-only record per money-moving event, incremental account balances next to it) — not a port of its full scope. This is narrower by design: **it records orders as sales and keeps customer account balances correct. It is not a general business ledger** — no opening balances, no cash/mpesa till, no day-close/reconciliation. If you want that layer later, it's a separate, additive piece — it doesn't need to exist for this to work.
 
@@ -79,9 +79,9 @@ A cash-on-delivery order paid in full the moment it's delivered is just step 1 i
 3. Cut `updateOrderPayment` over to write through `SalesRecord` first, order cache second, same transaction — same endpoint shape from the caller's side, different internals.
 4. Build the finance-facing views (order-level payment history, per-customer account view) reading only from `SalesRecord`/`CustomerAccount` — never re-deriving anything from raw `Order` fields directly.
 
-Sequence this after the tenant-isolation tightening (non-nullable `hotelId`) from the last review — both new tables carry `hotelId`, so they should land on top of that fix, not before it.# tableDash — Customer Wallet + Financial Movement Notifications
+Sequence this after the tenant-isolation tightening (non-nullable `hotelId`) from the last review — both new tables carry `hotelId`, so they should land on top of that fix, not before it.# ladha — Customer Wallet + Financial Movement Notifications
 
-Extends `tabledash-finance-module-plan.md` (`SalesRecord` + `CustomerAccount`). This covers: the customer-facing wallet screen, and SMS + in-app notification firing on every `SalesRecord` write.
+Extends `ladha-finance-module-plan.md` (`SalesRecord` + `CustomerAccount`). This covers: the customer-facing wallet screen, and SMS + in-app notification firing on every `SalesRecord` write.
 
 ## Wallet screen
 

@@ -271,8 +271,8 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
                 setChatMessages((prev) => prev.some((m) => m.id === detail.payload.id) ? prev : [...prev, detail.payload as ChatMessage]);
             }
         };
-        window.addEventListener("tabledash:realtime", handler);
-        return () => window.removeEventListener("tabledash:realtime", handler);
+        window.addEventListener("ladha:realtime", handler);
+        return () => window.removeEventListener("ladha:realtime", handler);
     }, [convId]);
 
     const sendChat = async () => {
@@ -840,6 +840,11 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
                 <p className="text-sm text-[#6B7280] mb-4 leading-relaxed">
                     Refunds return money that was paid. Adjustments correct the amount owed. Both write a permanent ledger row with your reason — they are never silent edits.
                 </p>
+                {adjustType === "ADJUSTMENT" && (
+                    <p className="text-xs font-semibold text-[#114B36] bg-[#EBF5F0] border border-[#BDD9CB] rounded-lg px-3 py-2 mb-4 leading-relaxed">
+                        For adjustments, a positive amount increases what the customer owes; a negative amount (e.g. -20) reduces it and credits their account.
+                    </p>
+                )}
                 {currentStatus === "CANCELLED" && (
                     <p className="text-xs font-semibold text-[#114B36] bg-[#F0FDF4] border border-[#BBF7D0] rounded-lg px-3 py-2 mb-4 leading-relaxed">
                         This order is cancelled. Refunding it automatically settles both sides of the account — the payment is returned and the remaining charge is reversed on the ledger.

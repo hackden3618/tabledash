@@ -57,8 +57,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         setTimeout(() => setNewOrderAlert(false), 10000);
       }
     };
-    window.addEventListener("tabledash:realtime", handler);
-    return () => window.removeEventListener("tabledash:realtime", handler);
+    window.addEventListener("ladha:realtime", handler);
+    return () => window.removeEventListener("ladha:realtime", handler);
   }, []);
 
   const fetchMetrics = async () => {

@@ -43,25 +43,44 @@ export const AdminBottomNavBar: React.FC<AdminBottomNavBarProps> = ({
       if (detail.type === "CONVERSATION_CREATED") void refreshMessageCount();
       if (detail.type === "CONVERSATION_READ") void refreshMessageCount();
     };
-    window.addEventListener("tabledash:realtime", handleRealtime);
-    return () => window.removeEventListener("tabledash:realtime", handleRealtime);
+    window.addEventListener("ladha:realtime", handleRealtime);
+    return () => window.removeEventListener("ladha:realtime", handleRealtime);
   }, [refreshMessageCount, user?.id]);
 
   const currentHotel = hotels.find((h) => h.id === user?.hotelId);
   const showHotelBar = hotels.length > 1;
+
+  const navRef = React.useRef<HTMLElement>(null);
+  React.useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const publishHeight = () => {
+      document.documentElement.style.setProperty("--admin-nav-height", `${nav.offsetHeight}px`);
+    };
+    publishHeight();
+    const observer = new ResizeObserver(publishHeight);
+    observer.observe(nav);
+    return () => {
+      observer.disconnect();
+      document.documentElement.style.removeProperty("--admin-nav-height");
+    };
+  }, []);
 
   const handleSwitchHotel = async (hotelId: string) => {
     setHotelMenuOpen(false);
     setSwitchError("");
     try {
       await switchHotel(hotelId);
+      // Client-side navigation (no full reload) so the in-memory hotels list
+      // — which the backend now returns on switch — survives the transition.
+      onSelectTab("dashboard");
     } catch (err: any) {
       setSwitchError(err?.message || "Unable to switch hotel");
     }
   };
 
   return (
-    <nav className="glass-nav safe-area-bottom fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[1000px] border-t z-40">
+    <nav ref={navRef} className="glass-nav safe-area-bottom fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[1000px] border-t z-40">
       {showHotelBar && (
         <div className="relative px-3 pt-1.5">
           <button

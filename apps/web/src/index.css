@@ -159,7 +159,7 @@
   background: #FFFFFF;
   box-shadow: 0 0 40px rgba(0, 0, 0, 0.06);
   position: relative;
-  padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: var(--admin-nav-height, calc(72px + env(safe-area-inset-bottom, 0px)));
 }
 
 .platform-shell {
@@ -189,7 +189,7 @@
     height: calc(100dvh - 48px);
     border-radius: 1.25rem;
     border: 1px solid #E5E7EB;
-    padding-bottom: 80px;
+    padding-bottom: calc(var(--admin-nav-height, 72px) + 8px);
   }
 }
 

@@ -263,8 +263,8 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
                 }
             }
         };
-        window.addEventListener("tabledash:realtime", handleRealtime);
-        return () => window.removeEventListener("tabledash:realtime", handleRealtime);
+        window.addEventListener("ladha:realtime", handleRealtime);
+        return () => window.removeEventListener("ladha:realtime", handleRealtime);
     }, [selectedHotel]);
 
     useEffect(() => {
