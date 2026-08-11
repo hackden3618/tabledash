@@ -126,7 +126,7 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({ orderId, o
   return (
     <div className="app-container">
       <Header title={order.status === "CANCELLED" ? "Order Cancelled" : "Order Tracking"} subtitle={`Order #${order.orderNumber}`} onBack={onBackToHome} />
-      <PageTransition className="flex-1 px-4 py-5 overflow-y-auto" style={{ height: `calc(100dvh - 64px - 56px)` }}>
+      <PageTransition className="flex-1 px-4 py-5 overflow-y-auto" style={{ height: `calc(100dvh - 64px - 56px)`, overscrollBehaviorY: "contain" }}>
         {order.status === "CANCELLED" ? (
           <div className="rounded-2xl bg-[#FEF2F2] border-2 border-[#FCA5A5] p-5 mb-5">
             <div className="flex items-center gap-3 mb-3"><div className="w-10 h-10 rounded-full bg-[#FEE2E2] flex items-center justify-center text-[#EF4444]"><XCircle size={20} /></div><div><p className="font-bold text-[#991B1B]">Order Cancelled</p><p className="text-xs text-[#B91C1C]">This order has been cancelled.</p></div></div>

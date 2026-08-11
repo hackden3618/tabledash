@@ -574,7 +574,6 @@ function AdminDashboardRoute() {
     return (
         <AdminDashboardPage
             token={token}
-            onBackToOrders={() => navigate("/kitchen/orders")}
             onNavigateToOrders={() => navigate("/kitchen/orders")}
             onNavigateToMenu={() => navigate("/kitchen/menu")}
             onNavigateToSettings={() => navigate("/kitchen/settings")}
