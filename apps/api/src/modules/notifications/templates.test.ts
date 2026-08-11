@@ -66,6 +66,7 @@ const all: Record<string, string> = {
 
 // Templates prefixed with the customer-facing brand.
 const branded = [
+  "orderAlertToHotel",
   "orderAcceptedToCustomer",
   "orderOutForDeliveryToCustomer",
   "firstDeliveredToCustomer",
@@ -76,6 +77,7 @@ const branded = [
   "accountCredit",
   "accountPayment",
   "accountRefund",
+  "accountAdjustment",
   "hotelWelcome",
   "staffWelcome",
   "staffWelcomeNoSetup",
