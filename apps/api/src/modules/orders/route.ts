@@ -24,6 +24,7 @@ import {
   getOrderById,
   getOrders,
   getPendingCollection,
+  getPendingOrdersCount,
   getRefundsOwed,
   markUtensilsIssued,
   markUtensilsReturned,
@@ -110,6 +111,27 @@ export const ordersRoute = new Elysia({
     }
     const metrics = await getDashboardMetrics(admin.hotelId);
     return { success: true, data: metrics };
+  })
+  .get("/pending-count", async ({ headers, jwt, set }) => {
+    const authHeader = headers["authorization"];
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      set.status = 401;
+      return { success: false, error: "Missing or invalid authorization header" };
+    }
+    const token = authHeader.split(" ")[1] ?? "";
+    let admin;
+    try {
+      admin = await verifyAdminToken(token, (t) => jwt.verify(t));
+    } catch {
+      set.status = 401;
+      return { success: false, error: "Invalid or expired session token" };
+    }
+    if (!admin.hotelId) {
+      set.status = 403;
+      return { success: false, error: "This account is not assigned to a hotel" };
+    }
+    const count = await getPendingOrdersCount(admin.hotelId);
+    return { success: true, data: { count } };
   })
   .get("/daily", async ({ query, headers, jwt, set }) => {
     const authHeader = headers["authorization"];

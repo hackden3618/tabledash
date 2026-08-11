@@ -32,4 +32,14 @@ describe("order logic", () => {
     expect(metrics.refundsDue).toBe(20);
     expect(metrics.topItems).toEqual([{ name: "Tea", count: 3 }]);
   });
+
+  test("nets refunded amounts out of revenue", () => {
+    const metrics = calculateDashboardMetrics([
+      { status: "DELIVERED", totalAmount: 100, amountPaid: 100, paymentStatus: "PAID", orderItems: [{ name: "Tea", quantity: 1 }], refundedAmount: 30 },
+      { status: "DELIVERED", totalAmount: 50, amountPaid: 50, paymentStatus: "PAID", orderItems: [{ name: "Tea", quantity: 1 }], refundedAmount: 50 },
+    ]);
+
+    expect(metrics.totalSales).toBe(70);
+    expect(metrics.refundsProcessed).toBe(0);
+  });
 });

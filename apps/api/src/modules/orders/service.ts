@@ -13,7 +13,7 @@ import { getDefaultHotel } from "../hotels/service";
 import { getSmsRecipients } from "../settings/service";
 import { wsHub } from "../websocket/hub";
 import { formatPhone } from "../../../../../shared/phone";
-import { calculateDashboardMetrics, normalizeOrderItems } from "./logic";
+import { calculateDashboardMetrics, normalizeOrderItems, PENDING_STATUSES } from "./logic";
 import { applyOrderChargeTx, recordCancellationChargeTx } from "../finance/service";
 import { generateAccountId } from "../customers/account-id";
 import { getCustomerProfile } from "../customers/auth.service";
@@ -930,7 +930,8 @@ export const getRefundsOwed = async (hotelId: string) => {
 
 /**
  * Aggregates analytical metrics for the admin dashboard.
- * Revenue excludes cancelled orders; pending uses an explicit allow-list.
+ * Revenue excludes cancelled orders and nets out refunded amounts; pending uses
+ * an explicit allow-list.
  */
 export const getDashboardMetrics = async (hotelId?: string): Promise<DashboardMetrics> => {
     const where = hotelId ? { hotelId } : {};
@@ -941,7 +942,32 @@ export const getDashboardMetrics = async (hotelId?: string): Promise<DashboardMe
         },
     });
 
-    return calculateDashboardMetrics(allOrders);
+    const orderIds = allOrders.map((order) => order.id);
+    const refundGroups = orderIds.length
+        ? await prisma.salesRecord.groupBy({
+              by: ["orderId"],
+              where: { orderId: { in: orderIds }, type: "REFUND" },
+              _sum: { amount: true },
+          })
+        : [];
+    const refundByOrder = new Map(refundGroups.map((g) => [g.orderId, Math.abs(Number(g._sum.amount))]));
+
+    const ordersWithRefunds = allOrders.map((order) => ({
+        ...order,
+        refundedAmount: refundByOrder.get(order.id) ?? 0,
+    }));
+
+    return calculateDashboardMetrics(ordersWithRefunds);
+};
+
+/**
+ * Counts orders currently in a pending (in-progress) state for a hotel.
+ * Used by the admin nav/orders surfaces to show a live badge.
+ */
+export const getPendingOrdersCount = async (hotelId?: string): Promise<number> => {
+    const where: any = { status: { in: PENDING_STATUSES } };
+    if (hotelId) where.hotelId = hotelId;
+    return prisma.order.count({ where });
 };
 
 function formatOrderResponse(order: any) {
