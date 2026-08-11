@@ -1,4 +1,5 @@
 import { smsService } from "../sms.service";
+import { paymentReceived, partialPayment } from "../templates";
 
 interface OrderPaymentUpdatedPayload {
   orderId: string;
@@ -16,8 +17,15 @@ export async function handleOrderPaymentUpdated(payload: Record<string, unknown>
 
   if (!data.customerPhone || data.paymentStatus === "UNPAID") return true;
 
-  const hotelName = data.hotelName || "Ladha Deliveries";
-  const msg = `Hello ${data.customerName}, payment for order #${data.orderNumber} from ${hotelName} has been updated to ${data.paymentStatus === "PAID" ? "PAID ✅" : "PARTIAL"} (KSh ${data.amountPaid}/KSh ${data.totalAmount}). Thank you!`;
+  const msg =
+    data.paymentStatus === "PAID"
+      ? paymentReceived({ orderNumber: data.orderNumber, amountPaid: data.amountPaid, totalAmount: data.totalAmount })
+      : partialPayment({
+          orderNumber: data.orderNumber,
+          amountPaid: data.amountPaid,
+          totalAmount: data.totalAmount,
+          remaining: data.totalAmount - data.amountPaid,
+        });
 
   const result = await smsService.sendSms(data.customerPhone, msg);
   return result;

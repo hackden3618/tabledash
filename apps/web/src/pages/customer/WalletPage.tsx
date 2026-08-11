@@ -75,8 +75,8 @@ export const WalletPage: React.FC<WalletPageProps> = ({ onBack, onSelectHotel, o
         void fetchWallet();
       }
     };
-    window.addEventListener("tabledash:realtime", handler);
-    return () => window.removeEventListener("tabledash:realtime", handler);
+    window.addEventListener("ladha:realtime", handler);
+    return () => window.removeEventListener("ladha:realtime", handler);
   }, [fetchWallet]);
 
   const formatKsh = (amount: number) => {

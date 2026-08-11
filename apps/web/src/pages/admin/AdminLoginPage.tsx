@@ -130,6 +130,9 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onLoginSuccess }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#FFF8F0] p-4">
+      <a href="/" className="fixed top-4 left-4 z-10 flex items-center gap-1 text-sm font-semibold text-[#6B7280] hover:text-[#114B36] transition-colors no-underline cursor-pointer">
+        <ChevronLeft size={18} /> Marketplace
+      </a>
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}

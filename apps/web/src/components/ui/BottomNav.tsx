@@ -40,12 +40,12 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     const handleRealtime = (event: Event) => {
       const detail = (event as CustomEvent<{ type: string; payload?: { senderIdentityKey?: string } }>).detail;
       const payload = detail.payload;
-      const currentIdentityKey = customer?.id ? `customer:${customer.id}` : `guest:${localStorage.getItem("tableDash_guest_id") || ""}`;
+      const currentIdentityKey = customer?.id ? `customer:${customer.id}` : `guest:${localStorage.getItem("ladha_guest_id") || ""}`;
       if ((detail.type === "MESSAGE_CREATED" || detail.type === "ANNOUNCEMENT_PUBLISHED") && payload?.senderIdentityKey !== currentIdentityKey && activeTab !== "conversations") setUnreadCount((count) => count + 1);
       if (detail.type === "CONVERSATION_READ") void refreshUnread();
     };
-    window.addEventListener("tabledash:realtime", handleRealtime);
-    return () => window.removeEventListener("tabledash:realtime", handleRealtime);
+    window.addEventListener("ladha:realtime", handleRealtime);
+    return () => window.removeEventListener("ladha:realtime", handleRealtime);
   }, [activeTab, refreshUnread, customer?.id]);
 
   return (

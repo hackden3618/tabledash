@@ -1,5 +1,5 @@
 /**
- * Purpose: Centralized environment configuration management for tableDash.
+ * Purpose: Centralized environment configuration management for ladha.
  * Responsibilities: Reads, parses, and exposes environment variables with safe defaults for local development.
  * Dependencies: Node/Bun process.env context.
  * When to modify: When adding new system configuration parameters (e.g. new API keys, ports, secrets).
@@ -10,7 +10,7 @@ export class Environment {
   public readonly apiPrefix: string = process.env.API_PREFIX ?? "/api/v1";
 
   /** Database connection string for PostgreSQL */
-  public readonly databaseUrl: string = process.env.DATABASE_URL ?? "postgres://development@localhost:5432/tabledash?schema=public&connection_limit=5";
+  public readonly databaseUrl: string = process.env.DATABASE_URL ?? "postgres://development@localhost:5432/ladha?schema=public&connection_limit=5";
 
   /** Port for the Elysia backend server */
   public readonly backendPort: number = Number(process.env.PORT ?? 3000);

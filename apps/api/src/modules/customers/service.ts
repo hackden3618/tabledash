@@ -1,5 +1,5 @@
 /**
- * Purpose: Customer Data & Order History Service for tableDash.
+ * Purpose: Customer Data & Order History Service for ladha.
  * Responsibilities: Provides functions to retrieve customer profiles and historical orders.
  * Dependencies: Prisma database client.
  * When to modify: When extending customer profile data fields or history filters.

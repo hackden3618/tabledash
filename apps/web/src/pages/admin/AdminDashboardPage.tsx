@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { apiGet } from "../../lib/api";
 import {
-  ArrowLeft, CheckCircle2, Clock, Settings,
+  CheckCircle2, Clock, Settings,
   ShoppingBag, TrendingUp, Utensils, Wallet, XCircle, Calendar, BarChart3
 } from "lucide-react";
 import { PageTransition } from "../../components/ui/PageTransition";
@@ -10,7 +10,7 @@ import { Badge } from "../../components/ui/Badge";
 
 interface AdminDashboardPageProps {
   token: string;
-  onBackToOrders: () => void;
+  onBackToOrders?: () => void;
   onNavigateToOrders?: () => void;
   onNavigateToMenu?: () => void;
   onNavigateToSettings?: () => void;
@@ -49,30 +49,34 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [loading, setLoading] = useState(true);
   const [newOrderAlert, setNewOrderAlert] = useState(false);
 
+  const fetchMetrics = async (quiet = false) => {
+    if (!quiet) setLoading(true);
+    const res = await apiGet<any>("/orders/dashboard/metrics", token);
+    if (res.success && res.data) {
+      setMetrics(res.data);
+    }
+    if (!quiet) setLoading(false);
+  };
+
   useEffect(() => {
     const handler = (event: Event) => {
       const detail = (event as CustomEvent).detail;
       if (detail.type === "ORDER_CREATED") {
         setNewOrderAlert(true);
         setTimeout(() => setNewOrderAlert(false), 10000);
+        void fetchMetrics(true);
+      }
+      if (detail.type === "ORDER_STATUS_UPDATED" || detail.type === "ORDER_PAYMENT_UPDATED") {
+        void fetchMetrics(true);
       }
     };
-    window.addEventListener("tabledash:realtime", handler);
-    return () => window.removeEventListener("tabledash:realtime", handler);
-  }, []);
-
-  const fetchMetrics = async () => {
-    setLoading(true);
-    const res = await apiGet<any>("/orders/dashboard/metrics", token);
-    if (res.success && res.data) {
-      setMetrics(res.data);
-    }
-    setLoading(false);
-  };
+    window.addEventListener("ladha:realtime", handler);
+    return () => window.removeEventListener("ladha:realtime", handler);
+  }, [token]);
 
   useEffect(() => {
-    fetchMetrics();
-  }, []);
+    void fetchMetrics();
+  }, [token]);
 
   const actionOnClick = (label: string) => {
     switch (label) {
@@ -81,20 +85,16 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       case "Finance": return onNavigateToFinance ?? onBackToOrders;
       case "Settings": return onNavigateToSettings ?? onBackToOrders;
       case "History": return onNavigateToHistory ?? onBackToOrders;
-      default: return onBackToOrders;
+      default: return onNavigateToOrders ?? onBackToOrders;
     }
   };
+
+  const pendingCount = Number(metrics?.pendingOrders ?? 0);
 
   return (
     <div className="admin-container">
       <header className="bg-[#114B36] text-white px-4 py-3 sticky top-0 z-40 shadow-[0_2px_8px_rgba(17,75,54,0.15)]">
         <div className="flex items-center gap-3 max-w-4xl mx-auto">
-          <button
-            onClick={onBackToOrders}
-            className="p-1 -ml-1 rounded-lg hover:bg-white/10 transition-colors bg-none border-none cursor-pointer text-white"
-          >
-            <ArrowLeft size={20} />
-          </button>
           <h1 className="font-bold text-lg">Dashboard</h1>
         </div>
       </header>
@@ -112,9 +112,14 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 whileHover={{ y: -2 }}
                 whileTap={{ scale: 0.97 }}
                 onClick={actionOnClick(action.label)}
-                className="flex flex-col items-center justify-center p-5 rounded-2xl gap-2.5 cursor-pointer border-none"
+                className="relative flex flex-col items-center justify-center p-5 rounded-2xl gap-2.5 cursor-pointer border-none"
                 style={{ background: action.bg, color: action.color }}
               >
+                {action.label === "Orders" && pendingCount > 0 && (
+                  <span className="absolute -top-2 -right-2 min-w-5 h-5 px-1.5 rounded-full bg-[#EF4444] text-white text-[0.65rem] font-bold flex items-center justify-center shadow-md">
+                    {pendingCount > 99 ? "99+" : pendingCount}
+                  </span>
+                )}
                 <action.icon size={28} />
                 <span className="font-bold text-sm">{action.label}</span>
               </motion.button>

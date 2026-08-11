@@ -65,8 +65,8 @@ export const WalletActivityPage: React.FC<WalletActivityPageProps> = ({ onBack }
         }
       }
     };
-    window.addEventListener("tabledash:realtime", handler);
-    return () => window.removeEventListener("tabledash:realtime", handler);
+    window.addEventListener("ladha:realtime", handler);
+    return () => window.removeEventListener("ladha:realtime", handler);
   }, []);
 
   const markRead = async (id: string) => {

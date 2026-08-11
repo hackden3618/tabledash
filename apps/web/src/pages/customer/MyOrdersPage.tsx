@@ -98,8 +98,8 @@ export const MyOrdersPage: React.FC<MyOrdersPageProps> = ({ onGoToAuth, onTrackO
         setTimeout(() => setLastUpdatedId(null), 3000);
       }
     };
-    window.addEventListener("tabledash:realtime", handler);
-    return () => window.removeEventListener("tabledash:realtime", handler);
+    window.addEventListener("ladha:realtime", handler);
+    return () => window.removeEventListener("ladha:realtime", handler);
   }, []);
 
   if (isLoading) {

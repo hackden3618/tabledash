@@ -82,6 +82,7 @@
     min-width: 0;
     width: 100%;
     overscroll-behavior-x: none;
+    overscroll-behavior-y: contain;
   }
   #root { min-height: 100dvh; min-width: 0; width: 100%; overflow-x: clip; }
   input, textarea, button, select { font-family: inherit; }
@@ -117,6 +118,7 @@
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior-y: contain;
+  overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;
   background: linear-gradient(180deg, #FFFDF9 0%, #FFF8F0 42%, #F8F4EC 100%);
   position: relative;
@@ -155,11 +157,12 @@
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior-y: contain;
+  overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;
   background: #FFFFFF;
   box-shadow: 0 0 40px rgba(0, 0, 0, 0.06);
   position: relative;
-  padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: var(--admin-nav-height, calc(72px + env(safe-area-inset-bottom, 0px)));
 }
 
 .platform-shell {
@@ -189,7 +192,7 @@
     height: calc(100dvh - 48px);
     border-radius: 1.25rem;
     border: 1px solid #E5E7EB;
-    padding-bottom: 80px;
+    padding-bottom: calc(var(--admin-nav-height, 72px) + 8px);
   }
 }
 

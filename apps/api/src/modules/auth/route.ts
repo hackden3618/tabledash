@@ -1,5 +1,5 @@
 /**
- * Purpose: Authentication API routes for tableDash Admin login.
+ * Purpose: Authentication API routes for ladha Admin login.
  * Responsibilities: Handles POST /api/v1/auth/login and GET /api/v1/auth/me endpoints.
  * Dependencies: Elysia, shared/config.ts, shared/schemas.ts, auth service.
  * When to modify: When adding new authentication endpoints or changing auth response structures.
@@ -10,7 +10,8 @@ import { Elysia, t } from "elysia";
 import { env } from "../../../../../shared/config";
 import { PHONE_PATTERN, PHONE_MIN, PHONE_MAX } from "../../../../../shared/phone";
 import { AdminLoginSchema } from "../../../../../shared/schemas";
-import { loginAdmin, verifyAdminToken, requestPasswordResetOtp, resetPasswordWithOtp, updateAdminProfile, changeAdminPassword, createWebSocketTicket, switchAdminHotel } from "./service";
+import { loginAdmin, verifyAdminToken, requestPasswordResetOtp, resetPasswordWithOtp, updateAdminProfile, changeAdminPassword, createWebSocketTicket, switchAdminHotel, getAdminMe } from "./service";
+import { setPasswordFromSetupToken } from "./password-setup.service";
 import { verifyCustomerToken } from "../customers/auth.service";
 import { verifyPlatformAdminToken } from "./service";
 import { ensureGuestIdentity, isGuestId } from "../customers/guest-identity";
@@ -154,6 +155,31 @@ export const authRoute = new Elysia({
       }),
     }
   )
+  .post(
+    "/set-password",
+    async ({ body, set, request }) => {
+      const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+      const { allowed, resetIn } = AUTH_LIMITER(`set-password:${ip}`);
+      if (!allowed) {
+        set.status = 429;
+        set.headers["retry-after"] = String(Math.ceil(resetIn / 1000));
+        return { success: false, error: `Too many attempts. Try again in ${Math.ceil(resetIn / 1000)}s.` };
+      }
+      try {
+        const result = await setPasswordFromSetupToken(body.token, body.newPassword);
+        return { success: true, data: { message: "Password set successfully. You can now log in.", userType: result.userType } };
+      } catch (err: any) {
+        set.status = 400;
+        return { success: false, error: err.message || "Unable to set password" };
+      }
+    },
+    {
+      body: t.Object({
+        token: t.String({ minLength: 16, maxLength: 256 }),
+        newPassword: t.String({ minLength: 8, maxLength: 120 }),
+      }),
+    }
+  )
   .get("/me", async ({ headers, jwt, set }) => {
     const authHeader = headers["authorization"];
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -163,7 +189,8 @@ export const authRoute = new Elysia({
 
     const token = authHeader.split(" ")[1] ?? "";
     try {
-      const user = await verifyAdminToken(token, (t) => jwt.verify(t));
+      const admin = await verifyAdminToken(token, (t) => jwt.verify(t));
+      const user = await getAdminMe(admin.id);
       return { success: true, data: user };
     } catch (error: any) {
       set.status = 401;

@@ -50,6 +50,7 @@ import { AdminSettingsPage } from "./pages/admin/AdminSettingsPage";
 import { FinanceDashboardPage } from "./pages/admin/FinanceDashboardPage";
 import { PendingCollectionPage } from "./pages/admin/PendingCollectionPage";
 import { PlatformAdminPage } from "./pages/platform/PlatformAdminPage";
+import { SetPasswordPage } from "./pages/SetPasswordPage";
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Cross-route flow state (kept intentionally small — everything else lives in
@@ -120,10 +121,10 @@ function AppContent() {
 
     const realtimeRole = isAdminPath ? "admin" : "customer";
     const realtimeToken = isKitchenPath ? adminToken : isPlatformPath ? platformToken : customerToken;
-    const currentIdentityKey = isPlatformPath ? (platformToken ? `platform:${decodeJwt(platformToken)?.sub ?? ""}` : "") : isKitchenPath ? (adminUser?.id ? `admin:${adminUser.id}` : "") : (customer?.id ? `customer:${customer.id}` : `guest:${localStorage.getItem("tableDash_guest_id") || ""}`);
+    const currentIdentityKey = isPlatformPath ? (platformToken ? `platform:${decodeJwt(platformToken)?.sub ?? ""}` : "") : isKitchenPath ? (adminUser?.id ? `admin:${adminUser.id}` : "") : (customer?.id ? `customer:${customer.id}` : `guest:${localStorage.getItem("ladha_guest_id") || ""}`);
 
     const rootSocket = useWebSocket(realtimeRole, undefined, (event: WsEventPayload) => {
-        window.dispatchEvent(new CustomEvent("tabledash:realtime", { detail: event }));
+        window.dispatchEvent(new CustomEvent("ladha:realtime", { detail: event }));
         if (event.type === "MESSAGE_CREATED") {
             const message = event.payload as { body?: string; senderIdentityKey?: string };
             if (message.senderIdentityKey !== currentIdentityKey) pushNotification("info", "New message", message.body || "You have a new message.", { scope: notificationScope });
@@ -159,8 +160,8 @@ function AppContent() {
     }, undefined, realtimeToken);
     useEffect(() => {
         const handleSend = (event: Event) => rootSocket.send((event as CustomEvent).detail);
-        window.addEventListener("tabledash:send", handleSend);
-        return () => window.removeEventListener("tabledash:send", handleSend);
+        window.addEventListener("ladha:send", handleSend);
+        return () => window.removeEventListener("ladha:send", handleSend);
     }, [rootSocket.send]);
 
     return (
@@ -477,12 +478,12 @@ function WalletActivityRoute() {
 function AdminLoginRoute() {
     const navigate = useNavigate();
     const { isLoggedIn, hydrating, login } = useAdminAuth();
-    if (!hydrating && isLoggedIn) return <Navigate to="/kitchen/orders" replace />;
+    if (!hydrating && isLoggedIn) return <Navigate to="/kitchen/dashboard" replace />;
     return (
         <AdminLoginPage
             onLoginSuccess={(token, user, hotels) => {
                 login(token, user, hotels);
-                navigate("/kitchen/orders", { replace: true });
+                navigate("/kitchen/dashboard", { replace: true });
             }}
         />
     );
@@ -573,7 +574,6 @@ function AdminDashboardRoute() {
     return (
         <AdminDashboardPage
             token={token}
-            onBackToOrders={() => navigate("/kitchen/orders")}
             onNavigateToOrders={() => navigate("/kitchen/orders")}
             onNavigateToMenu={() => navigate("/kitchen/menu")}
             onNavigateToSettings={() => navigate("/kitchen/settings")}
@@ -707,6 +707,7 @@ export const router = createBrowserRouter([
                 path: "platform",
                 element: <PlatformRoute />,
             },
+            { path: "set-password", element: <SetPasswordPage /> },
             { path: "*", element: <Navigate to="/" replace /> },
         ],
     },

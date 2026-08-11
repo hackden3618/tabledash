@@ -1,5 +1,6 @@
 import { smsService } from "../sms.service";
 import { getSmsRecipients } from "../../settings/service";
+import { orderAlertToHotel } from "../templates";
 
 interface OrderCreatedPayload {
   orderId: string;
@@ -20,15 +21,27 @@ interface OrderCreatedPayload {
 
 export async function handleOrderCreated(payload: Record<string, unknown>): Promise<boolean> {
   const data = payload as unknown as OrderCreatedPayload;
-  const hotelName = data.hotelName || "Ladha Deliveries";
 
   const staffPhones = await getSmsRecipients(data.hotelId);
   if (staffPhones.length === 0) return true;
 
-  const stall = data.stallNumber || "N/A";
-  const desc = data.locationDescription || "N/A";
-  const displayName = data.customerName;
-  const message = `[${hotelName}] NEW ORDER #${data.orderNumber} from ${displayName} (${data.customerPhone}). Total: KSh ${data.totalAmount}. Stall: ${stall} — ${desc}. Items: ${data.itemsSummary}`;
+  const stall = data.stallNumber || data.marketSection;
+  const stallStr = stall ? (stall.toLowerCase().startsWith("stall") ? stall : `Stall ${stall}`) : "";
+  const locParts = [stallStr, data.locationDescription].filter(Boolean);
+  const location = locParts.length > 0 ? locParts.join(" — ") : "N/A";
+
+  const items = data.itemsSummary
+    ? (data.itemsSummary.includes("\n") ? data.itemsSummary : data.itemsSummary.split(/,\s*/).join("\n"))
+    : "";
+
+  const message = orderAlertToHotel({
+    orderNumber: data.orderNumber,
+    customerName: data.customerName,
+    customerPhone: data.customerPhone,
+    locationDescription: location,
+    itemsSummary: items,
+    totalAmount: data.totalAmount,
+  });
 
   const results = await Promise.allSettled(
     staffPhones.map((phone) => smsService.sendSms(phone, message))

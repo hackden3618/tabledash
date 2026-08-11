@@ -86,8 +86,8 @@ export const AdminOrdersPage: React.FC<AdminOrdersPageProps> = ({
         pushNotification("danger", `⚠️ Order Bounced — ${b.productName}`, `Customer ${b.customerName} (${b.customerPhone}) could not order. Reason: ${reason}. Restock or mark item available.`, { duration: 9000 });
       }
     };
-    window.addEventListener("tabledash:realtime", handler);
-    return () => window.removeEventListener("tabledash:realtime", handler);
+    window.addEventListener("ladha:realtime", handler);
+    return () => window.removeEventListener("ladha:realtime", handler);
   }, [pushNotification]);
 
   const handleAcceptOrder = async (orderId: string, e: React.MouseEvent) => {

@@ -1,5 +1,5 @@
 /**
- * Purpose: SMS Notification Service for tableDash online ordering system.
+ * Purpose: SMS Notification Service for ladha online ordering system.
  * Responsibilities: Handles dispatching SMS text messages for order placement and updates.
  * Dependencies: textsms.co.ke REST API, Environment configuration from shared/config.ts.
  * When to modify: When switching SMS provider gateways, updating message templates, or adjusting API credentials.
@@ -7,6 +7,28 @@
 
 import { env } from "../../../../../shared/config";
 import { formatPhone } from "../../../../../shared/phone";
+
+/**
+ * True when the message contains any non-ASCII character (emojis, accented
+ * letters). GSM-7 (ASCII) messages carry 160 characters per segment; anything
+ * requiring the Unicode alphabet drops to 70 per segment and roughly doubles
+ * the cost of a long message.
+ */
+function isUnicodeSms(message: string): boolean {
+  for (const char of message) {
+    if (char.codePointAt(0)! > 0x7e) return true;
+  }
+  return false;
+}
+
+/**
+ * Estimates the number of SMS segments a message will bill as, so senders can
+ * observe cost. ASCII → 160 chars/segment, Unicode → 70 chars/segment.
+ */
+export function estimateSegments(message: string): number {
+  const perSegment = isUnicodeSms(message) ? 70 : 160;
+  return Math.max(1, Math.ceil(message.length / perSegment));
+}
 
 /**
  * Interface defining the contract for SMS dispatch drivers.
@@ -32,6 +54,8 @@ export class TextSmsDriver implements ISmsDriver {
 
   public async sendSms(recipientPhone: string, message: string): Promise<boolean> {
     const formattedPhone = formatPhone(recipientPhone);
+    const segments = estimateSegments(message);
+    console.log(`[SMS] To ending ${formattedPhone.slice(-4)} chars=${message.length} segments=${segments}`);
 
     if (!env.textSmsApiKey || !env.textSmsPartnerId) {
       console.log(`\n========================================`);
@@ -92,9 +116,11 @@ export class TextSmsDriver implements ISmsDriver {
  */
 export class ConsoleSmsDriver implements ISmsDriver {
   public async sendSms(recipientPhone: string, message: string): Promise<boolean> {
+    const segments = estimateSegments(message);
     console.log(`\n========================================`);
     console.log(`[DEV SMS SIMULATION] To: ${recipientPhone}`);
     console.log(`[Message]: ${message}`);
+    console.log(`[SMS] chars=${message.length} segments=${segments}`);
     console.log(`========================================\n`);
     return true;
   }
