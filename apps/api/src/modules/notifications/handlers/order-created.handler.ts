@@ -25,14 +25,18 @@ export async function handleOrderCreated(payload: Record<string, unknown>): Prom
   const staffPhones = await getSmsRecipients(data.hotelId);
   if (staffPhones.length === 0) return true;
 
+  const stall = data.stallNumber || data.marketSection;
+  const stallStr = stall ? (stall.toLowerCase().startsWith("stall") ? stall : `Stall ${stall}`) : "";
+  const locParts = [stallStr, data.locationDescription].filter(Boolean);
+  const location = locParts.length > 0 ? locParts.join(": ") : "N/A";
+
   const message = orderAlertToHotel({
     orderNumber: data.orderNumber,
     customerName: data.customerName,
     customerPhone: data.customerPhone,
-    totalAmount: data.totalAmount,
-    stallNumber: data.stallNumber || data.marketSection,
-    locationDescription: data.locationDescription,
+    locationDescription: location,
     itemsSummary: data.itemsSummary,
+    totalAmount: data.totalAmount,
   });
 
   const results = await Promise.allSettled(
