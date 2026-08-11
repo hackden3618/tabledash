@@ -430,7 +430,7 @@ export const InboxPage: React.FC<{ token?: string; actorId?: string; onBack: () 
                 </div>
             ) : (
                 <div className="flex flex-col relative" style={{ height: mode === "hotel" ? `calc(${visualHeight ? `${visualHeight}px` : "100dvh"} - 64px - var(--admin-nav-height, calc(72px + env(safe-area-inset-bottom, 0px))))` : `calc(${visualHeight ? `${visualHeight}px` : "100dvh"} - 64px - ${composerSafeArea} - 56px)` }}>
-                    <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 px-4 py-5 space-y-3 overflow-y-auto">
+                    <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 px-4 py-5 space-y-3 overflow-y-auto" style={{ overscrollBehaviorY: "contain" }}>
                         <div className="rounded-2xl border border-[#E5E7EB] bg-white px-4 py-3 flex items-start justify-between gap-2">
                             <div>
                                 <p className="text-[0.65rem] font-extrabold uppercase tracking-wider text-[#6B7280]">{selected.type === "ORDER" ? "Order" : selected.type === "HOTEL_NOTICE" ? "Hotel Notice" : selected.type === "PLATFORM_NOTICE" ? "Platform Notice" : selected.type === "TALK_TO_STAFF" ? "Support" : "Channel"}</p>

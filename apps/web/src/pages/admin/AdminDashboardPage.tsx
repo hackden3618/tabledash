@@ -10,7 +10,7 @@ import { Badge } from "../../components/ui/Badge";
 
 interface AdminDashboardPageProps {
   token: string;
-  onBackToOrders: () => void;
+  onBackToOrders?: () => void;
   onNavigateToOrders?: () => void;
   onNavigateToMenu?: () => void;
   onNavigateToSettings?: () => void;
@@ -85,7 +85,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       case "Finance": return onNavigateToFinance ?? onBackToOrders;
       case "Settings": return onNavigateToSettings ?? onBackToOrders;
       case "History": return onNavigateToHistory ?? onBackToOrders;
-      default: return onBackToOrders;
+      default: return onNavigateToOrders ?? onBackToOrders;
     }
   };
 

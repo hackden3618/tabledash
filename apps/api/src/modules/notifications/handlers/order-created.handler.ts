@@ -25,14 +25,14 @@ export async function handleOrderCreated(payload: Record<string, unknown>): Prom
   const staffPhones = await getSmsRecipients(data.hotelId);
   if (staffPhones.length === 0) return true;
 
-  const location = data.locationDescription || data.stallNumber || "N/A";
   const message = orderAlertToHotel({
     orderNumber: data.orderNumber,
     customerName: data.customerName,
     customerPhone: data.customerPhone,
-    locationDescription: location,
-    itemsSummary: data.itemsSummary,
     totalAmount: data.totalAmount,
+    stallNumber: data.stallNumber || data.marketSection,
+    locationDescription: data.locationDescription,
+    itemsSummary: data.itemsSummary,
   });
 
   const results = await Promise.allSettled(

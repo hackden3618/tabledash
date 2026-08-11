@@ -21,17 +21,29 @@ export interface OrderAlertToHotelParams {
   orderNumber: number;
   customerName: string;
   customerPhone: string;
-  locationDescription: string;
-  itemsSummary: string;
   totalAmount: number;
+  stallNumber?: string;
+  locationDescription?: string;
+  itemsSummary: string;
 }
-export const orderAlertToHotel = (p: OrderAlertToHotelParams): string =>
-  `${BRAND} NEW ORDER #${p.orderNumber}\n` +
-  `${p.customerName} (${p.customerPhone})\n` +
-  `Location: ${p.locationDescription}\n` +
-  `Items:\n` +
-  `${p.itemsSummary}\n` +
-  `Total: KSh ${p.totalAmount}`;
+
+export const orderAlertToHotel = (p: OrderAlertToHotelParams): string => {
+  const stallStr = p.stallNumber ? (p.stallNumber.toLowerCase().startsWith("stall") ? p.stallNumber : `Stall ${p.stallNumber}`) : "";
+  const locParts = [stallStr, p.locationDescription].filter(Boolean);
+  const locationLine = locParts.length > 0 ? ` | ${locParts.join(": ")}` : "";
+
+  let items = p.itemsSummary;
+  if (items.length > 60) {
+    items = items.slice(0, 57) + "...";
+  }
+
+  return (
+    `${BRAND} NEW ORDER #${p.orderNumber}\n` +
+    `${p.customerName} (${p.customerPhone})\n` +
+    `KSh ${p.totalAmount}${locationLine}\n` +
+    `${items}`
+  );
+};
 
 export interface OrderAcceptedToCustomerParams {
   firstName: string;
