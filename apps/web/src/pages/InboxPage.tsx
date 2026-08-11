@@ -82,6 +82,24 @@ export const InboxPage: React.FC<{ token?: string; actorId?: string; onBack: () 
     const [deleteMessageId, setDeleteMessageId] = useState<string | null>(null);
     const [showDeleteConversationModal, setShowDeleteConversationModal] = useState(false);
 
+    // Track the visual viewport height so the chat column (and composer) stays
+    // above the on-screen keyboard on mobile. Fixed 100dvh does NOT shrink when
+    // the keyboard opens; visualViewport.height does. When no visualViewport is
+    // available we fall back to 100dvh.
+    const [visualHeight, setVisualHeight] = useState<number | null>(null);
+    useEffect(() => {
+        if (typeof window === "undefined" || !window.visualViewport) return;
+        const vv = window.visualViewport;
+        const update = () => setVisualHeight(vv.height);
+        update();
+        vv.addEventListener("resize", update);
+        vv.addEventListener("scroll", update);
+        return () => {
+            vv.removeEventListener("resize", update);
+            vv.removeEventListener("scroll", update);
+        };
+    }, []);
+
     const ownParticipants = useMemo(() => (selected?.participants || []).filter((participant) => actorId ? (mode === "customer" ? participant.customerId === actorId : mode === "hotel" ? participant.adminUserId === actorId : participant.platformAdminId === actorId) : mode === "customer" ? participant.kind === "GUEST" : false), [selected?.participants, actorId, mode]);
     const ownParticipantIds = useMemo(() => new Set(ownParticipants.map((participant) => participant.id)), [ownParticipants]);
     // Announcements are deliberately read-only for recipients. The author,
@@ -411,7 +429,7 @@ export const InboxPage: React.FC<{ token?: string; actorId?: string; onBack: () 
                     )}
                 </div>
             ) : (
-                <div className="flex flex-col relative" style={{ height: mode === "hotel" ? "calc(100dvh - 64px - var(--admin-nav-height, calc(72px + env(safe-area-inset-bottom, 0px))))" : `calc(100dvh - 64px - ${composerSafeArea} - 56px)` }}>
+                <div className="flex flex-col relative" style={{ height: mode === "hotel" ? `calc(${visualHeight ? `${visualHeight}px` : "100dvh"} - 64px - var(--admin-nav-height, calc(72px + env(safe-area-inset-bottom, 0px))))` : `calc(${visualHeight ? `${visualHeight}px` : "100dvh"} - 64px - ${composerSafeArea} - 56px)` }}>
                     <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 px-4 py-5 space-y-3 overflow-y-auto">
                         <div className="rounded-2xl border border-[#E5E7EB] bg-white px-4 py-3 flex items-start justify-between gap-2">
                             <div>

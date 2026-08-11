@@ -82,6 +82,7 @@
     min-width: 0;
     width: 100%;
     overscroll-behavior-x: none;
+    overscroll-behavior-y: contain;
   }
   #root { min-height: 100dvh; min-width: 0; width: 100%; overflow-x: clip; }
   input, textarea, button, select { font-family: inherit; }
@@ -117,6 +118,7 @@
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior-y: contain;
+  overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;
   background: linear-gradient(180deg, #FFFDF9 0%, #FFF8F0 42%, #F8F4EC 100%);
   position: relative;
@@ -155,6 +157,7 @@
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior-y: contain;
+  overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;
   background: #FFFFFF;
   box-shadow: 0 0 40px rgba(0, 0, 0, 0.06);
