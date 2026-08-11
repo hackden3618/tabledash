@@ -1,5 +1,5 @@
 /**
- * Purpose: Authentication Service for tableDash Admin Management.
+ * Purpose: Authentication Service for ladha Admin Management.
  * Responsibilities: Performs secure password verification and issues session auth tokens.
  * Dependencies: Bun.password API, Prisma database client, Environment configuration.
  * When to modify: When updating authentication mechanisms or password hashing algorithms.
@@ -116,7 +116,7 @@ export const switchAdminHotel = async (
   adminId: string,
   hotelId: string,
   jwtSign: (payload: Record<string, any>) => Promise<string>
-): Promise<Omit<AdminAuthResult, "hotels">> => {
+): Promise<AdminAuthResult> => {
   const current = await prisma.adminUser.findUnique({ where: { id: adminId }, select: { username: true } });
   if (!current) {
     throw new Error("Invalid or expired session token");
@@ -140,6 +140,15 @@ export const switchAdminHotel = async (
     exp: Math.floor(Date.now() / 1000) + 64800, // 18 hours
   });
 
+  // Return the full hotel list exactly like loginAdmin so the client can keep
+  // the switcher alive — without it, a multi-hotel admin loses the switcher
+  // after the first switch (and after any hard refresh).
+  const hotels = await prisma.adminUser.findMany({
+    where: { username: current.username },
+    orderBy: { createdAt: "asc" },
+    include: { hotel: { select: { id: true, name: true } } },
+  });
+
   return {
     token,
     user: {
@@ -149,6 +158,34 @@ export const switchAdminHotel = async (
       role: target.role,
       hotelId: target.hotelId,
     },
+    hotels: hotels.map((u) => ({ id: u.hotel.id, name: u.hotel.name, role: u.role })),
+  };
+};
+
+export interface AdminMeResult extends AuthenticatedAdmin {
+  hotels: AdminHotelSummary[];
+}
+
+export const getAdminMe = async (adminId: string): Promise<AdminMeResult> => {
+  const user = await prisma.adminUser.findUnique({
+    where: { id: adminId },
+    include: { hotel: { select: { id: true, name: true } } },
+  });
+  if (!user) throw new Error("User no longer exists");
+
+  const hotels = await prisma.adminUser.findMany({
+    where: { username: user.username },
+    orderBy: { createdAt: "asc" },
+    include: { hotel: { select: { id: true, name: true } } },
+  });
+
+  return {
+    id: user.id,
+    username: user.username,
+    name: user.name,
+    role: user.role,
+    hotelId: user.hotelId,
+    hotels: hotels.map((u) => ({ id: u.hotel.id, name: u.hotel.name, role: u.role })),
   };
 };
 

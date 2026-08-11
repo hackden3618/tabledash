@@ -115,6 +115,9 @@ function resetState() {
 describe("Finance service — ledger invariants", () => {
   test("recordPayment writes ORDER_PAYMENT, updates the account and outbox atomically", async () => {
     resetState();
+    // Every real order carries an ORDER_CHARGE; seed it so the read-through
+    // cache recomputes off a complete ledger.
+    ledgerRows = [{ id: "sr-c0", hotelId: "hotel-A", orderId: "order-X", type: "ORDER_CHARGE", paymentMethod: "CREDIT", amount: 150, note: null }];
     const { recordPayment } = await import("./service");
 
     const result = await recordPayment("hotel-A", "cust-1", "order-X", "CASH", 100, "admin-1");
@@ -146,6 +149,7 @@ describe("Finance service — ledger invariants", () => {
 
   test("a full payment flips the cache to PAID", async () => {
     resetState();
+    ledgerRows = [{ id: "sr-c0", hotelId: "hotel-A", orderId: "order-X", type: "ORDER_CHARGE", paymentMethod: "CREDIT", amount: 150, note: null }];
     const { recordPayment } = await import("./service");
 
     const result = await recordPayment("hotel-A", "cust-1", "order-X", "MPESA", 150, "admin-1");
@@ -165,6 +169,7 @@ describe("Finance service — ledger invariants", () => {
 
   test("recordRefund requires a reason and writes a negative REFUND row", async () => {
     resetState();
+    ledgerRows = [{ id: "sr-c0", hotelId: "hotel-A", orderId: "order-X", type: "ORDER_CHARGE", paymentMethod: "CREDIT", amount: 150, note: null }];
     const { recordRefund } = await import("./service");
 
     await expect(recordRefund("hotel-A", "cust-1", "order-X", 50, "   ")).rejects.toThrow(
@@ -174,6 +179,8 @@ describe("Finance service — ledger invariants", () => {
     const result = await recordRefund("hotel-A", "cust-1", "order-X", 50, "Customer overpaid", "admin-1");
     const refund = ledgerRows.find((r) => r.type === "REFUND");
     expect(refund?.amount).toBe(-50);
+    // With the order's charge still on the ledger (150) and a 50 refund + 50
+    // residual reversal, the residual charge is what the customer still owes.
     expect(result.order.paymentStatus).toBe("UNPAID");
     const outbox = outboxRows.find((r) => r.eventName === "customer_account_refund_recorded");
     expect(outbox).toBeTruthy();
@@ -226,5 +233,58 @@ describe("Finance service — ledger invariants", () => {
     expect(adj?.amount).toBe(20);
     const outbox = outboxRows.find((r) => r.eventName === "customer_account_adjusted");
     expect(outbox).toBeTruthy();
+  });
+
+  test("a credit adjustment larger than the outstanding balance is not clamped away", async () => {
+    resetState();
+    const { recordAdjustment } = await import("./service");
+
+    ledgerRows = [
+      { id: "sr-c0", hotelId: "hotel-A", orderId: "order-X", type: "ORDER_CHARGE", paymentMethod: "CREDIT", amount: 150, note: null },
+    ];
+    currentAccount = { totalOwed: 150, totalPaid: 0 };
+
+    await recordAdjustment("hotel-A", "cust-1", "order-X", -200, "Goodwill credit for poor service", "admin-1");
+
+    // The ledger records the full reversal...
+    const adjSum = ledgerRows
+      .filter((r) => r.type === "ADJUSTMENT")
+      .reduce((sum, r) => sum + Number(r.amount), 0);
+    expect(adjSum).toBe(-200);
+    // ...and the cache mirrors it exactly instead of flooring at zero.
+    expect(currentAccount.totalOwed).toBe(-50);
+    expect(currentAccount.totalPaid).toBe(0);
+  });
+
+  test("an adjustment that clears the charge flips the order to settled (PAID)", async () => {
+    resetState();
+    const { recordAdjustment } = await import("./service");
+
+    ledgerRows = [
+      { id: "sr-c0", hotelId: "hotel-A", orderId: "order-X", type: "ORDER_CHARGE", paymentMethod: "CREDIT", amount: 150, note: null },
+    ];
+    currentAccount = { totalOwed: 150, totalPaid: 0 };
+
+    const result = await recordAdjustment("hotel-A", "cust-1", "order-X", -150, "Bill corrected to zero", "admin-1");
+
+    expect(result.order.paymentStatus).toBe("PAID");
+    expect(result.order.amountPaid).toBe(0);
+    expect(currentAccount.totalOwed).toBe(0);
+  });
+
+  test("a positive adjustment on a fully paid order leaves the customer owing the difference", async () => {
+    resetState();
+    const { recordAdjustment } = await import("./service");
+
+    ledgerRows = [
+      { id: "sr-c0", hotelId: "hotel-A", orderId: "order-X", type: "ORDER_CHARGE", paymentMethod: "CREDIT", amount: 150, note: null },
+      { id: "sr-p1", hotelId: "hotel-A", orderId: "order-X", type: "ORDER_PAYMENT", paymentMethod: "MPESA", amount: 150, note: null },
+    ];
+    currentAccount = { totalOwed: 150, totalPaid: 150 };
+
+    const result = await recordAdjustment("hotel-A", "cust-1", "order-X", 50, "Under-billed — adding the difference", "admin-1");
+
+    expect(result.order.paymentStatus).toBe("PARTIAL");
+    expect(currentAccount.totalOwed).toBe(200);
   });
 });

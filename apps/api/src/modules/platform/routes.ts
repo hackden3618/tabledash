@@ -4,6 +4,7 @@ import { env } from "../../../../../shared/config";
 import { formatPhone, PHONE_PATTERN } from "../../../../../shared/phone";
 import { getAllHotels, getHotelById } from "../hotels/service";
 import { loginPlatformAdmin, verifyPlatformAdminToken, updatePlatformAdminProfile, changePlatformAdminPassword } from "../auth/service";
+import { createPasswordSetupToken, buildSetupLink } from "../auth/password-setup.service";
 import { prisma } from "../../../../../infrastructure/database/prisma";
 import { AUTH_LIMITER } from "../../lib/rate-limiter";
 
@@ -220,8 +221,10 @@ export const platformRoute = new Elysia({
       catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
 
       try {
-        const tempPassword = crypto.randomUUID().split("-")[0]!;
-        const passwordHash = await Bun.password.hash(tempPassword);
+        // No password is ever generated or stored in plaintext for new accounts.
+        // The account starts locked (unknowable random hash); the SMS sent by the
+        // outbox handler carries a one-time setup link to set a real password.
+        const lockedHash = await Bun.password.hash(crypto.randomUUID());
         const formattedAdminPhone = body.adminPhone ? formatPhone(body.adminPhone) : null;
 
         const result = await prisma.$transaction(async (tx) => {
@@ -238,7 +241,7 @@ export const platformRoute = new Elysia({
           const adminUser = await tx.adminUser.create({
             data: {
               username: body.adminUsername,
-              passwordHash,
+              passwordHash: lockedHash,
               name: body.adminName,
               hotelId: hotel.id,
               role: "HOTEL_ADMIN",
@@ -255,6 +258,8 @@ export const platformRoute = new Elysia({
             },
           });
 
+          const { rawToken } = await createPasswordSetupToken(adminUser.id, "HOTEL_ADMIN", tx);
+
           await tx.eventOutbox.create({
             data: {
               eventName: "hotel_created",
@@ -264,7 +269,7 @@ export const platformRoute = new Elysia({
                 adminName: body.adminName,
                 adminUsername: body.adminUsername,
                 adminPhone: formattedAdminPhone,
-                tempPassword,
+                setupToken: rawToken,
                 createdBy: admin.name,
               }),
               hotelId: hotel.id,
@@ -272,7 +277,7 @@ export const platformRoute = new Elysia({
             },
           });
 
-          return { hotel, adminUser, tempPassword };
+          return { hotel, adminUser, setupToken: rawToken };
         });
 
         return {
@@ -280,7 +285,7 @@ export const platformRoute = new Elysia({
           data: {
             hotel: result.hotel,
             adminUser: { id: result.adminUser.id, username: result.adminUser.username, name: result.adminUser.name },
-            tempPassword: result.tempPassword,
+            setupLink: buildSetupLink(result.setupToken),
           },
         };
       } catch (err: any) {
@@ -370,13 +375,14 @@ export const platformRoute = new Elysia({
       const existing = await prisma.platformAdmin.findUnique({ where: { username: body.username } });
       if (existing) { set.status = 409; return { success: false, error: "Username already taken" }; }
 
-      const tempPassword = crypto.randomUUID().split("-")[0]!;
-      const passwordHash = await Bun.password.hash(tempPassword);
+      const lockedHash = await Bun.password.hash(crypto.randomUUID());
       const formattedPhone = formatPhone(body.phone);
 
       const admin = await prisma.platformAdmin.create({
-        data: { username: body.username, passwordHash, name: body.name },
+        data: { username: body.username, passwordHash: lockedHash, name: body.name },
       });
+
+      const { rawToken } = await createPasswordSetupToken(admin.id, "PLATFORM_ADMIN");
 
       await prisma.eventOutbox.create({
         data: {
@@ -386,7 +392,7 @@ export const platformRoute = new Elysia({
             name: admin.name,
             username: admin.username,
             phone: formattedPhone,
-            tempPassword,
+            setupToken: rawToken,
             createdBy: creator.name,
           }),
           status: "initialized",
@@ -395,7 +401,7 @@ export const platformRoute = new Elysia({
 
       return {
         success: true,
-        data: { id: admin.id, username: admin.username, name: admin.name, tempPassword },
+        data: { id: admin.id, username: admin.username, name: admin.name, setupLink: buildSetupLink(rawToken) },
       };
     },
     {

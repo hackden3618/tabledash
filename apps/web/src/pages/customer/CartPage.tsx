@@ -71,8 +71,8 @@ export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDe
         }
       }
     };
-    window.addEventListener("tabledash:realtime", handler);
-    return () => window.removeEventListener("tabledash:realtime", handler);
+    window.addEventListener("ladha:realtime", handler);
+    return () => window.removeEventListener("ladha:realtime", handler);
   }, []);
 
   const groupedCart = useMemo(() => {

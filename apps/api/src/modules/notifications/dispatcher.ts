@@ -1,5 +1,5 @@
 /**
- * Purpose: Transactional Outbox Dispatcher for tableDash.
+ * Purpose: Transactional Outbox Dispatcher for ladha.
  * Responsibilities: Polls EventOutbox for unprocessed events, dispatches via the appropriate handler,
  *   marks done on success, retries with capped attempts on failure.
  * Dependencies: Prisma client, notification handlers.
@@ -16,10 +16,7 @@ import { handleHotelAdminCreated } from "./handlers/hotel-admin-created.handler"
 import { handleHotelStaffCreated } from "./handlers/hotel-staff-created.handler";
 import { handleHotelStatusUpdated } from "./handlers/hotel-status-updated.handler";
 import { handlePlatformAdminCreated } from "./handlers/platform-admin-created.handler";
-import { handleAccountCredited } from "./handlers/account-credited.handler";
-import { handleAccountPayment } from "./handlers/account-payment.handler";
-import { handleAccountRefund } from "./handlers/account-refund.handler";
-import { handleAccountAdjustment } from "./handlers/account-adjustment.handler";
+import { handleAccountLedgerEvent } from "./handlers/account-ledger.handler";
 
 const MAX_RETRIES = 5;
 const POLL_INTERVAL_MS = 3000;
@@ -36,10 +33,10 @@ const HANDLER_MAP: Record<string, HandlerFn> = {
   hotel_admin_created: handleHotelAdminCreated,
   hotel_staff_created: handleHotelStaffCreated,
   platform_admin_created: handlePlatformAdminCreated,
-  customer_account_credited: handleAccountCredited,
-  customer_account_payment_recorded: handleAccountPayment,
-  customer_account_refund_recorded: handleAccountRefund,
-  customer_account_adjusted: handleAccountAdjustment,
+  customer_account_credited: (payload) => handleAccountLedgerEvent("credited", payload),
+  customer_account_payment_recorded: (payload) => handleAccountLedgerEvent("payment", payload),
+  customer_account_refund_recorded: (payload) => handleAccountLedgerEvent("refund", payload),
+  customer_account_adjusted: (payload) => handleAccountLedgerEvent("adjustment", payload),
 };
 
 let intervalHandle: ReturnType<typeof setInterval> | null = null;

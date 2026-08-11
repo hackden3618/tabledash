@@ -78,14 +78,18 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const switchHotel = useCallback(async (hotelId: string) => {
     if (!token) return;
-    const res = await apiPost<{ token: string; user: AdminUser }>("/auth/switch-hotel", { hotelId }, token);
+    const res = await apiPost<{ token: string; user: AdminUser; hotels: AdminHotelSummary[] }>("/auth/switch-hotel", { hotelId }, token);
     if (!res.success || !res.data) {
       throw new Error(res.error || "Unable to switch hotel");
     }
     localStorage.setItem(STORAGE_KEY, res.data.token);
     setToken(res.data.token);
     setUser(res.data.user);
-    window.location.href = "/kitchen/orders";
+    // The backend now returns the full hotel list on switch, matching loginAdmin.
+    // Without restoring it here the switcher would vanish after the first switch.
+    if (res.data.hotels) {
+      setHotels(res.data.hotels);
+    }
   }, [token]);
 
   // Hydrate profile on mount — only logout on explicit auth failure, not network errors
@@ -95,9 +99,14 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return;
     }
     setHydrating(true);
-    apiGet<AdminUser>("/auth/me", token).then((res) => {
+    apiGet<AdminUser & { hotels?: AdminHotelSummary[] }>("/auth/me", token).then((res) => {
       if (res.success && res.data) {
         setUser(res.data);
+        // /auth/me now returns the hotel list, so a hard refresh (and cold PWA
+        // start) restores the switcher instead of losing it until next login.
+        if (res.data.hotels) {
+          setHotels(res.data.hotels);
+        }
       } else if (res.error?.includes("Invalid") || res.error?.includes("expired")) {
         logout();
       }

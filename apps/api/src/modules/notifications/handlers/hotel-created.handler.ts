@@ -1,5 +1,6 @@
-import { env } from "../../../../../../shared/config";
 import { smsService } from "../sms.service";
+import { buildSetupLink } from "../../auth/password-setup.service";
+import { hotelWelcome } from "../templates";
 
 interface HotelCreatedPayload {
   hotelId: string;
@@ -7,7 +8,7 @@ interface HotelCreatedPayload {
   adminName: string;
   adminUsername: string;
   adminPhone: string;
-  tempPassword: string;
+  setupToken: string;
 }
 
 export async function handleHotelCreated(payload: Record<string, unknown>): Promise<boolean> {
@@ -15,7 +16,10 @@ export async function handleHotelCreated(payload: Record<string, unknown>): Prom
 
   if (!data.adminPhone) return true;
 
-  const message = `Welcome to Ladha Deliveries! You've been registered as admin for ${data.hotelName}. Login at the kitchen dashboard at ${env.publicUrl}/kitchen with username "${data.adminUsername}" and temporary password: ${data.tempPassword}. Please change your password on first login. - Ladha Deliveries`;
+  const message = hotelWelcome({
+    hotelName: data.hotelName,
+    setupLink: buildSetupLink(data.setupToken),
+  });
 
   const result = await smsService.sendSms(data.adminPhone, message);
   return result;

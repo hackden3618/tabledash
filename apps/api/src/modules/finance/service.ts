@@ -33,6 +33,7 @@ async function upsertCustomerAccount(
 }
 
 function computePaymentStatus(totalAmount: number, amountPaid: number): "UNPAID" | "PARTIAL" | "PAID" {
+  if (totalAmount <= 0) return "PAID";
   if (amountPaid <= 0) return "UNPAID";
   if (amountPaid >= totalAmount) return "PAID";
   return "PARTIAL";
@@ -42,18 +43,30 @@ function computePaymentStatus(totalAmount: number, amountPaid: number): "UNPAID"
  * Recomputes Order.paymentStatus / amountPaid from the sum of that order's
  * SalesRecords — the only writer of the read-through payment cache. Runs inside
  * the caller's transaction so cache + ledger stay atomic.
+ *
+ * ADJUSTMENT rows are owed-side corrections: a price correction, a forgiven
+ * credit, or the cancellation reversal. They are summed into the charge so the
+ * order's cached financial state always matches the ledger — an order whose
+ * charge was adjusted away reads as settled, not as still owing.
  */
 async function recomputeOrderCacheTx(tx: any, orderId: string) {
   const records: { type: string; amount: unknown }[] = await tx.salesRecord.findMany({ where: { orderId } });
+  const charge = records
+    .filter((r) => r.type === "ORDER_CHARGE")
+    .reduce((sum, r) => sum + Number(r.amount), 0);
+  const adjustments = records
+    .filter((r) => r.type === "ADJUSTMENT")
+    .reduce((sum, r) => sum + Number(r.amount), 0);
   const paid = records
     .filter((r) => r.type === "ORDER_PAYMENT")
     .reduce((sum, r) => sum + Number(r.amount), 0);
   const refunded = records
     .filter((r) => r.type === "REFUND")
     .reduce((sum, r) => sum + Math.abs(Number(r.amount)), 0);
+  const netCharge = charge + adjustments;
   const amountPaid = Math.max(0, paid - refunded);
   const order = await tx.order.findUniqueOrThrow({ where: { id: orderId } });
-  const paymentStatus = computePaymentStatus(Number(order.totalAmount), amountPaid);
+  const paymentStatus = computePaymentStatus(netCharge, amountPaid);
   return tx.order.update({
     where: { id: orderId },
     data: { amountPaid, paymentStatus },
@@ -61,7 +74,13 @@ async function recomputeOrderCacheTx(tx: any, orderId: string) {
   });
 }
 
-/** Clamps a CustomerAccount update so neither totalOwed nor totalPaid goes negative. */
+/**
+ * Applies a delta to a CustomerAccount so the cache always equals the ledger.
+ * The very first row a customer gets is the ORDER_CHARGE, so the create path
+ * clamps harmlessly; the update path must NOT clamp, or a credit-bearing
+ * adjustment larger than the outstanding balance would silently drop the
+ * difference and leave the cache permanently out of step with sales_records.
+ */
 async function adjustAccountTx(tx: any, hotelId: string, customerId: string, owedDelta: number, paidDelta: number) {
   const account = await tx.customerAccount.findUnique({
     where: { hotelId_customerId: { hotelId, customerId } },
@@ -71,8 +90,8 @@ async function adjustAccountTx(tx: any, hotelId: string, customerId: string, owe
       data: { hotelId, customerId, totalOwed: Math.max(0, owedDelta), totalPaid: Math.max(0, paidDelta) },
     });
   }
-  const nextOwed = Math.max(0, Number(account.totalOwed) + owedDelta);
-  const nextPaid = Math.max(0, Number(account.totalPaid) + paidDelta);
+  const nextOwed = Number(account.totalOwed) + owedDelta;
+  const nextPaid = Number(account.totalPaid) + paidDelta;
   return tx.customerAccount.update({
     where: { hotelId_customerId: { hotelId, customerId } },
     data: { totalOwed: nextOwed, totalPaid: nextPaid },

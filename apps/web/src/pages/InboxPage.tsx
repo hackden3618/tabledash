@@ -118,7 +118,7 @@ export const InboxPage: React.FC<{ token?: string; actorId?: string; onBack: () 
         });
     };
 
-    const conversationSocket = { send: (payload: unknown) => window.dispatchEvent(new CustomEvent("tabledash:send", { detail: payload })) };
+    const conversationSocket = { send: (payload: unknown) => window.dispatchEvent(new CustomEvent("ladha:send", { detail: payload })) };
 
     useEffect(() => {
         const handleRealtime = (event: Event) => {
@@ -150,8 +150,8 @@ export const InboxPage: React.FC<{ token?: string; actorId?: string; onBack: () 
                 if (selected?.id === updated.conversationId) setMessages((current) => current.map((msg) => msg.id === updated.id ? updated : msg));
             }
         };
-        window.addEventListener("tabledash:realtime", handleRealtime);
-        return () => window.removeEventListener("tabledash:realtime", handleRealtime);
+        window.addEventListener("ladha:realtime", handleRealtime);
+        return () => window.removeEventListener("ladha:realtime", handleRealtime);
     }, [selected?.id, token]);
 
     useEffect(() => { void loadInbox(); }, [token]);
@@ -411,7 +411,7 @@ export const InboxPage: React.FC<{ token?: string; actorId?: string; onBack: () 
                     )}
                 </div>
             ) : (
-                <div className="flex flex-col relative" style={{ height: `calc(100dvh - 64px - ${composerSafeArea} - ${mode === "hotel" ? 72 : 56}px)` }}>
+                <div className="flex flex-col relative" style={{ height: mode === "hotel" ? "calc(100dvh - 64px - var(--admin-nav-height, calc(72px + env(safe-area-inset-bottom, 0px))))" : `calc(100dvh - 64px - ${composerSafeArea} - 56px)` }}>
                     <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 px-4 py-5 space-y-3 overflow-y-auto">
                         <div className="rounded-2xl border border-[#E5E7EB] bg-white px-4 py-3 flex items-start justify-between gap-2">
                             <div>

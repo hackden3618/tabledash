@@ -204,7 +204,22 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
     };
 
     // ── Toggle Hotel ──
-    const handleToggleHotel = async (id: string) => {
+    // Always confirm the exact change first (suspend vs activate) and only act
+    // once the platform admin commits to it — an open/closed flip impacts real
+    // order flow for customers and staff, so it must never happen by accident.
+    const handleToggleHotel = (id: string, action: "open" | "close") => {
+        const hotel = hotels.find((h) => h.id === id);
+        const hotelName = hotel?.name || "This hotel";
+        setConfirm({
+            title: action === "close" ? `Suspend ${hotelName}?` : `Activate ${hotelName}?`,
+            message: action === "close"
+                ? `Customers will stop being able to order from ${hotelName} and the kitchen will no longer receive new orders. Staff are notified by SMS. Are you sure?`
+                : `Customers will be able to order from ${hotelName} again immediately. Are you sure?`,
+            onConfirm: () => void performToggleHotel(id),
+        });
+    };
+
+    const performToggleHotel = async (id: string) => {
         const res = await apiPatch<Hotel>(`/platform/hotels/${id}/toggle`, {}, token);
         if (res.success && res.data) {
             pushNotification("info", "Hotel updated", `${res.data.name} is now ${res.data.isOpen ? "open" : "closed"}`, { scope: "platform" });
@@ -218,7 +233,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
     // ── Create Admin ──
     const handleCreateAdmin = async () => {
         setAdminSubmitting(true);
-        const res = await apiPost<AdminUser & { tempPassword: string }>("/platform/admins", adminForm, token);
+        const res = await apiPost<AdminUser & { setupLink: string }>("/platform/admins", adminForm, token);
         setAdminSubmitting(false);
         if (res.success && res.data) {
             setAdminResult(res.data);
@@ -546,9 +561,9 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                             <div style={{ background: T.successMuted, borderRadius: T.radius, padding: s(4), margin: `${s(4)} auto`, maxWidth: "400px", textAlign: "left", fontSize: "0.9rem", color: T.text, border: `1px solid #A7F3D0` }}>
                                 <div style={{ fontWeight: 700, marginBottom: s(2) }}>Welcome SMS will be sent to:</div>
                                 <div style={{ color: T.textMuted, marginBottom: s(2) }}>{hotelForm.adminName} at {hotelForm.adminPhone}</div>
-                                <div style={{ fontWeight: 700, marginBottom: s(1) }}>Hotel Admin Credentials:</div>
-                                <div style={{ color: T.textMuted }}>Username: <strong>{hotelForm.adminUsername}</strong></div>
-                                <div style={{ color: T.textMuted }}>Temp password: <strong style={{ fontFamily: "monospace" }}>{createResult.tempPassword}</strong></div>
+                                <div style={{ fontWeight: 700, marginBottom: s(1) }}>Hotel Admin Setup Link:</div>
+                                <div style={{ color: T.textMuted, wordBreak: "break-all" }}><strong>{createResult.setupLink}</strong></div>
+                                <div style={{ fontSize: "0.8rem", color: T.textMuted, marginTop: s(1) }}>The link is also sent via SMS and expires in 24h.</div>
                             </div>
                             <button onClick={() => { setCreateResult(null); setHotelForm({ name: "", slug: "", adminUsername: "", adminName: "", adminPhone: "", zoneId: regions[0]?.id ?? "", isOpen: true, autoCloseAt: "" }); setView("hotels"); }}
                                 style={{ background: T.primary, color: "white", border: "none", padding: `${s(3)} ${s(6)}`, borderRadius: T.radius, fontWeight: 700, cursor: "pointer", marginTop: s(4) }}>Done</button>
@@ -658,12 +673,12 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                             <div style={{ width: "64px", height: "64px", borderRadius: "50%", background: T.primaryMuted, color: T.primary, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: "1.5rem" }}>🔑</div>
                             <h2 style={{ fontSize: "1.3rem", fontWeight: 700, color: T.text, marginBottom: s(2) }}>Platform Admin Created</h2>
                             <div style={{ background: T.primaryMuted, borderRadius: T.radius, padding: s(4), margin: `${s(4)} auto`, maxWidth: "380px", textAlign: "left", fontSize: "0.9rem", border: `1px solid ${T.primaryLight}` }}>
-                                <div style={{ fontWeight: 700, marginBottom: s(2) }}>One-time credentials:</div>
+                                <div style={{ fontWeight: 700, marginBottom: s(2) }}>One-time setup link:</div>
                                 <div style={{ color: T.textMuted }}>Username: <strong>{adminResult.username}</strong></div>
                                 <div style={{ color: T.textMuted }}>Name: <strong>{adminResult.name}</strong></div>
-                                <div style={{ color: T.textMuted }}>Temp password: <strong style={{ fontFamily: "monospace" }}>{adminResult.tempPassword}</strong></div>
+                                <div style={{ color: T.textMuted, wordBreak: "break-all" }}>Link: <strong>{adminResult.setupLink}</strong></div>
                             </div>
-                            <div style={{ fontSize: "0.85rem", color: T.textMuted, marginTop: s(2) }}>The password has also been sent via SMS to their phone.</div>
+                            <div style={{ fontSize: "0.85rem", color: T.textMuted, marginTop: s(2) }}>The link has also been sent via SMS to their phone and expires in 2h.</div>
                             <button onClick={() => { setAdminResult(null); setAdminForm({ username: "", name: "", phone: "" }); setView("admins"); }}
                                 style={{ background: T.primary, color: "white", border: "none", padding: `${s(3)} ${s(6)}`, borderRadius: T.radius, fontWeight: 700, cursor: "pointer", marginTop: s(4) }}>Done</button>
                         </div>
@@ -837,7 +852,7 @@ function ServingRegionsPage({ regions, token, onChanged }: { regions: DeliveryRe
 }
 
 // ── Hotel Detail sub-view ──
-function HotelDetail({ hotelId, onBack, onToggle, token: tok, regions }: { hotelId: string; onBack: () => void; onToggle: (id: string) => void; token: string; regions: DeliveryRegion[] }) {
+function HotelDetail({ hotelId, onBack, onToggle, token: tok, regions }: { hotelId: string; onBack: () => void; onToggle: (id: string, action: "open" | "close") => void; token: string; regions: DeliveryRegion[] }) {
     const [hotel, setHotel] = useState<Hotel | null>(null);
     const [detailLoading, setDetailLoading] = useState(true);
     const [zoneId, setZoneId] = useState("");
@@ -915,7 +930,7 @@ function HotelDetail({ hotelId, onBack, onToggle, token: tok, regions }: { hotel
                     </div>
                 </div>
                 <div style={{ display: "flex", gap: s(2) }}>
-                    <button onClick={() => onToggle(hotel.id)}
+                    <button onClick={() => onToggle(hotel.id, hotel.isOpen ? "close" : "open")}
                         style={{ background: hotel.isOpen ? T2.dangerMuted : T2.successMuted, color: hotel.isOpen ? T2.danger : T2.success, border: `1px solid ${hotel.isOpen ? "#FECACA" : "#A7F3D0"}`, padding: `${s(2)} ${s(4)}`, borderRadius: T2.radius, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>
                         {hotel.isOpen ? "Suspend" : "Activate"}
                     </button>

@@ -1,11 +1,12 @@
 /**
- * Purpose: Order Processing & Status Lifecycle Service for tableDash.
+ * Purpose: Order Processing & Status Lifecycle Service for ladha.
  * Responsibilities: Handles transactional order placement, status state transitions, metric aggregation for admin dashboard, SMS dispatching, and real-time WebSocket broadcasting.
  * Dependencies: Prisma database client, SMS notification service, WebSocket Hub.
  * When to modify: When adding order workflow steps, altering dashboard calculation metrics, or customizing SMS alert messages.
  */
 
 import { prisma } from "../../../../../infrastructure/database/prisma";
+import { env } from "../../../../../shared/config";
 import type { DashboardMetrics, OrderStatus } from "../../../../../shared/types";
 import { smsService } from "../notifications/sms.service";
 import { getDefaultHotel } from "../hotels/service";
@@ -682,8 +683,8 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus, canc
         if (formattedOrder.customer?.phone) {
             const displayName = buildCustomerDisplay(formattedOrder.customer.firstName, formattedOrder.customer.lastName, formattedOrder.knownName);
             const msg = isCustomerCancel
-                ? `Hello ${displayName}, order #${formattedOrder.orderNumber} from ${hotelName} has been CANCELLED as you requested. Track your orders: https://tabledash.up.railway.app`
-                : `Hello ${displayName}, we are sorry to inform you that order #${formattedOrder.orderNumber} from ${hotelName} has been cancelled. Reason: ${cancelReason || "Staff unavailable"}. We appreciate your understanding. Track your orders: https://tabledash.up.railway.app`;
+                ? `Hello ${displayName}, order #${formattedOrder.orderNumber} from ${hotelName} has been CANCELLED as you requested. Track your orders: ${env.publicUrl}`
+                : `Hello ${displayName}, we are sorry to inform you that order #${formattedOrder.orderNumber} from ${hotelName} has been cancelled. Reason: ${cancelReason || "Staff unavailable"}. We appreciate your understanding. Track your orders: ${env.publicUrl}`;
             (async () => {
                 try {
                     await smsService.sendSms(formattedOrder.customer.phone, msg);

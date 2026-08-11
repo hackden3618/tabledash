@@ -1,11 +1,13 @@
 import { smsService } from "../sms.service";
+import { buildSetupLink } from "../../auth/password-setup.service";
+import { staffWelcome } from "../templates";
 
 interface HotelAdminCreatedPayload {
   adminName: string;
   adminUsername: string;
   adminPhone: string;
   hotelName: string;
-  tempPassword: string;
+  setupToken: string;
 }
 
 export async function handleHotelAdminCreated(payload: Record<string, unknown>): Promise<boolean> {
@@ -13,7 +15,12 @@ export async function handleHotelAdminCreated(payload: Record<string, unknown>):
 
   if (!data.adminPhone) return true;
 
-  const message = `Welcome to ${data.hotelName}! You've been added as a hotel admin. Login with username "${data.adminUsername}" and temporary password: ${data.tempPassword}. Please change your password on first login. - Ladha Deliveries`;
+  const message = staffWelcome({
+    staffName: data.adminName,
+    role: "hotel admin",
+    hotelName: data.hotelName,
+    setupLink: buildSetupLink(data.setupToken),
+  });
 
   const result = await smsService.sendSms(data.adminPhone, message);
   return result;

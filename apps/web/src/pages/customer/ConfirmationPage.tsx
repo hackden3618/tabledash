@@ -30,8 +30,8 @@ export const ConfirmationPage: React.FC<ConfirmationPageProps> = ({
         }
       }
     };
-    window.addEventListener("tabledash:realtime", handler);
-    return () => window.removeEventListener("tabledash:realtime", handler);
+    window.addEventListener("ladha:realtime", handler);
+    return () => window.removeEventListener("ladha:realtime", handler);
   }, [order?.id]);
 
   const formattedDate = order?.orderedAt

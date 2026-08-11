@@ -1,5 +1,5 @@
 /**
- * Purpose: Shared TypeScript interfaces and type definitions for tableDash monorepo.
+ * Purpose: Shared TypeScript interfaces and type definitions for ladha monorepo.
  * Responsibilities: Provides common domain types, order structures, websocket event definitions, and dashboard summary interfaces.
  * Dependencies: None (pure TypeScript contract file).
  * When to modify: When adding new domain data structures or updating WebSocket message contracts.
