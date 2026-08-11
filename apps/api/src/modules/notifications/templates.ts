@@ -89,6 +89,21 @@ export const hotelCancellation = (p: HotelCancellationParams): string =>
   `We are sorry for the inconvenience.\n` +
   `Order again: ${p.link}`;
 
+export interface OrderCancelledToHotelParams {
+  hotelName: string;
+  orderNumber: number;
+  stallNumber?: string;
+  reason: string;
+}
+export const orderCancelledToHotel = (p: OrderCancelledToHotelParams): string => {
+  const stallTag = p.stallNumber ? ` | Stall: ${p.stallNumber}` : "";
+  return (
+    `[${p.hotelName}] ORDER #${p.orderNumber} CANCELLED${stallTag}\n` +
+    `Reason: ${p.reason}\n` +
+    `No delivery needed.`
+  );
+};
+
 export interface PaymentReceivedParams {
   orderNumber: number;
   amountPaid: number;

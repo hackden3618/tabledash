@@ -1,16 +1,19 @@
 import { prisma } from "../../../../../../infrastructure/database/prisma";
 import { env } from "../../../../../../shared/config";
 import { smsService } from "../sms.service";
+import { getSmsRecipients } from "../../settings/service";
 import {
   orderAcceptedToCustomer,
   orderOutForDeliveryToCustomer,
   firstDeliveredToCustomer,
   customerCancellation,
   hotelCancellation,
+  orderCancelledToHotel,
 } from "../templates";
 
 interface OrderStatusPayload {
   orderId: string;
+  hotelId?: string;
   orderNumber: number;
   customerName: string;
   firstName?: string;
@@ -69,8 +72,23 @@ export async function handleOrderStatusUpdated(payload: Record<string, unknown>)
     return true;
   }
 
-  const result = await smsService.sendSms(data.customerPhone, message);
-  return result;
+  const customerSent = await smsService.sendSms(data.customerPhone, message);
+
+  // Hotel staff abort alert — sent in addition to the customer SMS on cancellation.
+  if (data.newStatus === "CANCELLED" && data.hotelId) {
+    const staffPhones = await getSmsRecipients(data.hotelId).catch(() => []);
+    if (staffPhones.length > 0) {
+      const abortMsg = orderCancelledToHotel({
+        hotelName,
+        orderNumber: data.orderNumber,
+        stallNumber: data.stallNumber,
+        reason: data.cancelReason || "Staff unavailable",
+      });
+      await Promise.all(staffPhones.map((phone) => smsService.sendSms(phone, abortMsg).catch(() => false)));
+    }
+  }
+
+  return customerSent;
 }
 
 /**

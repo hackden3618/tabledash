@@ -1,16 +1,13 @@
 /**
  * Purpose: Order Processing & Status Lifecycle Service for ladha.
- * Responsibilities: Handles transactional order placement, status state transitions, metric aggregation for admin dashboard, SMS dispatching, and real-time WebSocket broadcasting.
- * Dependencies: Prisma database client, SMS notification service, WebSocket Hub.
- * When to modify: When adding order workflow steps, altering dashboard calculation metrics, or customizing SMS alert messages.
+ * Responsibilities: Handles transactional order placement, status state transitions, metric aggregation for admin dashboard, and real-time WebSocket broadcasting. SMS dispatching is owned by the outbox dispatcher via handlers in the notifications module.
+ * Dependencies: Prisma database client, WebSocket Hub.
+ * When to modify: When adding order workflow steps, altering dashboard calculation metrics, or changing WS event payloads.
  */
 
 import { prisma } from "../../../../../infrastructure/database/prisma";
-import { env } from "../../../../../shared/config";
 import type { DashboardMetrics, OrderStatus } from "../../../../../shared/types";
-import { smsService } from "../notifications/sms.service";
 import { getDefaultHotel } from "../hotels/service";
-import { getSmsRecipients } from "../settings/service";
 import { wsHub } from "../websocket/hub";
 import { formatPhone } from "../../../../../shared/phone";
 import { calculateDashboardMetrics, normalizeOrderItems, PENDING_STATUSES } from "./logic";
@@ -374,9 +371,10 @@ export const placeOrder = async (input: CreateOrderInput) => {
         }, prod.hotelId ?? undefined);
     }
 
-    // Broadcast each order to admins
+    // Broadcast each order to admins via WebSocket.
+    // SMS notification is handled by the outbox dispatcher via handleOrderCreated
+    // → orderAlertToHotel, using the centralized template. Do not send SMS here.
     for (let i = 0; i < result.orders.length; i++) {
-        const order = result.orders[i]!;
         const formattedOrder = formattedOrders[i]!;
         const group = Array.from(hotelGroups.values())[i]!;
 
@@ -384,34 +382,6 @@ export const placeOrder = async (input: CreateOrderInput) => {
             type: "ORDER_CREATED",
             payload: formattedOrder,
         });
-
-        const staffPhones = await getSmsRecipients(group.hotelId);
-        if (staffPhones.length > 0) {
-            const itemsSummary = formattedOrder.orderItems?.map((it: any) => `${it.quantity}x ${it.name}`).join(", ") || "";
-            const stall = input.stallNumber || "N/A";
-            const desc = input.locationDescription || "N/A";
-            const displayName = buildCustomerDisplay(input.firstName, input.lastName, input.knownName);
-            const msg = `[${group.hotelName}] NEW ORDER #${formattedOrder.orderNumber} from ${displayName} (${input.phone}). Total: KSh ${formattedOrder.totalAmount}. Stall: ${stall} — ${desc}. Items: ${itemsSummary}`;
-
-            Promise.all(
-                staffPhones.map((phone) =>
-                    smsService.sendSms(phone, msg).catch(() => false)
-                )
-            ).then((results) => {
-                const allSent = results.every((r) => r !== false);
-                if (allSent && result.outboxIds[i]) {
-                    prisma.eventOutbox.update({
-                        where: { id: result.outboxIds[i]! },
-                        data: { status: "done", completedAt: new Date() },
-                    }).catch(() => { });
-                }
-            }).catch(() => { });
-        } else if (result.outboxIds[i]) {
-            prisma.eventOutbox.update({
-                where: { id: result.outboxIds[i]! },
-                data: { status: "done", completedAt: new Date() },
-            }).catch(() => { });
-        }
     }
 
     // Return first order for backward compatibility with single-order consumers.
@@ -588,6 +558,7 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus, canc
                 hotelId: updatedOrder.hotelId,
                 payload: JSON.stringify({
                     orderId: updatedOrder.id,
+                    hotelId: updatedOrder.hotelId,
                     orderNumber: updatedOrder.orderNumber,
                     customerName: buildCustomerDisplay(updatedOrder.customer.firstName, updatedOrder.customer.lastName, updatedOrder.customer.knownName),
                     firstName: updatedOrder.customer.firstName,
@@ -657,63 +628,9 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus, canc
         wsHub.broadcastToIdentities(customerRecipientIdentityKeys, cancelNotification);
     }
 
-    if (newStatus === "OUT_FOR_DELIVERY" && formattedOrder.customer?.phone) {
-        const stallInfo = formattedOrder.stallNumber ? ` at Stall ${formattedOrder.stallNumber}` : " at your stall";
-        const displayName = buildCustomerDisplay(formattedOrder.customer.firstName, formattedOrder.customer.lastName, formattedOrder.knownName);
-        const customerSmsMessage = `Hello ${displayName}, your order #${formattedOrder.orderNumber} from ${hotelName} is OUT FOR DELIVERY! Be ready to receive your delivery${stallInfo}. Our rider is on the way. Total: KSh ${formattedOrder.totalAmount}.`;
-        (async () => {
-            try {
-                await smsService.sendSms(formattedOrder.customer.phone, customerSmsMessage);
-                if (updated.outboxId) {
-                    await prisma.eventOutbox.update({
-                        where: { id: updated.outboxId },
-                        data: { status: "done", completedAt: new Date() },
-                    });
-                }
-            } catch (err) {
-                console.error("[Customer Out-For-Delivery SMS Error]:", err);
-            }
-        })();
-    }
-
-    if (newStatus === "CANCELLED") {
-        const isCustomerCancel = (cancelReason || "").toLowerCase().includes("customer");
-
-        // Customer SMS: apology if staff-cancelled, confirmation if self-cancelled
-        if (formattedOrder.customer?.phone) {
-            const displayName = buildCustomerDisplay(formattedOrder.customer.firstName, formattedOrder.customer.lastName, formattedOrder.knownName);
-            const msg = isCustomerCancel
-                ? `Hello ${displayName}, order #${formattedOrder.orderNumber} from ${hotelName} has been CANCELLED as you requested. Track your orders: ${env.publicUrl}`
-                : `Hello ${displayName}, we are sorry to inform you that order #${formattedOrder.orderNumber} from ${hotelName} has been cancelled. Reason: ${cancelReason || "Staff unavailable"}. We appreciate your understanding. Track your orders: ${env.publicUrl}`;
-            (async () => {
-                try {
-                    await smsService.sendSms(formattedOrder.customer.phone, msg);
-                } catch (err) {
-                    console.error("[Customer Cancel SMS Error]:", err);
-                }
-            })();
-        }
-
-        // Staff abort SMS — notify staff to abort delivery
-        const staffPhones = await getSmsRecipients(existing.hotelId || undefined).catch(() => []);
-        if (staffPhones.length > 0) {
-            const stallTag = formattedOrder.stallNumber ? ` (Stall ${formattedOrder.stallNumber})` : "";
-            const staffAbortMessage = `[${hotelName}] ABORT: Order #${formattedOrder.orderNumber}${stallTag} has been CANCELLED. Reason: ${cancelReason || "Staff unavailable"}. No delivery needed.`;
-            Promise.all(
-                staffPhones.map((phone) =>
-                    smsService.sendSms(phone, staffAbortMessage).catch(() => false)
-                )
-            ).catch(() => { });
-        }
-
-        // Mark outbox as done to prevent duplicate SMS from the outbox handler
-        if (updated.outboxId) {
-            prisma.eventOutbox.update({
-                where: { id: updated.outboxId },
-                data: { status: "done", completedAt: new Date() },
-            }).catch(() => { });
-        }
-    }
+    // WS: dispatch and cancellation in-app notifications are sent above.
+    // SMS for all statuses (OUT_FOR_DELIVERY, CANCELLED, etc.) is handled by
+    // the outbox dispatcher via handleOrderStatusUpdated → templates.ts.
 
     return formattedOrder;
 };
