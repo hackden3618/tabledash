@@ -28,14 +28,18 @@ export async function handleOrderCreated(payload: Record<string, unknown>): Prom
   const stall = data.stallNumber || data.marketSection;
   const stallStr = stall ? (stall.toLowerCase().startsWith("stall") ? stall : `Stall ${stall}`) : "";
   const locParts = [stallStr, data.locationDescription].filter(Boolean);
-  const location = locParts.length > 0 ? locParts.join(": ") : "N/A";
+  const location = locParts.length > 0 ? locParts.join(" — ") : "N/A";
+
+  const items = data.itemsSummary
+    ? (data.itemsSummary.includes("\n") ? data.itemsSummary : data.itemsSummary.split(/,\s*/).join("\n"))
+    : "";
 
   const message = orderAlertToHotel({
     orderNumber: data.orderNumber,
     customerName: data.customerName,
     customerPhone: data.customerPhone,
     locationDescription: location,
-    itemsSummary: data.itemsSummary,
+    itemsSummary: items,
     totalAmount: data.totalAmount,
   });
 

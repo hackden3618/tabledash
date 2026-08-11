@@ -298,7 +298,7 @@ export const placeOrder = async (input: CreateOrderInput) => {
             // from either the customer or the kitchen, so an inbox stays quiet unless
             // someone actually has something to say.
 
-            const itemsSummary = group.orderItemData.map((it) => `${it.quantity}x ${it.name}`).join(", ");
+            const itemsSummary = group.orderItemData.map((it) => `${it.quantity}x ${it.name}`).join("\n");
             const outbox = await tx.eventOutbox.create({
                 data: {
                     eventName: "order_created",
