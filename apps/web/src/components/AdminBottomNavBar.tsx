@@ -27,6 +27,7 @@ export const AdminBottomNavBar: React.FC<AdminBottomNavBarProps> = ({
 }) => {
   const { token, user, hotels, switchHotel } = useAdminAuth();
   const [messageCount, setMessageCount] = React.useState(0);
+  const [pendingOrderCount, setPendingOrderCount] = React.useState(0);
   const [hotelMenuOpen, setHotelMenuOpen] = React.useState(false);
   const [switchError, setSwitchError] = React.useState("");
   const refreshMessageCount = React.useCallback(async () => {
@@ -34,7 +35,13 @@ export const AdminBottomNavBar: React.FC<AdminBottomNavBarProps> = ({
     const result = await apiGet<{ unreadCount: number }>("/messaging/unread-count", token);
     if (result.success) setMessageCount(result.data?.unreadCount || 0);
   }, [token]);
+  const refreshPendingCount = React.useCallback(async () => {
+    if (!token) { setPendingOrderCount(0); return; }
+    const result = await apiGet<{ count: number }>("/orders/pending-count", token);
+    if (result.success) setPendingOrderCount(result.data?.count || 0);
+  }, [token]);
   React.useEffect(() => { void refreshMessageCount(); }, [refreshMessageCount]);
+  React.useEffect(() => { void refreshPendingCount(); }, [refreshPendingCount]);
   React.useEffect(() => {
     const handleRealtime = (event: Event) => {
       const detail = (event as CustomEvent<{ type: string; payload?: { senderIdentityKey?: string } }>).detail;
@@ -42,10 +49,11 @@ export const AdminBottomNavBar: React.FC<AdminBottomNavBarProps> = ({
       if ((detail.type === "MESSAGE_CREATED" || detail.type === "ANNOUNCEMENT_PUBLISHED") && detail.payload?.senderIdentityKey !== currentIdentityKey) setMessageCount((count) => count + 1);
       if (detail.type === "CONVERSATION_CREATED") void refreshMessageCount();
       if (detail.type === "CONVERSATION_READ") void refreshMessageCount();
+      if (detail.type === "ORDER_CREATED" || detail.type === "ORDER_STATUS_UPDATED") void refreshPendingCount();
     };
     window.addEventListener("ladha:realtime", handleRealtime);
     return () => window.removeEventListener("ladha:realtime", handleRealtime);
-  }, [refreshMessageCount, user?.id]);
+  }, [refreshMessageCount, refreshPendingCount, user?.id]);
 
   const currentHotel = hotels.find((h) => h.id === user?.hotelId);
   const showHotelBar = hotels.length > 1;
@@ -152,12 +160,17 @@ export const AdminBottomNavBar: React.FC<AdminBottomNavBarProps> = ({
             >
               {isOrders ? (
                 <div className={`
-                  flex items-center justify-center w-12 h-12 rounded-full -mt-3
+                  relative flex items-center justify-center w-12 h-12 rounded-full -mt-3
                   transition-all duration-200 shadow-[0_4px_14px_rgba(17,75,54,0.35)]
                   ${isActive ? "bg-[#0D3D2B] shadow-[0_4px_18px_rgba(17,75,54,0.45)]" : "bg-[#114B36]"}
                   text-white
                 `}>
                   <Icon size={22} strokeWidth={2.5} />
+                  {pendingOrderCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-4.5 h-4.5 px-1 rounded-full bg-[#EF4444] text-white text-[0.6rem] font-bold flex items-center justify-center shadow-md">
+                      {pendingOrderCount > 99 ? "99+" : pendingOrderCount}
+                    </span>
+                  )}
                 </div>
               ) : (
                   <Icon size={20} strokeWidth={isActive ? 2.5 : 1.5} />

@@ -462,24 +462,33 @@ export async function getFinanceDashboard(hotelId: string) {
   const todayStr = new Date().toISOString().split("T")[0]!;
   const todayRecords = records.filter((r) => r.createdAt.toISOString().startsWith(todayStr));
 
-  const todayRevenue = todayRecords
-    .filter((r) => r.type === "ORDER_PAYMENT")
-    .reduce((sum, r) => sum + Number(r.amount), 0);
-  const cashRevenue = todayRecords
+  const cashPayments = todayRecords
     .filter((r) => r.type === "ORDER_PAYMENT" && r.paymentMethod === "CASH")
     .reduce((sum, r) => sum + Number(r.amount), 0);
-  const mpesaRevenue = todayRecords
+  const mpesaPayments = todayRecords
     .filter((r) => r.type === "ORDER_PAYMENT" && r.paymentMethod === "MPESA")
     .reduce((sum, r) => sum + Number(r.amount), 0);
+  const cashRefunds = todayRecords
+    .filter((r) => r.type === "REFUND" && r.paymentMethod === "CASH")
+    .reduce((sum, r) => sum + Math.abs(Number(r.amount)), 0);
+  const mpesaRefunds = todayRecords
+    .filter((r) => r.type === "REFUND" && r.paymentMethod === "MPESA")
+    .reduce((sum, r) => sum + Math.abs(Number(r.amount)), 0);
   const creditRevenue = todayRecords
     .filter((r) => r.type === "ORDER_CHARGE")
     .reduce((sum, r) => sum + Number(r.amount), 0);
-  const refundsAmount = todayRecords
-    .filter((r) => r.type === "REFUND")
-    .reduce((sum, r) => sum + Math.abs(Number(r.amount)), 0);
+  const refundsAmount = cashRefunds + mpesaRefunds;
   const refundsProcessed = todayRecords
     .filter((r) => r.type === "REFUND")
     .length;
+
+  // Revenue is money actually kept: each method is net of its own refunds, so
+  // Today's Revenue always equals Cash Revenue + M-Pesa Revenue and the cards
+  // reconcile. A refund is cash taken back out of the hotel's till, so it must
+  // reduce the method it was paid back in, not just the total.
+  const cashRevenue = cashPayments - cashRefunds;
+  const mpesaRevenue = mpesaPayments - mpesaRefunds;
+  const todayRevenue = cashRevenue + mpesaRevenue;
 
   const orders = await prisma.order.findMany({
     where: { hotelId },
@@ -487,7 +496,8 @@ export async function getFinanceDashboard(hotelId: string) {
   });
 
   const cancelledCount = orders.filter((o) => o.status === "CANCELLED").length;
-  const dailyCashPosition = cashRevenue - refundsAmount;
+  // Net cash in the till: cash collected minus cash refunds paid back out.
+  const dailyCashPosition = cashRevenue;
 
   const accounts = await prisma.customerAccount.findMany({
     where: { hotelId },
@@ -517,10 +527,14 @@ export async function getFinanceDashboard(hotelId: string) {
     const d = new Date(weekStart);
     d.setDate(d.getDate() + i);
     const dayStr = d.toISOString().split("T")[0]!;
-    const dayPayments = records
-      .filter((r) => r.createdAt.toISOString().startsWith(dayStr) && r.type === "ORDER_PAYMENT")
+    const dayRecords = records.filter((r) => r.createdAt.toISOString().startsWith(dayStr));
+    const dayPayments = dayRecords
+      .filter((r) => r.type === "ORDER_PAYMENT")
       .reduce((sum, r) => sum + Number(r.amount), 0);
-    weeklySummary.push({ date: dayStr, revenue: dayPayments });
+    const dayRefunds = dayRecords
+      .filter((r) => r.type === "REFUND")
+      .reduce((sum, r) => sum + Math.abs(Number(r.amount)), 0);
+    weeklySummary.push({ date: dayStr, revenue: dayPayments - dayRefunds });
   }
 
   const monthStart = new Date();
@@ -533,13 +547,17 @@ export async function getFinanceDashboard(hotelId: string) {
     weekStartD.setDate(weekStartD.getDate() + w * 7);
     const weekEnd = new Date(weekStartD);
     weekEnd.setDate(weekEnd.getDate() + 6);
-    const weekPayments = records
-      .filter((r) => {
-        const d = r.createdAt;
-        return d >= weekStartD && d <= weekEnd && r.type === "ORDER_PAYMENT";
-      })
+    const weekRecords = records.filter((r) => {
+      const d = r.createdAt;
+      return d >= weekStartD && d <= weekEnd;
+    });
+    const weekPayments = weekRecords
+      .filter((r) => r.type === "ORDER_PAYMENT")
       .reduce((sum, r) => sum + Number(r.amount), 0);
-    monthlySummary.push({ week: weekLabel, revenue: weekPayments });
+    const weekRefunds = weekRecords
+      .filter((r) => r.type === "REFUND")
+      .reduce((sum, r) => sum + Math.abs(Number(r.amount)), 0);
+    monthlySummary.push({ week: weekLabel, revenue: weekPayments - weekRefunds });
   }
 
   return {

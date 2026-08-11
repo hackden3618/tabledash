@@ -16,7 +16,7 @@ export function normalizeOrderItems(items: Array<{ productId: string; quantity: 
   return [...quantities].map(([productId, quantity]) => ({ productId, quantity }));
 }
 
-const PENDING_STATUSES: OrderStatus[] = [
+export const PENDING_STATUSES: OrderStatus[] = [
   "NEW",
   "ACCEPTED",
   "PREPARING",
@@ -30,6 +30,8 @@ interface MetricsOrder {
   amountPaid: unknown;
   paymentStatus: string;
   orderItems: Array<{ name: string; quantity: number }>;
+  /** Sum of |REFUND| sales records for this order, so revenue excludes refunded money. */
+  refundedAmount?: number;
 }
 
 export function calculateDashboardMetrics(allOrders: MetricsOrder[]): DashboardMetrics {
@@ -43,7 +45,7 @@ export function calculateDashboardMetrics(allOrders: MetricsOrder[]): DashboardM
   for (const order of allOrders) {
     const isCancelled = order.status === "CANCELLED";
     if (!isCancelled) {
-      totalSales += Number(order.totalAmount);
+      totalSales += Math.max(0, Number(order.totalAmount) - (order.refundedAmount ?? 0));
       for (const item of order.orderItems) itemCounts[item.name] = (itemCounts[item.name] ?? 0) + item.quantity;
     }
     if (order.status === "DELIVERED") deliveredOrders++;
