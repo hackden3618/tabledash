@@ -10,6 +10,7 @@ import { PageTransition } from "../../components/ui/PageTransition";
 import { SecureCodeInput } from "../../components/ui/SecureCodeInput";
 import { User, Phone, Tag, Lock, LogOut, Trash2, ChevronRight, CheckCircle2, ShieldCheck, Smartphone, Bell } from "lucide-react";
 import { subscribeToPush, getNotificationPermissionState } from "../../pwa/push";
+import { PersistentNotificationCard } from "../../components/PersistentNotificationCard";
 
 const formatPhone = (raw: string): string => {
   const cleaned = raw.replace(/\D/g, "");
@@ -288,6 +289,9 @@ export const CustomerProfilePage: React.FC<CustomerProfilePageProps> = ({ onBack
               </div>
             </div>
           )}
+
+          {/* Persistent Notifications & Sound / Haptics Card */}
+          <PersistentNotificationCard />
 
           {/* Actions */}
           <div className="bg-white rounded-2xl shadow-[0_2px_8px_rgba(17,75,54,0.06)] overflow-hidden">

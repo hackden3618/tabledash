@@ -46,10 +46,15 @@ self.addEventListener("push", (event) => {
     body: payload.body || "",
     icon: payload.scope === "admin" ? "/ladha_icon_kitchen.png" : "/ladha_icon_customer.png",
     badge: payload.scope === "admin" ? "/ladha_icon_kitchen.png" : "/ladha_icon_customer.png",
-    tag: payload.tag,
-    // Kitchen alerts (new order) require staff to actually act — keep them
-    // on screen until dismissed instead of auto-hiding like a normal toast.
+    tag: payload.tag || "ladha-notification",
+    renotify: true,
+    // Haptic vibration pattern (200ms pulse, 100ms pause, 200ms pulse)
+    vibrate: payload.scope === "admin" ? [300, 100, 300, 100, 300] : [200, 100, 200],
+    // Kitchen alerts require staff action; keep on screen until dismissed
     requireInteraction: payload.scope === "admin",
+    actions: [
+      { action: "open", title: "Open App" },
+    ],
     data: { url: payload.url || (payload.scope === "admin" ? "/kitchen/orders" : "/") },
   };
 

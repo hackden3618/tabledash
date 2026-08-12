@@ -8,6 +8,7 @@ import {
   accountRefund,
   accountAdjustment,
 } from "../templates";
+import { sendPushToCustomer } from "../../push/service";
 
 /**
  * Purpose: Single outbox handler for the four customer-account ledger events.
@@ -63,7 +64,7 @@ export async function handleAccountLedgerEvent(type: AccountLedgerEventType, pay
     smsOk = await smsService.sendSms(customer.phone, msg).catch(() => false);
   }
 
-  // In-app notification
+  // In-app notification + Web Push to OS notification shade
   try {
     const meta = NOTIFICATION_META[type];
     const notification = await prisma.notification.create({
@@ -77,6 +78,13 @@ export async function handleAccountLedgerEvent(type: AccountLedgerEventType, pay
       },
     });
     broadcastLive(customer.id, notification.id, meta.type, meta.title, msg);
+    // Push notification — reaches the customer's device even when app/browser is closed
+    await sendPushToCustomer(data.customerId, {
+      title: meta.title,
+      body: msg,
+      url: "/wallet",
+      tag: `ledger-${data.orderId}`,
+    }).catch(() => 0);
   } catch {
     // Non-critical — notification is a convenience, not a guarantee
   }

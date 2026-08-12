@@ -16,6 +16,7 @@ import { RatingStars } from "../../components/ui/RatingStars";
 import { Modal } from "../../components/ui/Modal";
 
 import { PageTransition } from "../../components/ui/PageTransition";
+import { PersistentNotificationCard } from "../../components/PersistentNotificationCard";
 
 export interface ProductItem {
     id: string;
@@ -415,6 +416,7 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
                 />
 
                 <PageTransition>
+                    <PersistentNotificationCard variant="banner" />
                     <div className="px-4 py-6 space-y-8">
                         <section className="relative -mx-4 -mt-6 min-h-[19rem] overflow-hidden bg-[#114B36] px-5 pb-12 pt-5 text-white">
                             {heroImage && <><img src={heroImage} alt="Homepage food discovery" loading="eager" className="absolute inset-0 z-0 h-full w-full object-cover opacity-100" /><div className="pointer-events-none absolute inset-y-0 left-0 z-[1] w-[68%] bg-gradient-to-r from-[#063522]/80 via-[#114B36]/45 to-transparent backdrop-blur-[10px] [mask-image:linear-gradient(to_right,black_0%,black_52%,transparent_100%)]" /></>}

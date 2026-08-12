@@ -106,6 +106,11 @@ export const platformRoute = new Elysia({
     try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
     catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
     const imageUrl = body.imageUrl.trim();
+    const existingHero = await prisma.setting.findUnique({ where: { key: "platform_hero_image_url" } });
+    if (existingHero?.value && existingHero.value !== imageUrl) {
+      const { deleteMediaByUrl } = await import("../media/service");
+      void deleteMediaByUrl(existingHero.value);
+    }
     const setting = await prisma.setting.upsert({ where: { key: "platform_hero_image_url" }, update: { value: imageUrl }, create: { key: "platform_hero_image_url", value: imageUrl } });
     return { success: true, data: { imageUrl: setting.value } };
   }, { body: t.Object({ imageUrl: t.String({ maxLength: 2000 }) }) })

@@ -101,6 +101,33 @@ export async function deleteMedia(filename: string): Promise<void> {
   });
 }
 
+/**
+ * Permanently deletes an old/overwritten image file from the active storage provider
+ * (Local filesystem, S3, or Cloudflare R2) and removes its record from the database.
+ */
+export async function deleteMediaByUrl(url: string | null | undefined): Promise<void> {
+  if (!url || !url.trim()) return;
+  const objectKey = getObjectKeyFromUrl(url.trim());
+  if (!objectKey) return;
+
+  try {
+    const provider = getProvider();
+    await provider.delete(objectKey).catch(() => 0);
+
+    // Delete DB records referencing this URL or filename
+    await prisma.media.deleteMany({
+      where: {
+        OR: [
+          { url: url.trim() },
+          { originalName: objectKey },
+        ],
+      },
+    }).catch(() => 0);
+  } catch (err) {
+    console.error("[Media Delete By URL Error]:", err);
+  }
+}
+
 export async function downloadMedia(filename: string): Promise<Response | null> {
   const provider = getProvider();
   if (!provider.download) return null;
