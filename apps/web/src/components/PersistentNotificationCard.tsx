@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Bell, Volume2, VolumeX, ShieldCheck, Sparkles, CheckCircle2, AlertCircle, X } from "lucide-react";
+import { Bell, Volume2, VolumeX, ShieldCheck, Sparkles, CheckCircle2, AlertCircle, X, Share2 } from "lucide-react";
 import { subscribeToPush, getNotificationPermissionState } from "../pwa/push";
 import { triggerNotificationAlert } from "../lib/NotificationSound";
 
@@ -9,6 +9,18 @@ interface PersistentNotificationCardProps {
   /** Visual variant: "card" (for settings pages) or "banner" (top prompt) */
   variant?: "card" | "banner";
   onStatusChange?: (permission: NotificationPermission | "unsupported") => void;
+}
+
+function isIOS(): boolean {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) && !("MSStream" in window);
+}
+
+function isStandalone(): boolean {
+  return window.matchMedia("(display-mode: standalone)").matches || (navigator as any).standalone === true;
+}
+
+function isPushSupported(): boolean {
+  return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 }
 
 export const PersistentNotificationCard: React.FC<PersistentNotificationCardProps> = ({
@@ -23,45 +35,72 @@ export const PersistentNotificationCard: React.FC<PersistentNotificationCardProp
   const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem("ladha_sound_enabled") !== "false");
   const [bannerDismissed, setBannerDismissed] = useState(() => {
     if (typeof window === "undefined") return false;
-    // Permanent dismissal applies only if notification permission was granted
     if (Notification.permission === "granted") {
       return localStorage.getItem("ladha_notification_banner_dismissed") === "true";
     }
-    // Otherwise, dismissal is for the current session only
     return sessionStorage.getItem("ladha_notification_banner_session_dismissed") === "true";
   });
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [message, setMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
 
   useEffect(() => {
     const current = getNotificationPermissionState();
     setPermission(current);
     onStatusChange?.(current);
+
+    // Detect iOS-in-browser unsupported case and inform proactively
+    if (isIOS() && !isStandalone() && isPushSupported() === false) {
+      setMessage({ type: "info", text: "On iPhone/iPad, install the app to your Home Screen first, then enable notifications." });
+    }
   }, []);
 
-  const handleEnablePush = async (e?: React.MouseEvent) => {
+  /**
+   * Called directly from a button click. Notification.requestPermission()
+   * must be reached without prior awaits on iOS Safari or it silently no-ops.
+   * subscribeToPush() now does this internally — calling it here directly from
+   * the click handler ensures the gesture context is intact.
+   */
+  const handleEnablePush = async (e?: React.MouseEvent | React.TouchEvent) => {
     if (e) e.stopPropagation();
     if (loading) return;
+
+    // iOS in browser tab: push doesn't work — show guidance instead
+    if (isIOS() && !isStandalone()) {
+      setMessage({
+        type: "info",
+        text: "On iPhone/iPad, tap Share → Add to Home Screen first, then open the app and enable notifications.",
+      });
+      return;
+    }
+
     setLoading(true);
     setMessage(null);
+
     try {
-      const effectiveToken = token || localStorage.getItem("ladha_customer_token") || localStorage.getItem("ladha_admin_token") || "";
-      const res = await subscribeToPush(effectiveToken);
+      const effectiveToken =
+        token ||
+        localStorage.getItem("ladha_customer_token") ||
+        localStorage.getItem("ladha_admin_token") ||
+        "";
+
+      const res = await subscribeToPush(effectiveToken || undefined);
       const updated = getNotificationPermissionState();
       setPermission(updated);
       onStatusChange?.(updated);
 
       if (res === "subscribed" || updated === "granted") {
         localStorage.setItem("ladha_notification_banner_dismissed", "true");
-        setMessage({ type: "success", text: "Background alerts active! You'll get order tracking updates even when app is closed." });
+        setMessage({ type: "success", text: "Background alerts active! You'll get order updates even when the app is closed." });
         triggerNotificationAlert();
       } else if (res === "denied" || updated === "denied") {
-        setMessage({ type: "error", text: "Notification permission was blocked in browser settings." });
+        setMessage({ type: "error", text: "Permission blocked. Open your browser/OS settings and allow notifications for this site." });
       } else if (res === "unsupported") {
-        setMessage({ type: "error", text: "Push notifications are not supported on this browser/device." });
+        setMessage({ type: "error", text: "Push notifications aren't supported on this browser or device." });
+      } else {
+        setMessage({ type: "error", text: "Something went wrong registering for push. Check the console for details." });
       }
     } catch (err) {
       console.error("[Enable Push Error]:", err);
-      setMessage({ type: "error", text: "Failed to enable notifications." });
+      setMessage({ type: "error", text: "Failed to enable notifications. Please try again." });
     } finally {
       setLoading(false);
     }
@@ -81,9 +120,7 @@ export const PersistentNotificationCard: React.FC<PersistentNotificationCardProp
     const next = !soundEnabled;
     setSoundEnabled(next);
     localStorage.setItem("ladha_sound_enabled", String(next));
-    if (next) {
-      triggerNotificationAlert();
-    }
+    if (next) triggerNotificationAlert();
   };
 
   const handleTestAlert = () => {
@@ -92,18 +129,23 @@ export const PersistentNotificationCard: React.FC<PersistentNotificationCardProp
     setTimeout(() => setMessage(null), 3000);
   };
 
+  // ─── Banner variant ───────────────────────────────────────────────────────
   if (variant === "banner") {
     if (bannerDismissed) return null;
     const isGranted = permission === "granted";
 
     return (
-      <div className={`mx-4 my-3 rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-sm transition-all border ${
-        isGranted ? "bg-[#DCFCE7] border-[#86EFAC]" : "bg-[#EBF5F0] border-[#C2E3D4]"
-      }`}>
+      <div
+        className={`mx-4 my-3 rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-sm transition-all border ${
+          isGranted ? "bg-[#DCFCE7] border-[#86EFAC]" : "bg-[#EBF5F0] border-[#C2E3D4]"
+        }`}
+      >
         <div className="flex items-center gap-3 min-w-0 flex-1">
-          <div className={`w-9 h-9 rounded-full text-white flex items-center justify-center shrink-0 ${
-            isGranted ? "bg-[#15803D]" : "bg-[#114B36]"
-          }`}>
+          <div
+            className={`w-9 h-9 rounded-full text-white flex items-center justify-center shrink-0 ${
+              isGranted ? "bg-[#15803D]" : "bg-[#114B36]"
+            }`}
+          >
             {isGranted ? <CheckCircle2 size={18} /> : <Bell size={18} />}
           </div>
           <div className="min-w-0 flex-1">
@@ -111,21 +153,32 @@ export const PersistentNotificationCard: React.FC<PersistentNotificationCardProp
               {isGranted ? "Notifications Enabled!" : "Never miss an order update"}
             </p>
             <p className="text-[0.7rem] text-[#4B5563] leading-snug truncate">
-              {isGranted ? "You're now on the hook and can close this banner" : "Get sound alerts & live tracking when closed"}
+              {isGranted
+                ? "You're now on the hook and can close this banner"
+                : isIOS() && !isStandalone()
+                ? "Install to Home Screen to enable background alerts"
+                : "Get sound alerts & live tracking when closed"}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {!isGranted ? (
+          {!isGranted && (
             <button
               type="button"
               onClick={handleEnablePush}
               disabled={loading}
-              className="bg-[#114B36] text-white text-xs font-bold px-3.5 py-1.5 rounded-xl border-none cursor-pointer hover:bg-[#0D3D2B] transition-colors disabled:opacity-50"
+              className="bg-[#114B36] text-white text-xs font-bold px-3.5 py-1.5 rounded-xl border-none cursor-pointer hover:bg-[#0D3D2B] transition-colors disabled:opacity-50 flex items-center gap-1.5"
             >
-              {loading ? "Enabling..." : "Allow"}
+              {loading ? (
+                "Enabling..."
+              ) : isIOS() && !isStandalone() ? (
+                <><Share2 size={13} /> Install</>
+              ) : (
+                "Allow"
+              )}
             </button>
-          ) : (
+          )}
+          {isGranted && (
             <span className="bg-[#15803D] text-white text-[0.7rem] font-bold px-2.5 py-1 rounded-xl flex items-center gap-1">
               <CheckCircle2 size={13} /> Enabled
             </span>
@@ -143,6 +196,7 @@ export const PersistentNotificationCard: React.FC<PersistentNotificationCardProp
     );
   }
 
+  // ─── Card variant (settings page) ────────────────────────────────────────
   return (
     <div className="bg-white rounded-2xl shadow-[0_2px_8px_rgba(17,75,54,0.06)] overflow-hidden">
       <div className="px-4 py-3.5 border-b border-[#F3F4F6] flex items-center justify-between">
@@ -166,11 +220,19 @@ export const PersistentNotificationCard: React.FC<PersistentNotificationCardProp
       <div className="p-4 space-y-4">
         {message && (
           <div
-            className={`rounded-xl px-3.5 py-2.5 text-xs font-semibold flex items-center gap-2 leading-relaxed ${
-              message.type === "success" ? "bg-[#DCFCE7] text-[#15803D]" : "bg-[#FEE2E2] text-[#DC2626]"
+            className={`rounded-xl px-3.5 py-2.5 text-xs font-semibold flex items-start gap-2 leading-relaxed ${
+              message.type === "success"
+                ? "bg-[#DCFCE7] text-[#15803D]"
+                : message.type === "info"
+                ? "bg-[#EFF6FF] text-[#1D4ED8]"
+                : "bg-[#FEE2E2] text-[#DC2626]"
             }`}
           >
-            {message.type === "success" ? <CheckCircle2 size={15} className="shrink-0" /> : <AlertCircle size={15} className="shrink-0" />}
+            {message.type === "success" ? (
+              <CheckCircle2 size={15} className="shrink-0 mt-0.5" />
+            ) : (
+              <AlertCircle size={15} className="shrink-0 mt-0.5" />
+            )}
             <span>{message.text}</span>
           </div>
         )}
@@ -180,37 +242,34 @@ export const PersistentNotificationCard: React.FC<PersistentNotificationCardProp
           <div className="text-xs space-y-1">
             <p className="font-bold text-[#1F2937]">Stay Updated When App Is Closed</p>
             <p className="text-[#6B7280] leading-relaxed">
-              Order status changes and wallet credits are sent directly to your phone's notification bar with sound chimes and vibration alerts.
+              {isIOS() && !isStandalone()
+                ? "On iPhone/iPad, you must first install Ladha to your Home Screen (tap Share → Add to Home Screen), then open it from there to enable background notifications."
+                : "Order status changes and wallet credits are sent directly to your phone's notification bar with sound chimes and vibration alerts."}
             </p>
           </div>
         </div>
 
-        {/* Enable Push Button */}
-        <div className="space-y-2">
-          <button
-            onClick={handleEnablePush}
-            disabled={loading || permission === "granted"}
-            className={`w-full py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 border-none cursor-pointer transition-all ${
-              permission === "granted"
-                ? "bg-[#EBF5F0] text-[#114B36] cursor-default"
-                : "bg-[#114B36] text-white hover:bg-[#0D3D2B] shadow-md"
-            }`}
-          >
-            {permission === "granted" ? (
-              <>
-                <CheckCircle2 size={16} /> Background Push Active (Forever)
-              </>
-            ) : loading ? (
-              "Requesting Device Permission..."
-            ) : (
-              <>
-                <Bell size={16} /> Enable Background Alerts
-              </>
-            )}
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={handleEnablePush}
+          disabled={loading || permission === "granted"}
+          className={`w-full py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 border-none cursor-pointer transition-all ${
+            permission === "granted"
+              ? "bg-[#EBF5F0] text-[#114B36] cursor-default"
+              : "bg-[#114B36] text-white hover:bg-[#0D3D2B] shadow-md"
+          }`}
+        >
+          {permission === "granted" ? (
+            <><CheckCircle2 size={16} /> Background Push Active</>
+          ) : loading ? (
+            "Requesting Permission..."
+          ) : isIOS() && !isStandalone() ? (
+            <><Share2 size={16} /> Install to Home Screen First</>
+          ) : (
+            <><Bell size={16} /> Enable Background Alerts</>
+          )}
+        </button>
 
-        {/* Sound & Haptic Controls */}
         <div className="pt-2 border-t border-[#F3F4F6] flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             {soundEnabled ? <Volume2 size={18} className="text-[#114B36]" /> : <VolumeX size={18} className="text-[#9CA3AF]" />}
@@ -220,21 +279,23 @@ export const PersistentNotificationCard: React.FC<PersistentNotificationCardProp
             </div>
           </div>
           <button
+            type="button"
             onClick={toggleSound}
+            aria-label={soundEnabled ? "Disable sound" : "Enable sound"}
             className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer border-none p-0.5 ${
               soundEnabled ? "bg-[#114B36]" : "bg-[#D1D5DB]"
             }`}
           >
             <div
-              className={`w-5 h-5 rounded-full bg-white transition-transform ${
+              className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${
                 soundEnabled ? "translate-x-5" : "translate-x-0"
               }`}
             />
           </button>
         </div>
 
-        {/* Test Alert Button */}
         <button
+          type="button"
           onClick={handleTestAlert}
           className="w-full py-2 px-3 bg-[#F3F4F6] hover:bg-[#E5E7EB] text-[#4B5563] font-bold text-[0.75rem] rounded-xl border-none cursor-pointer flex items-center justify-center gap-1.5 transition-colors"
         >

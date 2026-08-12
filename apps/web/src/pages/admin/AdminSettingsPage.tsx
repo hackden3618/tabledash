@@ -4,6 +4,7 @@ import { useAdminAuth } from "../../context/AdminAuthContext";
 import { Modal } from "../../components/ui/Modal";
 import { Button } from "../../components/ui/Button";
 import { ArrowLeft, Save, Phone, Store, Clock, Users, UserPlus, Trash2, MessageSquare, Lock, Upload, Image, User } from "lucide-react";
+import { PersistentNotificationCard } from "../../components/PersistentNotificationCard";
 
 const formatPhone = (raw: string): string => {
     const cleaned = raw.replace(/\D/g, "");
@@ -404,6 +405,7 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ token, onB
                                         </div>
                                     )}
                                 </div>
+                                <PersistentNotificationCard token={token} />
                             </div>
                         </div>
                     </>

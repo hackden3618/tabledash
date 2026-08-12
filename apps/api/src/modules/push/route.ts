@@ -13,7 +13,13 @@ import { saveSubscription, removeSubscription } from "./service";
  */
 export const pushRoute = new Elysia({ prefix: "/api/v1/push" })
   .use(jwt({ name: "jwt", secret: env.jwtSecret }))
-  .get("/vapid-public-key", () => ({ success: true, data: { key: env.vapidPublicKey } }))
+  .get("/vapid-public-key", ({ set }) => {
+    if (!env.vapidPublicKey) {
+      set.status = 503;
+      return { success: false, error: "Push notifications not configured — set VAPID_PUBLIC_KEY on Railway." };
+    }
+    return { success: true, data: { key: env.vapidPublicKey } };
+  })
   .post(
     "/subscribe",
     async ({ body, headers, jwt, set }) => {

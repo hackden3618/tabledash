@@ -24,43 +24,66 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
 export type PushSubscribeResult = "subscribed" | "denied" | "unsupported" | "error";
 
 /**
- * Requests notification permission and registers a push subscription for the
- * current session (customer or admin token — the backend infers which from
- * the Authorization header). Safe to call repeatedly; browsers no-op a
- * subscribe() call for an already-subscribed endpoint.
+ * Requests notification permission and registers a push subscription.
+ *
+ * IMPORTANT: This function must be called directly from a click/touch handler
+ * on iOS Safari — Notification.requestPermission() will silently no-op if the
+ * gesture context is broken by prior awaits. We therefore call it first,
+ * before any network or serviceWorker awaits.
  */
-export async function subscribeToPush(token: string): Promise<PushSubscribeResult> {
+export async function subscribeToPush(token?: string): Promise<PushSubscribeResult> {
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return "unsupported";
+    if (!("Notification" in window)) return "unsupported";
 
+    // ─── Step 1: Request permission FIRST (must be synchronous-ish on iOS) ───
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") return "denied";
+
+    // ─── Step 2: Ensure service worker is registered & active ────────────────
     try {
-        const permission = await Notification.requestPermission();
-        if (permission !== "granted") return "denied";
-
-        let registration = await navigator.serviceWorker.getRegistration();
+        let registration = await navigator.serviceWorker.getRegistration("/sw.js");
         if (!registration) {
-            registration = await navigator.serviceWorker.register("/sw.js");
+            registration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
         }
-        await navigator.serviceWorker.ready;
+        // Wait for the SW to fully activate before using PushManager
+        const ready = await navigator.serviceWorker.ready;
 
-        const vapidRes = await fetch("/api/v1/push/vapid-public-key").then((r) => r.json()).catch(() => null);
+        // ─── Step 3: Fetch VAPID public key ──────────────────────────────────
+        const vapidRes = await fetch("/api/v1/push/vapid-public-key")
+            .then((r) => r.json())
+            .catch(() => null);
         const vapidKey = vapidRes?.data?.key;
-        if (!vapidKey) return "error";
+        if (!vapidKey) {
+            console.error("[Push] VAPID public key not found — check VAPID_PUBLIC_KEY env var on Railway");
+            return "error";
+        }
 
-        let subscription = await registration.pushManager.getSubscription();
+        // ─── Step 4: Get or create push subscription ─────────────────────────
+        let subscription = await ready.pushManager.getSubscription();
         if (!subscription) {
-            subscription = await registration.pushManager.subscribe({
+            subscription = await ready.pushManager.subscribe({
                 userVisibleOnly: true,
                 applicationServerKey: urlBase64ToUint8Array(vapidKey) as BufferSource,
             });
         }
 
+        // ─── Step 5: Register with backend (best-effort, non-blocking) ───────
         const json = subscription.toJSON();
-        if (json.endpoint && json.keys) {
-            const effectiveToken = token || localStorage.getItem("ladha_customer_token") || localStorage.getItem("ladha_admin_token") || "";
+        if (json.endpoint && json.keys?.p256dh && json.keys?.auth) {
+            const effectiveToken =
+                token ||
+                localStorage.getItem("ladha_customer_token") ||
+                localStorage.getItem("ladha_admin_token") ||
+                "";
             if (effectiveToken) {
-                await apiPost("/push/subscribe", { endpoint: json.endpoint, keys: json.keys }, effectiveToken).catch(() => 0);
+                await apiPost(
+                    "/push/subscribe",
+                    { endpoint: json.endpoint, keys: json.keys },
+                    effectiveToken
+                ).catch((err) => console.warn("[Push] Backend registration failed:", err));
             }
         }
+
         return "subscribed";
     } catch (err) {
         console.error("[Push Subscribe Error]:", err);

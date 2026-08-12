@@ -24,8 +24,9 @@ import { apiGet } from "./lib/api";
 import { decodeJwt } from "./lib/jwt";
 import { useWebSocket, type WsEventPayload } from "./lib/websocket";
 import { useManifestSwitcher } from "./pwa/manifestSwitcher";
-import { registerServiceWorker, subscribeToPush } from "./pwa/push";
+import { registerServiceWorker } from "./pwa/push";
 import { InstallBanner } from "./components/InstallBanner";
+import { PersistentNotificationCard } from "./components/PersistentNotificationCard";
 
 import { CartPage } from "./pages/customer/CartPage";
 import { ConfirmationPage } from "./pages/customer/ConfirmationPage";
@@ -131,18 +132,10 @@ function AppContent() {
         registerServiceWorker();
     }, []);
 
-    // Kitchen push is "not excusable" — a missed order alert costs the hotel
-    // real money, so re-attempt the subscribe on every admin session instead
-    // of once. subscribeToPush() itself is idempotent for an already-granted
-    // permission, so this is cheap when already subscribed.
-    useEffect(() => {
-        if (isKitchenPath && adminToken) subscribeToPush(adminToken);
-    }, [isKitchenPath, adminToken]);
-
-    // Customers subscribe explicitly from the "Stay Updated" button on their
-    // profile page — not automatically on every login. Browsers will silently
-    // ignore repeated requestPermission() calls on desktop but may surface
-    // repeated dialogs on iOS Safari.
+    // Push subscriptions require a direct user gesture to call requestPermission()
+    // on mobile (especially iOS Safari). Auto-calling it from a useEffect silently
+    // fails. Both kitchen and customer use the PersistentNotificationCard UI instead,
+    // which ensures the subscribe call originates from a real button click.
 
     const currentIdentityKey = isPlatformPath ? (platformToken ? `platform:${decodeJwt(platformToken)?.sub ?? ""}` : "") : isKitchenPath ? (adminUser?.id ? `admin:${adminUser.id}` : "") : (customer?.id ? `customer:${customer.id}` : `guest:${localStorage.getItem("ladha_guest_id") || ""}`);
 
@@ -258,7 +251,7 @@ const isKitchenNavHidden = (path: string): boolean => {
 function KitchenShell() {
     const navigate = useNavigate();
     const location = useLocation();
-    const { isLoggedIn, hydrating } = useAdminAuth();
+    const { isLoggedIn, hydrating, token: adminToken } = useAdminAuth();
 
     if (!hydrating && !isLoggedIn && location.pathname !== "/kitchen" && location.pathname !== "/kitchen/login") {
         return <Navigate to="/kitchen" replace />;
@@ -277,6 +270,9 @@ function KitchenShell() {
     return (
         <>
             {!hydrating && isLoggedIn && <InstallBanner scope="admin" />}
+            {!hydrating && isLoggedIn && !isKitchenNavHidden(location.pathname) && (
+                <PersistentNotificationCard variant="banner" token={adminToken ?? undefined} />
+            )}
             <Outlet />
             {!hydrating && isLoggedIn && !isKitchenNavHidden(location.pathname) && (
                 <AdminBottomNavBar
