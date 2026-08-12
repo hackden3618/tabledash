@@ -95,3 +95,40 @@ export function getNotificationPermissionState(): NotificationPermission | "unsu
     if (!("Notification" in window)) return "unsupported";
     return Notification.permission;
 }
+
+/**
+ * Triggers a native system drawer notification (Android notification shade, iOS notification banner, desktop notification tray).
+ * Safe to call; silently no-ops if notification permissions are not granted.
+ */
+export async function showNativeDrawerNotification(
+    title: string,
+    body: string,
+    opts?: { scope?: "customer" | "admin" | "platform"; icon?: string; url?: string }
+): Promise<void> {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (Notification.permission !== "granted") return;
+
+    const defaultIcon = opts?.scope === "admin" ? "/ladha_icon_kitchen.png" : "/ladha_icon_customer.png";
+    const notificationOptions: NotificationOptions = {
+        body,
+        icon: opts?.icon || defaultIcon,
+        badge: defaultIcon,
+        tag: `ladha-inapp-${Date.now()}`,
+        renotify: true,
+        vibrate: opts?.scope === "admin" ? [300, 100, 300, 100, 300] : [200, 100, 200],
+        data: { url: opts?.url || (opts?.scope === "admin" ? "/kitchen/orders" : "/") },
+    } as any;
+
+    try {
+        if ("serviceWorker" in navigator) {
+            const reg = await navigator.serviceWorker.getRegistration("/sw.js");
+            if (reg && reg.showNotification) {
+                await reg.showNotification(title, notificationOptions);
+                return;
+            }
+        }
+        new Notification(title, notificationOptions);
+    } catch (err) {
+        console.warn("[Native Drawer Notification Error]:", err);
+    }
+}

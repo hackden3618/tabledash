@@ -93,4 +93,11 @@ export async function sendPushToHotelAdmins(hotelId: string, payload: PushPayloa
   return results.filter((r) => r.status === "fulfilled" && r.value).length;
 }
 
-export const pushService = { saveSubscription, removeSubscription, sendPushToCustomer, sendPushToHotelAdmins };
+/** Sends to every customer registered for Web Push (for platform & hotel announcements). */
+export async function sendPushToAllCustomers(payload: PushPayload): Promise<number> {
+  const subs = await prisma.pushSubscription.findMany({ where: { ownerType: "CUSTOMER" } });
+  const results = await Promise.allSettled(subs.map((s) => deliver(s, { ...payload, scope: "customer" })));
+  return results.filter((r) => r.status === "fulfilled" && r.value).length;
+}
+
+export const pushService = { saveSubscription, removeSubscription, sendPushToCustomer, sendPushToHotelAdmins, sendPushToAllCustomers };

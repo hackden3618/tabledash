@@ -9,6 +9,8 @@
 
 import React, { createContext, useCallback, useContext, useState } from "react";
 import type { ToastNotification, ToastType } from "../components/NotificationToast";
+import { triggerNotificationAlert } from "../lib/NotificationSound";
+import { showNativeDrawerNotification } from "../pwa/push";
 
 /** A persisted notification entry in the admin notification log */
 export interface NotificationEntry {
@@ -67,6 +69,14 @@ export const NotificationsProvider: React.FC<{ children: React.ReactNode }> = ({
           ...prev.slice(0, 49),
         ]);
       }
+
+      // Play sound chime & vibration if enabled
+      if (typeof localStorage !== "undefined" && localStorage.getItem("ladha_sound_enabled") !== "false") {
+        triggerNotificationAlert();
+      }
+
+      // Display native OS drawer notification (Android notification bar, iOS PWA notification center, desktop tray)
+      showNativeDrawerNotification(title, message, { scope });
     },
     [currentScope]
   );

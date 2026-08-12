@@ -14,6 +14,7 @@ import {
 } from "./service";
 import { wsHub } from "../websocket/hub";
 import { prisma } from "../../../../../infrastructure/database/prisma";
+import { sendPushToAllCustomers } from "../push/service";
 
 export const messagingRoute = new Elysia({
   prefix: `${env.apiPrefix}/messaging`,
@@ -203,6 +204,7 @@ export const messagingRoute = new Elysia({
       if (created.created) wsHub.broadcastToIdentities(recipients, { type: "CONVERSATION_CREATED", payload });
       wsHub.broadcastToIdentities(recipients, { type: "MESSAGE_CREATED", payload: { ...created.message, senderIdentityKey: messagingActorIdentityKey(actor) } });
       wsHub.broadcastToIdentities(recipients, { type: "ANNOUNCEMENT_PUBLISHED", payload: { conversationId: created.id, title: created.title, body: created.message.body, sourceName: hotel?.name || "Hotel", senderIdentityKey: messagingActorIdentityKey(actor) } });
+      await sendPushToAllCustomers({ title: created.title || "Hotel Announcement", body: created.message.body, url: "/inbox", tag: `notice-${created.id}` }).catch(() => 0);
       return { success: true, data: created };
     } catch (error: any) {
       set.status = 400;
@@ -227,6 +229,7 @@ export const messagingRoute = new Elysia({
       if (created.created) wsHub.broadcastToIdentities(recipients, { type: "CONVERSATION_CREATED", payload });
       wsHub.broadcastToIdentities(recipients, { type: "MESSAGE_CREATED", payload: { ...created.message, senderIdentityKey: messagingActorIdentityKey(actor) } });
       wsHub.broadcastToIdentities(recipients, { type: "ANNOUNCEMENT_PUBLISHED", payload: { conversationId: created.id, title: created.title, body: created.message.body, sourceName: "Ladha Platform", senderIdentityKey: messagingActorIdentityKey(actor) } });
+      await sendPushToAllCustomers({ title: created.title || "Ladha Announcement", body: created.message.body, url: "/inbox", tag: `notice-${created.id}` }).catch(() => 0);
       return { success: true, data: created };
     } catch (error: any) {
       set.status = 400;
