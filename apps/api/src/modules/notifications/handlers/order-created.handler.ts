@@ -27,8 +27,9 @@ export async function handleOrderCreated(payload: Record<string, unknown>): Prom
   // device the hotel's staff has installed the kitchen PWA on and granted
   // push permission gets a native notification, even with the app closed.
   if (data.hotelId) {
+    const hotelName = data.hotelName || "Kitchen";
     await sendPushToHotelAdmins(data.hotelId, {
-      title: `New order #${data.orderNumber}`,
+      title: `${hotelName} — New order #${data.orderNumber}`,
       body: `${data.customerName} — KSh ${data.totalAmount}${data.itemsSummary ? ` · ${data.itemsSummary.split(/,\s*|\n/)[0]}` : ""}`,
       url: "/kitchen/orders",
       tag: `order-${data.orderId}`,

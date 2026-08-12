@@ -67,20 +67,24 @@ export async function handleAccountLedgerEvent(type: AccountLedgerEventType, pay
   // In-app notification + Web Push to OS notification shade
   try {
     const meta = NOTIFICATION_META[type];
+    const hotel = await prisma.hotel.findUnique({ where: { id: data.hotelId }, select: { name: true } });
+    const hotelName = hotel?.name || "Ladha";
+    const notificationTitle = `${hotelName} — ${meta.title}`;
+
     const notification = await prisma.notification.create({
       data: {
         customerId: data.customerId,
         hotelId: data.hotelId,
         orderId: data.orderId,
         type: meta.type,
-        title: meta.title,
+        title: notificationTitle,
         body: msg,
       },
     });
-    broadcastLive(customer.id, notification.id, meta.type, meta.title, msg);
+    broadcastLive(customer.id, notification.id, meta.type, notificationTitle, msg);
     // Push notification — reaches the customer's device even when app/browser is closed
     await sendPushToCustomer(data.customerId, {
-      title: meta.title,
+      title: notificationTitle,
       body: msg,
       url: "/wallet",
       tag: `ledger-${data.orderId}`,

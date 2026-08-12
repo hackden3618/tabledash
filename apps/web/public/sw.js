@@ -38,10 +38,10 @@ self.addEventListener("push", (event) => {
   try {
     payload = event.data.json();
   } catch {
-    payload = { title: "Ladha", body: event.data.text() };
+    payload = { title: "Order Update", body: event.data.text() };
   }
 
-  const title = payload.title || "Ladha";
+  const title = payload.title || (payload.scope === "admin" ? "Kitchen Alert" : "Order Update");
   const options = {
     body: payload.body || "",
     icon: payload.scope === "admin" ? "/ladha_icon_kitchen.png" : "/ladha_icon_customer.png",

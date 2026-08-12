@@ -14,7 +14,51 @@ import {
 } from "./service";
 import { wsHub } from "../websocket/hub";
 import { prisma } from "../../../../../infrastructure/database/prisma";
-import { sendPushToAllCustomers } from "../push/service";
+import { sendPushToAllCustomers, sendPushToCustomer, sendPushToHotelAdmins } from "../push/service";
+import type { MessagingActor } from "./service";
+
+async function dispatchMessagePush(conversationId: string, actor: MessagingActor, bodyText: string) {
+  try {
+    const conv = await prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: { participants: true },
+    });
+    if (!conv) return;
+
+    const hotel = conv.hotelId ? await prisma.hotel.findUnique({ where: { id: conv.hotelId }, select: { name: true } }) : null;
+    const hotelName = hotel?.name || "Ladha";
+    const defaultCustomerTitle = `${hotelName} — ${conv.title || "New Message"}`;
+    const defaultStaffTitle = `${hotelName} — ${conv.title || "Customer Message"}`;
+
+    for (const p of conv.participants) {
+      if (
+        (actor.kind === "CUSTOMER" && p.customerId === actor.customerId) ||
+        (actor.kind === "HOTEL_STAFF" && p.adminUserId === actor.adminUserId) ||
+        (actor.kind === "GUEST" && p.guestIdentityId === actor.guestIdentityId)
+      ) {
+        continue;
+      }
+
+      if (p.kind === "CUSTOMER" && p.customerId) {
+        await sendPushToCustomer(p.customerId, {
+          title: defaultCustomerTitle,
+          body: bodyText,
+          url: conv.orderId ? `/orders/${conv.orderId}/tracking` : "/inbox",
+          tag: `chat-${conv.id}`,
+        }).catch(() => 0);
+      } else if ((p.kind === "HOTEL_STAFF" || actor.kind === "CUSTOMER" || actor.kind === "GUEST") && conv.hotelId) {
+        await sendPushToHotelAdmins(conv.hotelId, {
+          title: defaultStaffTitle,
+          body: bodyText,
+          url: "/kitchen/conversations",
+          tag: `chat-${conv.id}`,
+        }).catch(() => 0);
+      }
+    }
+  } catch {
+    // Non-blocking push alert
+  }
+}
 
 export const messagingRoute = new Elysia({
   prefix: `${env.apiPrefix}/messaging`,
@@ -67,6 +111,7 @@ export const messagingRoute = new Elysia({
       } else {
         wsHub.broadcastToIdentities(identityKeys, { type: "MESSAGE_CREATED", payload: { ...message, senderIdentityKey: messagingActorIdentityKey(actor) } });
       }
+      await dispatchMessagePush(params.id, actor, body.body);
       return { success: true, data: message };
     } catch (error: any) {
       set.status = 400;
@@ -126,6 +171,7 @@ export const messagingRoute = new Elysia({
       const conversation = await prisma.conversation.findFirst({ where: { orderId: params.orderId, type: "ORDER" }, select: { id: true } });
       if (conversation) {
         wsHub.broadcastToIdentities(await getConversationIdentityKeys(conversation.id), { type: "MESSAGE_CREATED", payload: { ...message, senderIdentityKey: messagingActorIdentityKey(actor) } });
+        await dispatchMessagePush(conversation.id, actor, body.body);
       }
       return { success: true, data: message };
     } catch (error: any) {
@@ -162,6 +208,9 @@ export const messagingRoute = new Elysia({
         wsHub.broadcastToIdentities(allRecipients, { type: "MESSAGE_CREATED", payload: { ...result.message, senderIdentityKey: messagingActorIdentityKey(actor) } });
       }
       wsHub.broadcastToIdentities(allRecipients, { type: "CONVERSATION_CREATED", payload: result.conversation });
+      if (result.message?.body) {
+        await dispatchMessagePush(result.conversation.id, actor, result.message.body);
+      }
       return { success: true, data: result };
     } catch (error: any) {
       set.status = 400;
