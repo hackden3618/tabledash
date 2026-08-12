@@ -56,7 +56,7 @@ export function InstallBanner({ scope }: InstallBannerProps) {
 
     const isKitchen = scope === "admin";
     const label = isKitchen ? "Install the Ladha Kitchen app" : "Install Ladha for faster ordering";
-    const accent = isKitchen ? "#9A3412" : "#114B36";
+    const accent = isKitchen ? "#9A3412" : "#0B1E13";
 
     const handleInstall = async () => {
         if (!deferredPrompt) return;

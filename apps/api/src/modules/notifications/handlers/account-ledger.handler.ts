@@ -51,7 +51,11 @@ export async function handleAccountLedgerEvent(type: AccountLedgerEventType, pay
   const orderNumber = data.orderNumber ?? await resolveOrderNumber(data.orderId);
   if (!orderNumber) return false;
 
+  const hotel = await prisma.hotel.findUnique({ where: { id: data.hotelId }, select: { name: true } });
+  const hotelName = hotel?.name || "Ladha";
+
   const msg = buildLedgerSms(type, {
+    hotelName,
     orderNumber,
     amount: data.amount,
     balance: data.balance,
@@ -67,8 +71,6 @@ export async function handleAccountLedgerEvent(type: AccountLedgerEventType, pay
   // In-app notification + Web Push to OS notification shade
   try {
     const meta = NOTIFICATION_META[type];
-    const hotel = await prisma.hotel.findUnique({ where: { id: data.hotelId }, select: { name: true } });
-    const hotelName = hotel?.name || "Ladha";
     const notificationTitle = `${hotelName} — ${meta.title}`;
 
     const notification = await prisma.notification.create({
@@ -98,17 +100,17 @@ export async function handleAccountLedgerEvent(type: AccountLedgerEventType, pay
 
 function buildLedgerSms(
   type: AccountLedgerEventType,
-  p: { orderNumber: number; amount: number; balance: number; reason?: string },
+  p: { hotelName: string; orderNumber: number; amount: number; balance: number; reason?: string },
 ): string {
   switch (type) {
     case "credited":
-      return accountCredit({ orderNumber: p.orderNumber, amount: p.amount, balance: p.balance });
+      return accountCredit({ hotelName: p.hotelName, orderNumber: p.orderNumber, amount: p.amount, balance: p.balance });
     case "payment":
-      return accountPayment({ orderNumber: p.orderNumber, amount: p.amount, balance: p.balance });
+      return accountPayment({ hotelName: p.hotelName, orderNumber: p.orderNumber, amount: p.amount, balance: p.balance });
     case "refund":
-      return accountRefund({ orderNumber: p.orderNumber, amount: p.amount, balance: p.balance });
+      return accountRefund({ hotelName: p.hotelName, orderNumber: p.orderNumber, amount: p.amount, balance: p.balance });
     case "adjustment":
-      return accountAdjustment({ orderNumber: p.orderNumber, amount: p.amount, balance: p.balance, reason: p.reason });
+      return accountAdjustment({ hotelName: p.hotelName, orderNumber: p.orderNumber, amount: p.amount, balance: p.balance, reason: p.reason });
   }
 }
 

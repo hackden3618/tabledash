@@ -418,6 +418,7 @@ export const getOrderById = async (id: string, hotelId?: string) => {
         include: {
             customer: true,
             orderItems: true,
+            hotel: { select: { id: true, name: true, slug: true } },
         },
     });
 
@@ -432,7 +433,11 @@ export const getOrderById = async (id: string, hotelId?: string) => {
 export const getOrderForCustomer = async (id: string, customerId: string) => {
     const order = await prisma.order.findFirst({
         where: { id, customerId },
-        include: { customer: true, orderItems: true },
+        include: {
+            customer: true,
+            orderItems: true,
+            hotel: { select: { id: true, name: true, slug: true } },
+        },
     });
     if (!order) throw new Error("Order not found");
     return formatOrderResponse(order);

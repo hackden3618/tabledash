@@ -7,7 +7,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 
     <!-- ── Favicons & App Icons ──────────────────────────────────────────────── -->
-    <link rel="icon" type="image/png" href="/ladha_favicon.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
     <!-- Apple: static icon so "Add to Home Screen" gets the real icon, not a screenshot -->
     <link rel="apple-touch-icon" href="/ladha_icon_customer.png" />
 
@@ -24,7 +25,7 @@
     <meta name="apple-mobile-web-app-title" content="Ladha" />
 
     <!-- ── Theme color (JS swaps this for kitchen sessions) ─────────────────── -->
-    <meta name="theme-color" content="#114B36" />
+    <meta name="theme-color" content="#0B1E13" />
 
     <!-- ── Primary SEO ───────────────────────────────────────────────────────── -->
     <title>Ladha — Order Fresh Food Online | Kenya's Local Kitchen Marketplace</title>
@@ -37,7 +38,7 @@
     <meta property="og:site_name" content="Ladha" />
     <meta property="og:title" content="Ladha — Fresh Food Delivered Fast | Kenya's Local Kitchen Marketplace" />
     <meta property="og:description" content="Order from trusted local kitchens. Fresh meals delivered to market stalls, offices and homes across Kenya. Track your order live." />
-    <meta property="og:image" content="https://ladha.co.ke/ladha_favicon.png" />
+    <meta property="og:image" content="https://ladha.co.ke/ladha_icon_customer.png" />
     <meta property="og:image:width" content="512" />
     <meta property="og:image:height" content="512" />
     <meta property="og:image:alt" content="Ladha — fresh food delivered fast" />
@@ -48,7 +49,7 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Ladha — Fresh Food Delivered Fast" />
     <meta name="twitter:description" content="Order from trusted local kitchens near you. Fast delivery across Kenya." />
-    <meta name="twitter:image" content="https://ladha.co.ke/ladha_favicon.png" />
+    <meta name="twitter:image" content="https://ladha.co.ke/ladha_icon_customer.png" />
 
     <!-- ── Geo / Language targeting ─────────────────────────────────────────── -->
     <meta name="geo.region" content="KE" />
@@ -71,8 +72,8 @@
       "alternateName": "Ladha Deliveries",
       "description": "Kenya's local food delivery marketplace — fresh meals from trusted kitchens delivered to market stalls, offices and homes.",
       "url": "https://ladha.co.ke",
-      "logo": "https://ladha.co.ke/ladha_favicon.png",
-      "image": "https://ladha.co.ke/ladha_favicon.png",
+      "logo": "https://ladha.co.ke/ladha_icon_customer.png",
+      "image": "https://ladha.co.ke/ladha_icon_customer.png",
       "areaServed": {
         "@type": "Country",
         "name": "Kenya"
@@ -87,8 +88,80 @@
     <!-- ── Google Fonts ──────────────────────────────────────────────────────── -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <!-- ── Boot splash — critical, inlined so it paints before any JS runs.
+         This is the "you tapped the right thing, good food is coming"
+         moment, not a technical loading screen. Frame timings match the
+         brand spec: icon at 0ms, wordmark+tagline at 500ms, and main.tsx
+         (below) adds the "Preparing your menu…" phase once mounted, then
+         removes this node entirely.
+    ─────────────────────────────────────────────────────────────────────────── -->
+    <style>
+      #boot-splash {
+        position: fixed; inset: 0; z-index: 9999;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        background: #0B1E13;
+        transition: opacity 0.35s ease;
+      }
+      #boot-splash.boot-splash--kitchen { background: #9A3412; }
+      #boot-splash.boot-splash--hide { opacity: 0; pointer-events: none; }
+      #boot-splash-icon {
+        width: 92px; height: 92px; border-radius: 20px; display: block;
+        opacity: 0; transform: translateY(8px);
+        animation: bootFadeUp 0.55s ease-out forwards;
+      }
+      #boot-splash-brand {
+        margin-top: 16px; text-align: center;
+        opacity: 0; animation: bootFadeUp 0.5s ease-out forwards; animation-delay: 0.5s;
+      }
+      #boot-splash-word {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-size: 2rem; font-weight: 800; color: #F7F1E7; letter-spacing: -0.01em;
+      }
+      #boot-splash-tagline { margin-top: 2px; font-size: 0.85rem; font-style: italic; color: #E3B24A; }
+      #boot-splash-message {
+        margin-top: 30px; text-align: center;
+        opacity: 0; animation: bootFadeUp 0.4s ease-out forwards; animation-delay: 0.15s;
+      }
+      #boot-splash-message p { font-size: 0.82rem; color: #C9D6CC; margin: 0 0 10px; }
+      #boot-splash-dots { display: flex; gap: 6px; justify-content: center; }
+      #boot-splash-dots span {
+        width: 6px; height: 6px; border-radius: 50%; background: #E3B24A; opacity: 0.35;
+        animation: bootDotPulse 1.2s ease-in-out infinite;
+      }
+      #boot-splash-dots span:nth-child(2) { animation-delay: 0.2s; }
+      #boot-splash-dots span:nth-child(3) { animation-delay: 0.4s; }
+      @keyframes bootFadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes bootDotPulse { 0%, 80%, 100% { opacity: 0.3; transform: scale(0.85); } 40% { opacity: 1; transform: scale(1); } }
+    </style>
   </head>
   <body>
+    <div id="boot-splash" aria-hidden="true">
+      <img id="boot-splash-icon" src="/ladha_icon_customer.png" alt="" />
+      <div id="boot-splash-brand">
+        <div id="boot-splash-word">Ladha</div>
+        <div id="boot-splash-tagline">Taste the moment.</div>
+      </div>
+      <div id="boot-splash-message" hidden>
+        <p id="boot-splash-message-text">Preparing your menu…</p>
+        <div id="boot-splash-dots"><span></span><span></span><span></span></div>
+      </div>
+    </div>
+    <script>
+      // Runs synchronously before React — themes the splash for kitchen
+      // routes immediately, so kitchen staff never see the customer-green
+      // shell even for a single frame.
+      (function () {
+        if (location.pathname.indexOf("/kitchen") === 0) {
+          var el = document.getElementById("boot-splash");
+          el.className = "boot-splash--kitchen";
+          document.getElementById("boot-splash-icon").src = "/ladha_icon_kitchen.png";
+          document.getElementById("boot-splash-word").textContent = "Ladha Kitchen";
+          document.getElementById("boot-splash-tagline").textContent = "Order console";
+          document.getElementById("boot-splash-message-text").textContent = "Loading your orders…";
+        }
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

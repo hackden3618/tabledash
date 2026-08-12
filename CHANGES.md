@@ -1,70 +1,57 @@
 # Changes in this drop
 
-Everything below is code-only — nothing here has been deployed. Railway env
-vars (VAPID keys, PUBLIC_URL/MEDIA_BASE_URL fix) were already set directly
-on the live service and are NOT part of this zip.
+Verified before packaging: `tsc -b` and `vite build` both run clean on the
+frontend with zero errors. The backend can't be fully typechecked in this
+sandbox (Prisma's client generator needs a binary download my network
+policy blocks), but the ~216 errors that show under `tsc --noEmit` are
+100% environmental — the same "Cannot find module generated/prisma/client"
+cascade appears identically in files I never touched (e.g. finance/service.ts).
+Run `bunx prisma generate` once locally and that noise disappears; it's not
+something to chase down.
 
-## Deploy steps (do these in order)
-1. `bun install` — new dependency: `web-push`
-2. `bunx prisma migrate dev` — adds `push_subscriptions` table and
-   `hotels.is_listed` column
-3. Commit, push, let Railway redeploy
+## 1. Two "semantic bugs" — hotel context
+- **Account ledger SMS** (credited/payment/refund/adjustment) now say
+  `[Hotel Name] ...` and "Current balance **at {hotel}**" instead of a bare
+  number with no indication of which hotel's tab it belongs to.
+  `apps/api/src/modules/notifications/templates.ts` +
+  `handlers/account-ledger.handler.ts`.
+- **Orders are now hotel-aware end to end**: `getCustomerProfile`,
+  `getOrderById`, `getOrderForCustomer` all now include the hotel relation.
+  `MyOrdersPage` shows the hotel name on every order card; `OrderTrackingPage`
+  shows it in the header subtitle.
 
-## 1. Upload domain bug
-`PUBLIC_URL`/`MEDIA_BASE_URL` were hardcoded to a stale `tabledash.up.railway.app`
-domain from before the service was renamed to `ladha`. Fixed on Railway directly
-(now reference `${{RAILWAY_PUBLIC_DOMAIN}}` so this can't drift again). No code
-change. Note: images uploaded before the fix still have the dead domain baked
-into their stored URL — needs a one-time DB backfill (not yet written).
+## 2. Real branding — replaces the earlier placeholder icons
+- `ladha_icon_customer.png` / `ladha_icon_kitchen.png` — extracted and
+  composited from your actual brand board (not generated placeholders),
+  512x512, rounded-square, dark green (#0B1E13) / terracotta (#9A3412).
+- `favicon-16.png` / `favicon-32.png` / `apple-touch-icon.png` generated
+  from the same source.
+- Manifests updated to reference the real icons and the correct
+  brand-sampled background_color.
 
-## 2. Two installable PWAs (customer + kitchen)
-- `apps/web/public/manifest-customer.webmanifest`, `manifest-kitchen.webmanifest`
-  — distinct name/icon/theme-color/scope so they're unconfusable on a home screen
-- `apps/web/public/ladha_icon_customer.png`, `ladha_icon_kitchen.png` — generated
-  placeholder icons (green "L" / amber "K"); swap for real designed icons when ready
-- `apps/web/src/pwa/manifestSwitcher.ts` — swaps the linked manifest based on route
-- `apps/web/src/components/InstallBanner.tsx` — non-intrusive top banner, dismiss
-  is session-only (not persisted) so it reappears on reload; iOS Safari fallback tip
-- Wired into both `CustomerShell` and `KitchenShell` in `router.tsx`
+## 3. Boot splash — matches the frame-by-frame spec you gave
+- Inlined critical CSS + markup in `index.html` so it paints before any JS
+  loads — no blank white screen.
+- Frame 1 (0ms): icon fades up. Frame 2 (500ms): wordmark + tagline. A
+  synchronous inline script themes the whole thing (color, icon, wordmark,
+  tagline, loading text) for /kitchen routes before React even starts.
+- `main.tsx` hands off once mounted: first-time-today visitors get the full
+  "Preparing your menu..." beat (~1.1s) with a three-dot pulse (not a
+  spinner); returning visitors within 24h get a ~150ms fast dismiss.
+- Theme colors unified across index.html, manifestSwitcher.ts, and
+  InstallBanner.tsx — all now match the actual brand green sampled from
+  the icon, instead of three slightly different green guesses.
 
-## 3. Web Push notifications
-- `prisma/schema.prisma` — new `PushSubscription` model
-- `apps/api/src/modules/push/` — service (VAPID send/prune) + routes (subscribe/
-  unsubscribe/vapid-public-key)
-- Hooked into `order-created.handler.ts` (kitchen alert) and
-  `order-status-updated.handler.ts` (customer alert + cancellation alert to kitchen)
-- `apps/web/public/sw.js` — receives push, shows notification, routes the click
-- `apps/web/src/pwa/push.ts` — subscribe flow; kitchen re-subscribes every admin
-  session (not just once) since a missed order alert is costly
-- `shared/config.ts` — `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT`,
-  required in production
+## 4. Everything from earlier in this session (unchanged, carried forward)
+Push notifications (VAPID, subscribe routes, hooked into order-created/
+order-status-updated), installable PWAs with per-route manifests, platform
+admin hide/delete-hotel, QR direct hotel links (/:hotelSlug), the upload
+MIME-gate fix, admin login "go home" -> /kitchen, and the missing username
+in the admin welcome SMS.
 
-## 4. QR code direct hotel links
-- `/h/:hotelSlug` route → drops customer straight into that hotel's menu,
-  skipping the zone/location picker
-- Open question flagged, not yet decided: a hotel hidden from the marketplace
-  (see #5) is currently also unreachable via this link, since both use the same
-  listing query. Say the word if you want hidden-but-QR-reachable instead.
-
-## 5. Platform admin: hide/delete hotels
-- `hotels.is_listed` column (default true); discovery/marketplace queries now
-  filter on it
-- `PATCH /platform/hotels/:id/listing` — show/hide toggle
-- `DELETE /platform/hotels/:id` — soft delete (sets deletedAt, closes, unlists);
-  order/ledger/review history is preserved, nothing is hard-deleted
-- Both wired into the hotel detail view in `PlatformAdminPage.tsx`
-
-## 6. Platform console scroll bug
-`<main>` used `minHeight: "100vh"` inside a flex row with no explicit scroll
-container. Changed to `height: 100dvh` + `overflow-y: auto`, matching the
-`.app-container`/`.admin-container` pattern already used elsewhere.
-
-## 7. Admin login "go home" link
-Pointed at `/` (customer marketplace) — now points at `/kitchen`, relabeled
-"Kitchen Home" instead of "Marketplace".
-
-## 8. Missing username in admin welcome SMS
-`adminUsername` was already in the event payload but never reached the SMS
-template — an admin got a link to set a password with no username to log in
-with. Fixed in both `hotelWelcome` (new hotel's first admin) and `staffWelcome`
-(additional admins added to an existing hotel).
+## Deploy steps
+1. bun install (root) - picks up web-push if not already present
+2. bunx prisma generate - regenerates the Prisma client
+3. bunx prisma migrate status - should show clean, matching the single
+   20260812094418_added_listable_toggles migration already in this zip
+4. Commit, push, deploy as normal

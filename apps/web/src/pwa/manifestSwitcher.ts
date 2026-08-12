@@ -14,7 +14,7 @@ import { useEffect } from "react";
 export function useManifestSwitcher(isKitchen: boolean) {
     useEffect(() => {
         const href = isKitchen ? "/manifest-kitchen.webmanifest" : "/manifest-customer.webmanifest";
-        const themeColor = isKitchen ? "#9A3412" : "#114B36";
+        const themeColor = isKitchen ? "#9A3412" : "#0B1E13";
 
         let link = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
         if (!link) {

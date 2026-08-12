@@ -276,6 +276,9 @@ function AnimateOrders({
                     </span>
                   )}
                 </div>
+                {order.hotel?.name && (
+                  <p className="text-xs font-semibold text-[#114B36] mt-0.5">{order.hotel.name}</p>
+                )}
                 <p className="text-xs text-[#9CA3AF] mt-0.5">
                   {new Date(order.orderedAt).toLocaleDateString("en-KE", {
                     day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",

@@ -164,7 +164,7 @@ export const getCustomerProfile = async (customerId: string) => {
     where: { id: customerId },
     include: {
       orders: {
-        include: { orderItems: true },
+        include: { orderItems: true, hotel: { select: { id: true, name: true, slug: true } } },
         orderBy: { orderedAt: "desc" },
         take: 10,
       },

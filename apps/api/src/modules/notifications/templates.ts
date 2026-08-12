@@ -128,40 +128,44 @@ export const partialPayment = (p: PartialPaymentParams): string =>
   `Remaining balance: KSh ${p.remaining}.`;
 
 export interface AccountCreditParams {
+  hotelName: string;
   orderNumber: number;
   amount: number;
   balance: number;
 }
 export const accountCredit = (p: AccountCreditParams): string =>
   `${BRAND}\n` +
-  `Order #${p.orderNumber} added to your account.\n` +
+  `[${p.hotelName}] Order #${p.orderNumber} added to your account.\n` +
   `Amount: KSh ${p.amount}\n` +
-  `Current balance: KSh ${p.balance}`;
+  `Current balance at ${p.hotelName}: KSh ${p.balance}`;
 
 export interface AccountPaymentParams {
+  hotelName: string;
   orderNumber: number;
   amount: number;
   balance: number;
 }
 export const accountPayment = (p: AccountPaymentParams): string =>
   `${BRAND}\n` +
-  `Payment received for order #${p.orderNumber}.\n` +
+  `[${p.hotelName}] Payment received for order #${p.orderNumber}.\n` +
   `Amount: KSh ${p.amount}\n` +
-  `Current balance: KSh ${p.balance}`;
+  `Current balance at ${p.hotelName}: KSh ${p.balance}`;
 
 export interface AccountRefundParams {
+  hotelName: string;
   orderNumber: number;
   amount: number;
   balance: number;
 }
 export const accountRefund = (p: AccountRefundParams): string =>
   `${BRAND}\n` +
-  `Refund completed for order #${p.orderNumber}.\n` +
+  `[${p.hotelName}] Refund completed for order #${p.orderNumber}.\n` +
   `Amount: KSh ${p.amount}\n` +
-  `Current balance: KSh ${p.balance}\n` +
+  `Current balance at ${p.hotelName}: KSh ${p.balance}\n` +
   `We apologize for the inconvenience.`;
 
 export interface AccountAdjustmentParams {
+  hotelName: string;
   orderNumber: number;
   amount: number;
   balance: number;
@@ -169,9 +173,9 @@ export interface AccountAdjustmentParams {
 }
 export const accountAdjustment = (p: AccountAdjustmentParams): string =>
   `${BRAND}\n` +
-  `Your Ladha account balance was adjusted.\n` +
+  `[${p.hotelName}] Your account balance was adjusted.\n` +
   `Order #${p.orderNumber}: KSh ${p.amount}\n` +
-  `Current balance: KSh ${p.balance}` +
+  `Current balance at ${p.hotelName}: KSh ${p.balance}` +
   `${p.reason ? `\nReason: ${p.reason}` : ""}`;
 
 export interface HotelWelcomeParams {
