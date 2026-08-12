@@ -37,11 +37,19 @@ export function InstallBanner({ scope }: InstallBannerProps) {
             event.preventDefault();
             setDeferredPrompt(event as BeforeInstallPromptEvent);
         };
+        const installedHandler = () => {
+            setDismissed(true);
+        };
+
         window.addEventListener("beforeinstallprompt", handler);
+        window.addEventListener("appinstalled", installedHandler);
 
         if (isIOS()) setShowIosTip(true);
 
-        return () => window.removeEventListener("beforeinstallprompt", handler);
+        return () => {
+            window.removeEventListener("beforeinstallprompt", handler);
+            window.removeEventListener("appinstalled", installedHandler);
+        };
     }, []);
 
     if (dismissed || isStandalone() || (!deferredPrompt && !showIosTip)) return null;
@@ -53,8 +61,15 @@ export function InstallBanner({ scope }: InstallBannerProps) {
     const handleInstall = async () => {
         if (!deferredPrompt) return;
         await deferredPrompt.prompt();
-        await deferredPrompt.userChoice;
+        const choice = await deferredPrompt.userChoice;
+        if (choice.outcome === "accepted") {
+            setDismissed(true);
+        }
         setDeferredPrompt(null);
+    };
+
+    const handleDismiss = () => {
+        setDismissed(true);
     };
 
     return (
@@ -93,7 +108,7 @@ export function InstallBanner({ scope }: InstallBannerProps) {
                     </button>
                 )}
                 <button
-                    onClick={() => setDismissed(true)}
+                    onClick={handleDismiss}
                     aria-label="Dismiss"
                     style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.85)", cursor: "pointer", padding: 2, display: "flex" }}
                 >

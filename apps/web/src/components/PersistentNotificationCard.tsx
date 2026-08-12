@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Bell, Volume2, VolumeX, ShieldCheck, Sparkles, CheckCircle2, AlertCircle } from "lucide-react";
+import { Bell, Volume2, VolumeX, ShieldCheck, Sparkles, CheckCircle2, AlertCircle, X } from "lucide-react";
 import { subscribeToPush, getNotificationPermissionState } from "../pwa/push";
 import { triggerNotificationAlert } from "../lib/NotificationSound";
 
@@ -21,6 +21,15 @@ export const PersistentNotificationCard: React.FC<PersistentNotificationCardProp
   );
   const [loading, setLoading] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem("ladha_sound_enabled") !== "false");
+  const [bannerDismissed, setBannerDismissed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    // Permanent dismissal applies only if notification permission was granted
+    if (Notification.permission === "granted") {
+      return localStorage.getItem("ladha_notification_banner_dismissed") === "true";
+    }
+    // Otherwise, dismissal is for the current session only
+    return sessionStorage.getItem("ladha_notification_banner_session_dismissed") === "true";
+  });
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
@@ -29,24 +38,43 @@ export const PersistentNotificationCard: React.FC<PersistentNotificationCardProp
     onStatusChange?.(current);
   }, []);
 
-  const handleEnablePush = async () => {
+  const handleEnablePush = async (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (loading) return;
     setLoading(true);
     setMessage(null);
-    const effectiveToken = token || localStorage.getItem("ladha_customer_token") || localStorage.getItem("ladha_admin_token") || "";
-    const res = await subscribeToPush(effectiveToken);
-    setLoading(false);
-    const updated = getNotificationPermissionState();
-    setPermission(updated);
-    onStatusChange?.(updated);
+    try {
+      const effectiveToken = token || localStorage.getItem("ladha_customer_token") || localStorage.getItem("ladha_admin_token") || "";
+      const res = await subscribeToPush(effectiveToken);
+      const updated = getNotificationPermissionState();
+      setPermission(updated);
+      onStatusChange?.(updated);
 
-    if (res === "subscribed") {
-      setMessage({ type: "success", text: "Background alerts active! You'll get order tracking updates even when app is closed." });
-      triggerNotificationAlert();
-    } else if (res === "denied") {
-      setMessage({ type: "error", text: "Notification permission was blocked in browser settings." });
-    } else if (res === "unsupported") {
-      setMessage({ type: "error", text: "Push notifications are not supported on this browser/device." });
+      if (res === "subscribed" || updated === "granted") {
+        localStorage.setItem("ladha_notification_banner_dismissed", "true");
+        setMessage({ type: "success", text: "Background alerts active! You'll get order tracking updates even when app is closed." });
+        triggerNotificationAlert();
+      } else if (res === "denied" || updated === "denied") {
+        setMessage({ type: "error", text: "Notification permission was blocked in browser settings." });
+      } else if (res === "unsupported") {
+        setMessage({ type: "error", text: "Push notifications are not supported on this browser/device." });
+      }
+    } catch (err) {
+      console.error("[Enable Push Error]:", err);
+      setMessage({ type: "error", text: "Failed to enable notifications." });
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const handleDismissBanner = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (permission === "granted") {
+      localStorage.setItem("ladha_notification_banner_dismissed", "true");
+    } else {
+      sessionStorage.setItem("ladha_notification_banner_session_dismissed", "true");
+    }
+    setBannerDismissed(true);
   };
 
   const toggleSound = () => {
@@ -65,25 +93,52 @@ export const PersistentNotificationCard: React.FC<PersistentNotificationCardProp
   };
 
   if (variant === "banner") {
-    if (permission === "granted") return null;
+    if (bannerDismissed) return null;
+    const isGranted = permission === "granted";
+
     return (
-      <div className="mx-4 my-3 bg-[#EBF5F0] border border-[#C2E3D4] rounded-2xl p-4 flex items-center justify-between gap-3 shadow-sm">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-full bg-[#114B36] text-white flex items-center justify-center shrink-0">
-            <Bell size={20} />
+      <div className={`mx-4 my-3 rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-sm transition-all border ${
+        isGranted ? "bg-[#DCFCE7] border-[#86EFAC]" : "bg-[#EBF5F0] border-[#C2E3D4]"
+      }`}>
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <div className={`w-9 h-9 rounded-full text-white flex items-center justify-center shrink-0 ${
+            isGranted ? "bg-[#15803D]" : "bg-[#114B36]"
+          }`}>
+            {isGranted ? <CheckCircle2 size={18} /> : <Bell size={18} />}
           </div>
-          <div className="min-w-0">
-            <p className="font-bold text-xs text-[#1F2937] truncate">Never miss an order update</p>
-            <p className="text-[0.72rem] text-[#4B5563] leading-snug truncate">Get sound alerts & live tracking when closed</p>
+          <div className="min-w-0 flex-1">
+            <p className="font-bold text-xs text-[#1F2937] truncate">
+              {isGranted ? "Notifications Enabled!" : "Never miss an order update"}
+            </p>
+            <p className="text-[0.7rem] text-[#4B5563] leading-snug truncate">
+              {isGranted ? "You're now on the hook and can close this banner" : "Get sound alerts & live tracking when closed"}
+            </p>
           </div>
         </div>
-        <button
-          onClick={handleEnablePush}
-          disabled={loading}
-          className="bg-[#114B36] text-white text-xs font-bold px-3.5 py-2 rounded-xl border-none cursor-pointer shrink-0 hover:bg-[#0D3D2B] transition-colors disabled:opacity-50"
-        >
-          {loading ? "Enabling..." : "Allow"}
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          {!isGranted ? (
+            <button
+              type="button"
+              onClick={handleEnablePush}
+              disabled={loading}
+              className="bg-[#114B36] text-white text-xs font-bold px-3.5 py-1.5 rounded-xl border-none cursor-pointer hover:bg-[#0D3D2B] transition-colors disabled:opacity-50"
+            >
+              {loading ? "Enabling..." : "Allow"}
+            </button>
+          ) : (
+            <span className="bg-[#15803D] text-white text-[0.7rem] font-bold px-2.5 py-1 rounded-xl flex items-center gap-1">
+              <CheckCircle2 size={13} /> Enabled
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={handleDismissBanner}
+            aria-label="Dismiss banner"
+            className="text-[#6B7280] hover:text-[#1F2937] bg-transparent border-none p-1 cursor-pointer flex items-center justify-center rounded-lg hover:bg-black/5"
+          >
+            <X size={16} />
+          </button>
+        </div>
       </div>
     );
   }

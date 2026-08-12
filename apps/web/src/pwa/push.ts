@@ -32,12 +32,17 @@ export type PushSubscribeResult = "subscribed" | "denied" | "unsupported" | "err
 export async function subscribeToPush(token: string): Promise<PushSubscribeResult> {
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return "unsupported";
 
-    const permission = await Notification.requestPermission();
-    if (permission !== "granted") return "denied";
-
     try {
-        const registration = await navigator.serviceWorker.ready;
-        const vapidRes = await fetch("/api/v1/push/vapid-public-key").then((r) => r.json());
+        const permission = await Notification.requestPermission();
+        if (permission !== "granted") return "denied";
+
+        let registration = await navigator.serviceWorker.getRegistration();
+        if (!registration) {
+            registration = await navigator.serviceWorker.register("/sw.js");
+        }
+        await navigator.serviceWorker.ready;
+
+        const vapidRes = await fetch("/api/v1/push/vapid-public-key").then((r) => r.json()).catch(() => null);
         const vapidKey = vapidRes?.data?.key;
         if (!vapidKey) return "error";
 
@@ -50,9 +55,15 @@ export async function subscribeToPush(token: string): Promise<PushSubscribeResul
         }
 
         const json = subscription.toJSON();
-        await apiPost("/push/subscribe", { endpoint: json.endpoint, keys: json.keys }, token);
+        if (json.endpoint && json.keys) {
+            const effectiveToken = token || localStorage.getItem("ladha_customer_token") || localStorage.getItem("ladha_admin_token") || "";
+            if (effectiveToken) {
+                await apiPost("/push/subscribe", { endpoint: json.endpoint, keys: json.keys }, effectiveToken).catch(() => 0);
+            }
+        }
         return "subscribed";
-    } catch {
+    } catch (err) {
+        console.error("[Push Subscribe Error]:", err);
         return "error";
     }
 }
