@@ -41,7 +41,7 @@ const formatProduct = (product: { id: string; name: string; category: string; me
 
 const buildHomeDiscovery = async (zoneId?: string, includeAll = false, customerId?: string) => {
   const [hotels, products, paidItems, heroSetting, ratingRows, mealRatingRows, recentOrders] = await Promise.all([
-    prisma.hotel.findMany({ where: { deletedAt: null, ...(!includeAll && zoneId ? { zoneId } : {}) }, select: { id: true, name: true, slug: true, imageUrl: true, isOpen: true, zone: { select: { id: true, name: true, type: true } } }, orderBy: { name: "asc" } }),
+    prisma.hotel.findMany({ where: { deletedAt: null, isListed: true, ...(!includeAll && zoneId ? { zoneId } : {}) }, select: { id: true, name: true, slug: true, imageUrl: true, isOpen: true, zone: { select: { id: true, name: true, type: true } } }, orderBy: { name: "asc" } }),
     prisma.product.findMany({
       where: { deleted: false, available: true, stockQty: { gt: 0 }, ...(!includeAll && zoneId ? { hotel: { zoneId } } : {}) },
       include: { hotel: { select: { id: true, name: true, imageUrl: true, isOpen: true, zone: { select: { id: true, name: true, type: true } } } } },

@@ -29,6 +29,8 @@ export const updateStaffPhone = async (phone: string): Promise<string> => {
   return setting.value;
 };
 
+import { deleteMediaByUrl } from "../media/service";
+
 export const getHotelImageUrl = async (hotelId?: string): Promise<string | null> => {
   const hotel = hotelId ? await prisma.hotel.findUnique({ where: { id: hotelId } }) : await getDefaultHotel();
   return hotel?.imageUrl ?? null;
@@ -37,6 +39,11 @@ export const getHotelImageUrl = async (hotelId?: string): Promise<string | null>
 export const updateHotelImageUrl = async (imageUrl: string, hotelId?: string): Promise<string> => {
   const hotel = hotelId ? await prisma.hotel.findUnique({ where: { id: hotelId } }) : await getDefaultHotel();
   if (!hotel) throw new Error("No hotel configured");
+
+  if (hotel.imageUrl && hotel.imageUrl !== imageUrl) {
+    void deleteMediaByUrl(hotel.imageUrl);
+  }
+
   const updated = await prisma.hotel.update({
     where: { id: hotel.id },
     data: { imageUrl },

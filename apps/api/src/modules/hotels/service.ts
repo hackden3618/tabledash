@@ -14,7 +14,7 @@ export const getHotelBySlug = async (slug: string) => {
 
 export const getAllHotels = async (zoneId?: string) => {
   return prisma.hotel.findMany({
-    where: { deletedAt: null, ...(zoneId ? { zoneId } : {}) },
+    where: { deletedAt: null, isListed: true, ...(zoneId ? { zoneId } : {}) },
     select: { id: true, name: true, slug: true, imageUrl: true, isOpen: true, zone: { select: { id: true, name: true, type: true } } },
     orderBy: { name: "asc" },
   });

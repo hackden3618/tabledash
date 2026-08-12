@@ -23,6 +23,9 @@ import { AdminBottomNavBar, type AdminTab } from "./components/AdminBottomNavBar
 import { apiGet } from "./lib/api";
 import { decodeJwt } from "./lib/jwt";
 import { useWebSocket, type WsEventPayload } from "./lib/websocket";
+import { useManifestSwitcher } from "./pwa/manifestSwitcher";
+import { registerServiceWorker, subscribeToPush } from "./pwa/push";
+import { InstallBanner } from "./components/InstallBanner";
 
 import { CartPage } from "./pages/customer/CartPage";
 import { ConfirmationPage } from "./pages/customer/ConfirmationPage";
@@ -121,6 +124,26 @@ function AppContent() {
 
     const realtimeRole = isAdminPath ? "admin" : "customer";
     const realtimeToken = isKitchenPath ? adminToken : isPlatformPath ? platformToken : customerToken;
+
+    useManifestSwitcher(isKitchenPath);
+
+    useEffect(() => {
+        registerServiceWorker();
+    }, []);
+
+    // Kitchen push is "not excusable" — a missed order alert costs the hotel
+    // real money, so re-attempt the subscribe on every admin session instead
+    // of once. subscribeToPush() itself is idempotent for an already-granted
+    // permission, so this is cheap when already subscribed.
+    useEffect(() => {
+        if (isKitchenPath && adminToken) subscribeToPush(adminToken);
+    }, [isKitchenPath, adminToken]);
+
+    // Customers subscribe explicitly from the "Stay Updated" button on their
+    // profile page — not automatically on every login. Browsers will silently
+    // ignore repeated requestPermission() calls on desktop but may surface
+    // repeated dialogs on iOS Safari.
+
     const currentIdentityKey = isPlatformPath ? (platformToken ? `platform:${decodeJwt(platformToken)?.sub ?? ""}` : "") : isKitchenPath ? (adminUser?.id ? `admin:${adminUser.id}` : "") : (customer?.id ? `customer:${customer.id}` : `guest:${localStorage.getItem("ladha_guest_id") || ""}`);
 
     const rootSocket = useWebSocket(realtimeRole, undefined, (event: WsEventPayload) => {
@@ -201,6 +224,7 @@ function CustomerShell() {
 
     return (
         <>
+            <InstallBanner scope="customer" />
             <Outlet />
             <BottomNav
                 activeTab={getActiveTab(location.pathname)}
@@ -252,6 +276,7 @@ function KitchenShell() {
 
     return (
         <>
+            {!hydrating && isLoggedIn && <InstallBanner scope="admin" />}
             <Outlet />
             {!hydrating && isLoggedIn && !isKitchenNavHidden(location.pathname) && (
                 <AdminBottomNavBar
@@ -274,6 +299,25 @@ function MenuRoute() {
             onNavigateToCart={() => navigate("/cart")}
             onNavigateToAccount={() => navigate("/account")}
             onNavigateToConversations={() => navigate("/inbox")}
+            // When a hotel is tapped on the marketplace, push its slug into
+            // the URL so the address bar always holds a shareable/QR-able link.
+            onNavigateToHotel={(slug) => navigate(`/h/${slug}`)}
+        />
+    );
+}
+
+/** QR-code entry point — e.g. printed on a table tent as https://ladha.co.ke/h/riverside-food-court */
+function HotelDirectRoute() {
+    const navigate = useNavigate();
+    const { hotelSlug } = useParams();
+    return (
+        <MenuListPage
+            initialHotelSlug={hotelSlug}
+            onNavigateToCart={() => navigate("/cart")}
+            onNavigateToAccount={() => navigate("/account")}
+            onNavigateToConversations={() => navigate("/inbox")}
+            // Back from hotel menu returns to marketplace root
+            onBackToMarketplace={() => navigate("/")}
         />
     );
 }
@@ -669,6 +713,7 @@ export const router = createBrowserRouter([
                 element: <CustomerShell />,
                 children: [
                     { index: true, element: <MenuRoute /> },
+                    { path: "h/:hotelSlug", element: <HotelDirectRoute /> },
                     { path: "search", element: <SearchRoute /> },
                     { path: "cart", element: <CartRoute /> },
                     { path: "checkout", element: <CheckoutRoute /> },

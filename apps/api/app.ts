@@ -20,6 +20,7 @@ import { ordersRoute } from "./src/modules/orders/route";
 import { platformRoute } from "./src/modules/platform/routes";
 import { settingsRoute } from "./src/modules/settings/route";
 import { uploadRoute } from "./src/modules/upload/route";
+import { pushRoute } from "./src/modules/push/route";
 import { financeRoute } from "./src/modules/finance/route";
 import { discoveryRoute } from "./src/modules/discovery/route";
 import { messagingRoute } from "./src/modules/messaging/routes";
@@ -203,6 +204,7 @@ export const app = new Elysia()
   .use(customersRoute)
   .use(settingsRoute)
   .use(uploadRoute)
+  .use(pushRoute)
   .use(platformRoute)
   .use(messagingRoute)
   .use(financeRoute)

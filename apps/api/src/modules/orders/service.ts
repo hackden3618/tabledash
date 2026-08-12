@@ -559,6 +559,7 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus, canc
                 payload: JSON.stringify({
                     orderId: updatedOrder.id,
                     hotelId: updatedOrder.hotelId,
+                    customerId: updatedOrder.customerId,
                     orderNumber: updatedOrder.orderNumber,
                     customerName: buildCustomerDisplay(updatedOrder.customer.firstName, updatedOrder.customer.lastName, updatedOrder.customer.knownName),
                     firstName: updatedOrder.customer.firstName,

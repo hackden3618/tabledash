@@ -2,11 +2,89 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/ladha_favicon.png" />
+
+    <!-- ── Viewport ─────────────────────────────────────────────────────────── -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Ladha — Taste the Moment</title>
-    <meta name="description" content="Fresh meals from Kenya's best restaurants. Fast delivery to your market stall." />
+
+    <!-- ── Favicons & App Icons ──────────────────────────────────────────────── -->
+    <link rel="icon" type="image/png" href="/ladha_favicon.png" />
+    <!-- Apple: static icon so "Add to Home Screen" gets the real icon, not a screenshot -->
+    <link rel="apple-touch-icon" href="/ladha_icon_customer.png" />
+
+    <!-- ── PWA Manifest ───────────────────────────────────────────────────────
+         Static default so browsers detect installability BEFORE React runs.
+         manifestSwitcher.ts swaps this to manifest-kitchen.webmanifest for
+         kitchen sessions at runtime.
+    ─────────────────────────────────────────────────────────────────────────── -->
+    <link rel="manifest" href="/manifest-customer.webmanifest" />
+
+    <!-- ── Apple PWA meta ────────────────────────────────────────────────────── -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Ladha" />
+
+    <!-- ── Theme color (JS swaps this for kitchen sessions) ─────────────────── -->
     <meta name="theme-color" content="#114B36" />
+
+    <!-- ── Primary SEO ───────────────────────────────────────────────────────── -->
+    <title>Ladha — Order Fresh Food Online | Kenya's Local Kitchen Marketplace</title>
+    <meta name="description" content="Order fresh, local meals from trusted kitchens near you. Fast delivery to market stalls, offices and homes across Kenya. Browse menus, track your order live on Ladha." />
+    <meta name="keywords" content="food delivery Kenya, order food online Kenya, local restaurant delivery, fresh meals Kenya, Ladha food delivery, kitchen delivery, market stall food, online food order Naivasha, Kiambu food delivery" />
+    <link rel="canonical" href="https://ladha.co.ke" id="ladha-canonical" />
+
+    <!-- ── Open Graph (Facebook, WhatsApp link previews) ───────────────────── -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Ladha" />
+    <meta property="og:title" content="Ladha — Fresh Food Delivered Fast | Kenya's Local Kitchen Marketplace" />
+    <meta property="og:description" content="Order from trusted local kitchens. Fresh meals delivered to market stalls, offices and homes across Kenya. Track your order live." />
+    <meta property="og:image" content="https://ladha.co.ke/ladha_favicon.png" />
+    <meta property="og:image:width" content="512" />
+    <meta property="og:image:height" content="512" />
+    <meta property="og:image:alt" content="Ladha — fresh food delivered fast" />
+    <meta property="og:url" content="https://ladha.co.ke" />
+    <meta property="og:locale" content="en_KE" />
+
+    <!-- ── Twitter Card ──────────────────────────────────────────────────────── -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Ladha — Fresh Food Delivered Fast" />
+    <meta name="twitter:description" content="Order from trusted local kitchens near you. Fast delivery across Kenya." />
+    <meta name="twitter:image" content="https://ladha.co.ke/ladha_favicon.png" />
+
+    <!-- ── Geo / Language targeting ─────────────────────────────────────────── -->
+    <meta name="geo.region" content="KE" />
+    <meta name="geo.placename" content="Kenya" />
+    <meta http-equiv="content-language" content="en-KE" />
+
+    <!-- ── Robots ────────────────────────────────────────────────────────────── -->
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+
+    <!-- ── JSON-LD Structured Data — FoodService ─────────────────────────────
+         Helps Google understand Ladha is a food delivery marketplace and
+         surface it in "food delivery near me" rich results.
+    ─────────────────────────────────────────────────────────────────────────── -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FoodEstablishment",
+      "@id": "https://ladha.co.ke/#organization",
+      "name": "Ladha",
+      "alternateName": "Ladha Deliveries",
+      "description": "Kenya's local food delivery marketplace — fresh meals from trusted kitchens delivered to market stalls, offices and homes.",
+      "url": "https://ladha.co.ke",
+      "logo": "https://ladha.co.ke/ladha_favicon.png",
+      "image": "https://ladha.co.ke/ladha_favicon.png",
+      "areaServed": {
+        "@type": "Country",
+        "name": "Kenya"
+      },
+      "servesCuisine": ["Local Kenyan", "African", "Fast Food", "Grilled"],
+      "priceRange": "KSh 100 - KSh 2000",
+      "hasMap": "https://ladha.co.ke",
+      "sameAs": []
+    }
+    </script>
+
+    <!-- ── Google Fonts ──────────────────────────────────────────────────────── -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   </head>

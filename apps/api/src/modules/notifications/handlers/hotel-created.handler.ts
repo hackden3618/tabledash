@@ -18,6 +18,7 @@ export async function handleHotelCreated(payload: Record<string, unknown>): Prom
 
   const message = hotelWelcome({
     hotelName: data.hotelName,
+    adminUsername: data.adminUsername,
     setupLink: buildSetupLink(data.setupToken),
   });
 

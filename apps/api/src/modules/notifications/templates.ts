@@ -176,12 +176,14 @@ export const accountAdjustment = (p: AccountAdjustmentParams): string =>
 
 export interface HotelWelcomeParams {
   hotelName: string;
+  adminUsername: string;
   setupLink: string;
 }
 export const hotelWelcome = (p: HotelWelcomeParams): string =>
   `${BRAND}\n` +
   `Welcome to Ladha, ${p.hotelName}.\n` +
   `Your kitchen dashboard is ready.\n` +
+  `Username: ${p.adminUsername}\n` +
   `Set your password: ${p.setupLink}\n` +
   `This link expires in 24 hours.`;
 
@@ -189,13 +191,15 @@ export interface StaffWelcomeParams {
   staffName: string;
   role: string;
   hotelName: string;
+  username?: string;
   setupLink?: string;
 }
 export const staffWelcome = (p: StaffWelcomeParams): string => {
   const base =
     `${BRAND}\n` +
     `Welcome ${p.staffName}.\n` +
-    `You have been added as ${p.role} at ${p.hotelName}.`;
+    `You have been added as ${p.role} at ${p.hotelName}.` +
+    `${p.username ? `\nUsername: ${p.username}` : ""}`;
   return p.setupLink
     ? `${base}\nSet your password: ${p.setupLink}\nLink expires in 24 hours.`
     : base;

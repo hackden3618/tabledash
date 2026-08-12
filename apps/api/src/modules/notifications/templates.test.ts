@@ -28,6 +28,7 @@ const sample = {
   itemsSummary: "2x Chapati, 1x Tea",
   totalAmount: 80,
   firstName: "Dennis",
+  adminUsername: "admin",
   hotelName: "Hotel A",
   link: "https://example.com",
   amountPaid: 50,

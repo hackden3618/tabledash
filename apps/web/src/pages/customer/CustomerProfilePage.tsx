@@ -8,7 +8,9 @@ import { Input } from "../../components/ui/Input";
 import { Modal } from "../../components/ui/Modal";
 import { PageTransition } from "../../components/ui/PageTransition";
 import { SecureCodeInput } from "../../components/ui/SecureCodeInput";
-import { User, Phone, Tag, Lock, LogOut, Trash2, ChevronRight, CheckCircle2, ShieldCheck, Smartphone } from "lucide-react";
+import { User, Phone, Tag, Lock, LogOut, Trash2, ChevronRight, CheckCircle2, ShieldCheck, Smartphone, Bell } from "lucide-react";
+import { subscribeToPush, getNotificationPermissionState } from "../../pwa/push";
+import { PersistentNotificationCard } from "../../components/PersistentNotificationCard";
 
 const formatPhone = (raw: string): string => {
   const cleaned = raw.replace(/\D/g, "");
@@ -59,6 +61,24 @@ export const CustomerProfilePage: React.FC<CustomerProfilePageProps> = ({ onBack
   const [deleteError, setDeleteError] = useState("");
 
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | "unsupported">(() => getNotificationPermissionState());
+  const [pushLoading, setPushLoading] = useState(false);
+
+  const handleEnableNotifications = async () => {
+    setPushLoading(true);
+    const token = localStorage.getItem("ladha_customer_token") || "";
+    const res = await subscribeToPush(token);
+    setPushLoading(false);
+    setPushPermission(getNotificationPermissionState());
+    if (res === "subscribed") {
+      setSaveSuccess("Notifications enabled! You'll receive real-time order updates.");
+    } else if (res === "denied") {
+      setSaveError("Notification permission was denied in your browser settings.");
+    } else if (res === "unsupported") {
+      setSaveError("Push notifications are not supported on this device/browser.");
+    }
+  };
 
   const handleSave = async () => {
     setSaveError("");
@@ -270,6 +290,9 @@ export const CustomerProfilePage: React.FC<CustomerProfilePageProps> = ({ onBack
             </div>
           )}
 
+          {/* Persistent Notifications & Sound / Haptics Card */}
+          <PersistentNotificationCard />
+
           {/* Actions */}
           <div className="bg-white rounded-2xl shadow-[0_2px_8px_rgba(17,75,54,0.06)] overflow-hidden">
             <ActionRow
@@ -283,6 +306,13 @@ export const CustomerProfilePage: React.FC<CustomerProfilePageProps> = ({ onBack
               icon={<Lock size={18} />}
               label="Change PIN"
               onClick={() => { setShowChangePin(true); setPinStep("phone"); setPinOtp(""); setPinNew(""); setPinConfirm(""); setPinError(""); setPinSuccess(""); }}
+            />
+            <div className="h-px bg-[#F3F4F6] mx-4" />
+            <ActionRow
+              icon={<Bell size={18} />}
+              label={pushPermission === "granted" ? "Push Notifications Active" : pushLoading ? "Enabling..." : "Allow Push Notifications"}
+              hint={pushPermission === "granted" ? "Real-time order tracking alerts enabled" : pushPermission === "denied" ? "Permission denied in browser settings" : "Receive instant alerts when order status changes"}
+              onClick={handleEnableNotifications}
             />
             <div className="h-px bg-[#F3F4F6] mx-4" />
             <ActionRow

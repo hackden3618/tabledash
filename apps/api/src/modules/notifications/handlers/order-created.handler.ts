@@ -1,6 +1,7 @@
 import { smsService } from "../sms.service";
 import { getSmsRecipients } from "../../settings/service";
 import { orderAlertToHotel } from "../templates";
+import { sendPushToHotelAdmins } from "../../push/service";
 
 interface OrderCreatedPayload {
   orderId: string;
@@ -21,6 +22,18 @@ interface OrderCreatedPayload {
 
 export async function handleOrderCreated(payload: Record<string, unknown>): Promise<boolean> {
   const data = payload as unknown as OrderCreatedPayload;
+
+  // Kitchen push alert — independent of SMS recipient config below; every
+  // device the hotel's staff has installed the kitchen PWA on and granted
+  // push permission gets a native notification, even with the app closed.
+  if (data.hotelId) {
+    await sendPushToHotelAdmins(data.hotelId, {
+      title: `New order #${data.orderNumber}`,
+      body: `${data.customerName} — KSh ${data.totalAmount}${data.itemsSummary ? ` · ${data.itemsSummary.split(/,\s*|\n/)[0]}` : ""}`,
+      url: "/kitchen/orders",
+      tag: `order-${data.orderId}`,
+    }).catch(() => 0);
+  }
 
   const staffPhones = await getSmsRecipients(data.hotelId);
   if (staffPhones.length === 0) return true;

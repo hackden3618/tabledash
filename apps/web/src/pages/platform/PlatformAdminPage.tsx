@@ -19,7 +19,7 @@ interface PlatformDashboard {
 
 // NOTE - all actions here are highly impactful to business operations; destructive actions stay behind confirmation.
 interface Hotel {
-    id: string; name: string; slug: string; isOpen: boolean;
+    id: string; name: string; slug: string; isOpen: boolean; isListed?: boolean;
     autoCloseAt: string | null; imageUrl: string | null; createdAt: string; deletedAt: string | null;
     adminUsers?: { id: string; name: string; username: string; role: string }[];
     _count?: { orders: number };
@@ -226,6 +226,54 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
             await fetch();
         } else {
             pushNotification("danger", "Error", res.error || "Failed to toggle hotel", { scope: "platform" });
+        }
+        setConfirm(null);
+    };
+
+    // ── Hide/Show hotel on marketplace (non-destructive — order history, staff, and settings are untouched) ──
+    const handleToggleListing = (id: string, currentlyListed: boolean) => {
+        const hotel = hotels.find((h) => h.id === id);
+        const hotelName = hotel?.name || "This hotel";
+        setConfirm({
+            title: currentlyListed ? `Hide ${hotelName} from the marketplace?` : `Show ${hotelName} on the marketplace?`,
+            message: currentlyListed
+                ? `${hotelName} will disappear from customer browsing and search. Existing orders and direct links are unaffected. You can re-list it anytime.`
+                : `${hotelName} will become visible to customers browsing the marketplace again.`,
+            onConfirm: () => void performToggleListing(id, !currentlyListed),
+        });
+    };
+
+    const performToggleListing = async (id: string, isListed: boolean) => {
+        const res = await apiPatch<Hotel>(`/platform/hotels/${id}/listing`, { isListed }, token);
+        if (res.success && res.data) {
+            pushNotification("info", "Hotel updated", `${res.data.name} is now ${isListed ? "listed" : "hidden"} on the marketplace`, { scope: "platform" });
+            await fetch();
+        } else {
+            pushNotification("danger", "Error", res.error || "Failed to update listing", { scope: "platform" });
+        }
+        setConfirm(null);
+    };
+
+    // ── Delete Hotel ── soft delete: closes the hotel, hides it, and keeps every
+    // order/ledger/review record intact for accounting and dispute history.
+    const handleDeleteHotel = (id: string) => {
+        const hotel = hotels.find((h) => h.id === id);
+        const hotelName = hotel?.name || "This hotel";
+        setConfirm({
+            title: `Delete ${hotelName}?`,
+            message: `${hotelName} will be removed from the marketplace and closed for new orders immediately. This cannot be undone from here — order and financial history is kept, but the hotel itself is gone. Are you sure?`,
+            onConfirm: () => void performDeleteHotel(id),
+        });
+    };
+
+    const performDeleteHotel = async (id: string) => {
+        const res = await apiDelete<Hotel>(`/platform/hotels/${id}`, token);
+        if (res.success) {
+            pushNotification("info", "Hotel deleted", `${res.data?.name || "The hotel"} has been removed`, { scope: "platform" });
+            if (view === "hotel_detail") setView("hotels");
+            await fetch();
+        } else {
+            pushNotification("danger", "Error", res.error || "Failed to delete hotel", { scope: "platform" });
         }
         setConfirm(null);
     };
@@ -451,7 +499,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
             </nav>
 
             {/* Main content */}
-            <main style={{ flex: 1, minHeight: "100vh", padding: s(8), maxWidth: "960px", marginLeft: "auto", marginRight: "auto" }}
+            <main style={{ flex: 1, height: "100dvh", overflowY: "auto", WebkitOverflowScrolling: "touch", padding: s(8), maxWidth: "960px", marginLeft: "auto", marginRight: "auto" }}
                 className="platform-main">
                 {loading ? (
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "40vh", color: T.textDim }}>Loading…</div>
@@ -535,6 +583,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                                 <div style={{ fontWeight: 700, color: T.text }}>{h.name}</div>
                                                 <div style={{ fontSize: "0.8rem", color: T.textMuted, marginTop: s(1) }}>
                                                     {h.slug} · {h.isOpen ? "Open" : "Closed"} · {h.zone?.name ?? "Unassigned region"} · Onboarded {new Date(h.createdAt).toLocaleDateString()}
+                                                    {h.isListed === false && <span style={{ color: T.warning, fontWeight: 700 }}> · Hidden from marketplace</span>}
                                                 </div>
                                             </div>
                                             <ChevronRight size={18} color={T.textDim} />
@@ -550,7 +599,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                         )}
                     </>
                 ) : view === "hotel_detail" && selectedHotel ? (
-                    <HotelDetail hotelId={selectedHotel.id} onBack={() => setView("hotels")} onToggle={handleToggleHotel} token={token} regions={regions} />
+                    <HotelDetail hotelId={selectedHotel.id} onBack={() => setView("hotels")} onToggle={handleToggleHotel} onToggleListing={handleToggleListing} onDelete={handleDeleteHotel} token={token} regions={regions} />
                 ) : view === "regions" ? (
                     <ServingRegionsPage regions={regions} token={token} onChanged={setRegions} />
                 ) : view === "create_hotel" ? (
@@ -852,7 +901,7 @@ function ServingRegionsPage({ regions, token, onChanged }: { regions: DeliveryRe
 }
 
 // ── Hotel Detail sub-view ──
-function HotelDetail({ hotelId, onBack, onToggle, token: tok, regions }: { hotelId: string; onBack: () => void; onToggle: (id: string, action: "open" | "close") => void; token: string; regions: DeliveryRegion[] }) {
+function HotelDetail({ hotelId, onBack, onToggle, onToggleListing, onDelete, token: tok, regions }: { hotelId: string; onBack: () => void; onToggle: (id: string, action: "open" | "close") => void; onToggleListing: (id: string, currentlyListed: boolean) => void; onDelete: (id: string) => void; token: string; regions: DeliveryRegion[] }) {
     const [hotel, setHotel] = useState<Hotel | null>(null);
     const [detailLoading, setDetailLoading] = useState(true);
     const [zoneId, setZoneId] = useState("");
@@ -924,15 +973,23 @@ function HotelDetail({ hotelId, onBack, onToggle, token: tok, regions }: { hotel
                 <div>
                     <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: T2.text, margin: 0 }}>{hotel.name}</h1>
                     <div style={{ fontSize: "0.85rem", color: T2.textMuted, marginTop: s(1) }}>
-                        {hotel.slug} · {hotel.isOpen ? "Open" : "Closed"}
+                        {hotel.slug} · {hotel.isOpen ? "Open" : "Closed"} · {hotel.isListed === false ? "Hidden from marketplace" : "Listed"}
                         {hotel._count && ` · ${hotel._count.orders} orders`}
                         · Onboarded {new Date(hotel.createdAt).toLocaleDateString()}
                     </div>
                 </div>
-                <div style={{ display: "flex", gap: s(2) }}>
+                <div style={{ display: "flex", gap: s(2), flexWrap: "wrap", justifyContent: "flex-end" }}>
                     <button onClick={() => onToggle(hotel.id, hotel.isOpen ? "close" : "open")}
                         style={{ background: hotel.isOpen ? T2.dangerMuted : T2.successMuted, color: hotel.isOpen ? T2.danger : T2.success, border: `1px solid ${hotel.isOpen ? "#FECACA" : "#A7F3D0"}`, padding: `${s(2)} ${s(4)}`, borderRadius: T2.radius, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>
                         {hotel.isOpen ? "Suspend" : "Activate"}
+                    </button>
+                    <button onClick={() => onToggleListing(hotel.id, hotel.isListed !== false)}
+                        style={{ background: T2.surface, color: T2.text, border: `1px solid ${T2.border}`, padding: `${s(2)} ${s(4)}`, borderRadius: T2.radius, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>
+                        {hotel.isListed === false ? "Show on marketplace" : "Hide from marketplace"}
+                    </button>
+                    <button onClick={() => onDelete(hotel.id)}
+                        style={{ background: T2.dangerMuted, color: T2.danger, border: `1px solid #FECACA`, padding: `${s(2)} ${s(4)}`, borderRadius: T2.radius, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>
+                        Delete Hotel
                     </button>
                 </div>
             </div>

@@ -10,7 +10,7 @@
 import { prisma } from "../../../../../infrastructure/database/prisma";
 import { wsHub } from "../websocket/hub";
 import { getDefaultHotel } from "../hotels/service";
-import { toPublicMediaUrl } from "../media/service";
+import { toPublicMediaUrl, deleteMediaByUrl } from "../media/service";
 
 export interface CreateProductInput {
   name: string;
@@ -182,7 +182,11 @@ export const updateProduct = async (id: string, input: { name?: string; category
   if (input.name !== undefined) updateData.name = input.name;
   if (input.category !== undefined) updateData.category = input.category;
   if (input.mealCategories !== undefined) updateData.mealCategories = input.mealCategories;
-  if (input.imageUrl !== undefined) updateData.imageUrl = input.imageUrl;
+  if (input.imageUrl !== undefined && input.imageUrl !== existing.imageUrl) {
+    updateData.imageUrl = input.imageUrl;
+    // Delete old image permanently from storage bucket
+    if (existing.imageUrl) void deleteMediaByUrl(existing.imageUrl);
+  }
   if (input.price !== undefined) updateData.price = input.price;
   if (input.available !== undefined) updateData.available = input.available;
 
