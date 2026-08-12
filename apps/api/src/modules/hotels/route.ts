@@ -53,6 +53,10 @@ export const hotelsRoute = new Elysia({
   },
 })
   .use(jwt({ name: "jwt", secret: env.jwtSecret }))
+  /**
+   * Public hotel listing (marketplace) — filters by isListed.
+   * Used by the marketplace discovery page.
+   */
   .get("/", async ({ set }) => {
     try {
       const hotels = await getAllHotels();
@@ -79,6 +83,74 @@ export const hotelsRoute = new Elysia({
       return { success: false, error: "Failed to load hotels" };
     }
   })
+  /**
+   * Single hotel by URL slug — does NOT filter on isListed.
+   * Used by QR-code direct links (/h/:slug) and hotel-page routing.
+   * Hidden hotels remain reachable via their QR link so they can be
+   * shared privately before going live on the marketplace.
+   */
+  .get("/by-slug/:slug", async ({ params, set }) => {
+    try {
+      const hotel = await prisma.hotel.findFirst({
+        where: { slug: params.slug, deletedAt: null },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          isOpen: true,
+          imageUrl: true,
+          isListed: true,
+          zone: { select: { id: true, name: true, type: true } },
+        },
+      });
+      if (!hotel) {
+        set.status = 404;
+        return { success: false, error: "No kitchen found at this link. It may have moved or been removed." };
+      }
+      const products = await prisma.product.findMany({
+        where: { hotelId: hotel.id, deleted: false },
+        select: {
+          id: true,
+          name: true,
+          category: true,
+          mealCategories: true,
+          imageUrl: true,
+          price: true,
+          available: true,
+          stockQty: true,
+        },
+        orderBy: { createdAt: "asc" },
+      });
+      const { toPublicMediaUrl } = await import("../media/service");
+      return {
+        success: true,
+        data: {
+          hotel: {
+            id: hotel.id,
+            name: hotel.name,
+            slug: hotel.slug,
+            isOpen: hotel.isOpen,
+            imageUrl: hotel.imageUrl ? (toPublicMediaUrl(hotel.imageUrl) ?? hotel.imageUrl) : null,
+            locationName: hotel.zone.name,
+            locationType: hotel.zone.type,
+          },
+          products: products.map((p) => ({
+            id: p.id,
+            name: p.name,
+            category: p.category,
+            mealCategories: p.mealCategories,
+            imageUrl: toPublicMediaUrl(p.imageUrl) ?? p.imageUrl,
+            price: Number(p.price),
+            available: p.available,
+            stockQty: p.stockQty,
+          })),
+        },
+      };
+    } catch {
+      set.status = 500;
+      return { success: false, error: "Failed to load hotel" };
+    }
+  }, { params: t.Object({ slug: t.String() }) })
   .get("/rating/:hotelId", async ({ params, set }) => {
     try {
       const aggregate = await prisma.restaurantReview.aggregate({
@@ -204,4 +276,30 @@ export const hotelsRoute = new Elysia({
         zoneId: t.Optional(t.String({ format: "uuid" })),
       }),
     }
-  );
+  )
+  /**
+   * Dynamic XML sitemap of all publicly listed hotels.
+   * Submit https://ladha.co.ke/api/v1/hotels/sitemap.xml to Google Search
+   * Console alongside the static /sitemap.xml so every hotel page gets indexed.
+   */
+  .get("/sitemap.xml", async ({ set }) => {
+    try {
+      const hotels = await prisma.hotel.findMany({
+        where: { deletedAt: null, isListed: true },
+        select: { slug: true, updatedAt: true },
+        orderBy: { name: "asc" },
+      });
+      const baseUrl = (process.env.PUBLIC_URL ?? "https://ladha.co.ke").replace(/\/$/, "");
+      const entries = hotels.map((h) =>
+        `  <url>\n    <loc>${baseUrl}/h/${encodeURIComponent(h.slug)}</loc>\n    <changefreq>daily</changefreq>\n    <lastmod>${new Date(h.updatedAt).toISOString().split("T")[0]}</lastmod>\n    <priority>0.9</priority>\n  </url>`
+      ).join("\n");
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${entries}\n</urlset>`;
+      set.headers["Content-Type"] = "application/xml; charset=utf-8";
+      set.headers["Cache-Control"] = "public, max-age=3600";
+      return xml;
+    } catch {
+      set.status = 500;
+      return { success: false, error: "Sitemap unavailable" };
+    }
+  });
+

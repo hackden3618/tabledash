@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+Allow: /h/
+Allow: /search
+Disallow: /kitchen/
+Disallow: /platform/
+Disallow: /api/
+Disallow: /ws
+
+# Crawl-delay for polite bots
+Crawl-delay: 2
+
+Sitemap: https://ladha.co.ke/sitemap.xml

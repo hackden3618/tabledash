@@ -1,0 +1,16 @@
+{
+  "id": "/",
+  "name": "Ladha — Taste the Moment",
+  "short_name": "Ladha",
+  "description": "Fresh meals from Kenya's best restaurants, delivered fast to your market stall.",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FFFFFF",
+  "theme_color": "#114B36",
+  "icons": [
+    { "src": "/ladha_icon_customer.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/ladha_icon_customer.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -77,11 +77,10 @@ export const uploadRoute = new Elysia({ prefix: "/api/v1" })
         set.status = 400;
         return { success: false, error: "File size exceeds 10 MB limit" };
       }
-
-      if (!file.type.startsWith("image/")) {
-        set.status = 400;
-        return { success: false, error: "Only image files (PNG, JPG, WEBP) are allowed" };
-      }
+      // No early MIME-type gate here. uploadMedia() validates by actual file
+      // signature (magic bytes), not the browser-reported MIME type. Android
+      // camera apps often report application/octet-stream for real photos,
+      // causing false rejections at a type-string gate.
 
       const buffer = Buffer.from(await file.arrayBuffer());
       try {

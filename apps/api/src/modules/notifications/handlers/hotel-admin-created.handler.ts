@@ -19,6 +19,7 @@ export async function handleHotelAdminCreated(payload: Record<string, unknown>):
     staffName: data.adminName,
     role: "hotel admin",
     hotelName: data.hotelName,
+    username: data.adminUsername,
     setupLink: buildSetupLink(data.setupToken),
   });
 

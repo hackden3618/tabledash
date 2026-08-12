@@ -10,7 +10,7 @@ export class Environment {
   public readonly apiPrefix: string = process.env.API_PREFIX ?? "/api/v1";
 
   /** Database connection string for PostgreSQL */
-  public readonly databaseUrl: string = process.env.DATABASE_URL ?? "postgres://development@localhost:5432/ladha?schema=public&connection_limit=5";
+  public readonly databaseUrl: string = process.env.DATABASE_URL ?? "postgres://development@localhost:5432/tabledash?schema=public&connection_limit=5";
 
   /** Port for the Elysia backend server */
   public readonly backendPort: number = Number(process.env.PORT ?? 3000);
@@ -49,6 +49,12 @@ export class Environment {
   /** Allowed CORS origin (set to frontend URL in production, * for development) */
   public readonly corsOrigin: string = process.env.CORS_ORIGIN ?? "*";
 
+  /** VAPID keypair for Web Push (browser push notifications). Generate once with `npx web-push generate-vapid-keys`. */
+  public readonly vapidPublicKey: string = process.env.VAPID_PUBLIC_KEY ?? "";
+  public readonly vapidPrivateKey: string = process.env.VAPID_PRIVATE_KEY ?? "";
+  /** Contact URI web-push includes in the signed JWT it sends to push services, e.g. "mailto:ops@ladha.co.ke". */
+  public readonly vapidSubject: string = process.env.VAPID_SUBJECT ?? "mailto:support@ladha.app";
+
   /** Fails fast on unsafe production defaults before accepting traffic. */
   public assertProductionSafety(): void {
     if (process.env.NODE_ENV !== "production") return;
@@ -69,6 +75,7 @@ export class Environment {
     }
     if (this.smsProvider === "textsms" && (!this.textSmsApiKey || !this.textSmsPartnerId)) errors.push("TextSMS credentials are required when SMS_PROVIDER=textsms");
     if (this.smsProvider === "console") errors.push("SMS_PROVIDER=console is not allowed in production");
+    if (!this.vapidPublicKey || !this.vapidPrivateKey) errors.push("VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY are required in production (push notifications)");
 
     if (errors.length > 0) throw new Error(`Unsafe production configuration: ${errors.join("; ")}`);
   }

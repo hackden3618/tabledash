@@ -2,6 +2,7 @@ import { prisma } from "../../../../../../infrastructure/database/prisma";
 import { env } from "../../../../../../shared/config";
 import { smsService } from "../sms.service";
 import { getSmsRecipients } from "../../settings/service";
+import { sendPushToCustomer, sendPushToHotelAdmins } from "../../push/service";
 import {
   orderAcceptedToCustomer,
   orderOutForDeliveryToCustomer,
@@ -14,6 +15,7 @@ import {
 interface OrderStatusPayload {
   orderId: string;
   hotelId?: string;
+  customerId?: string;
   orderNumber: number;
   customerName: string;
   firstName?: string;
@@ -34,7 +36,6 @@ export async function handleOrderStatusUpdated(payload: Record<string, unknown>)
   const hotelName = data.hotelName || "Ladha Deliveries";
 
   if (!CUSTOMER_NOTIFIED_STATUSES.includes(data.newStatus)) return true;
-  if (!data.customerPhone) return true;
 
   const firstName = data.firstName || data.knownName || data.customerName;
 
@@ -72,10 +73,25 @@ export async function handleOrderStatusUpdated(payload: Record<string, unknown>)
     return true;
   }
 
-  const customerSent = await smsService.sendSms(data.customerPhone, message);
+  // Push — independent of SMS delivery below; reaches the customer's phone
+  // even with the tab closed, which is the whole point of "not excusable."
+  if (data.customerId) {
+    await sendPushToCustomer(data.customerId, {
+      title: hotelName,
+      body: message,
+      url: `/orders/${data.orderId}/tracking`,
+      tag: `order-${data.orderId}`,
+    }).catch(() => 0);
+  }
+
+  const customerSent = data.customerPhone ? await smsService.sendSms(data.customerPhone, message) : false;
 
   // Hotel staff abort alert — sent in addition to the customer SMS on cancellation.
   if (data.newStatus === "CANCELLED" && data.hotelId) {
+    const cancelPushTitle = `Order #${data.orderNumber} cancelled`;
+    const cancelPushBody = `${data.stallNumber ? `Stall ${data.stallNumber} — ` : ""}${data.cancelReason || "Staff unavailable"}`;
+    await sendPushToHotelAdmins(data.hotelId, { title: cancelPushTitle, body: cancelPushBody, url: "/kitchen/orders", tag: `order-${data.orderId}` }).catch(() => 0);
+
     const staffPhones = await getSmsRecipients(data.hotelId).catch(() => []);
     if (staffPhones.length > 0) {
       const abortMsg = orderCancelledToHotel({

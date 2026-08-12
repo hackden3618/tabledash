@@ -343,6 +343,92 @@ export const platformRoute = new Elysia({
     },
     { params: t.Object({ id: t.String({ format: "uuid" }) }) }
   )
+  .patch(
+    "/hotels/:id/listing",
+    async ({ params, body, headers, jwt, set }) => {
+      const { token, error } = extractToken(headers, jwt);
+      if (error) { set.status = 401; return error; }
+      let admin;
+      try { admin = await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
+      catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+
+      const hotel = await prisma.hotel.findUnique({ where: { id: params.id } });
+      if (!hotel) { set.status = 404; return { success: false, error: "Hotel not found" }; }
+
+      const updated = await prisma.hotel.update({
+        where: { id: params.id },
+        data: { isListed: body.isListed },
+      });
+
+      await prisma.eventOutbox.create({
+        data: {
+          eventName: "hotel_status_updated",
+          payload: JSON.stringify({
+            hotelId: hotel.id,
+            hotelName: hotel.name,
+            newStatus: updated.isListed ? "listed" : "hidden",
+            previousStatus: hotel.isListed ? "listed" : "hidden",
+            changedBy: admin.name,
+          }),
+          hotelId: hotel.id,
+          status: "done",
+          completedAt: new Date(),
+        },
+      });
+
+      return { success: true, data: updated };
+    },
+    {
+      params: t.Object({ id: t.String({ format: "uuid" }) }),
+      body: t.Object({ isListed: t.Boolean() }),
+      detail: { tags: ["Platform"], summary: "Show/hide a hotel from the customer-facing marketplace without deleting it" },
+    }
+  )
+  .delete(
+    "/hotels/:id",
+    async ({ params, headers, jwt, set }) => {
+      const { token, error } = extractToken(headers, jwt);
+      if (error) { set.status = 401; return error; }
+      let admin;
+      try { admin = await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
+      catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+
+      const hotel = await prisma.hotel.findUnique({ where: { id: params.id } });
+      if (!hotel) { set.status = 404; return { success: false, error: "Hotel not found" }; }
+      if (hotel.deletedAt) { set.status = 400; return { success: false, error: "Hotel is already deleted" }; }
+
+      // Soft delete only — an order history, ledger, and review trail can exist
+      // for this hotel, and hard-deleting would either cascade-destroy that
+      // financial record or fail on the FK constraints protecting it. deletedAt
+      // is what every hotel-listing query already filters on.
+      const updated = await prisma.hotel.update({
+        where: { id: params.id },
+        data: { deletedAt: new Date(), isListed: false, isOpen: false },
+      });
+
+      await prisma.eventOutbox.create({
+        data: {
+          eventName: "hotel_status_updated",
+          payload: JSON.stringify({
+            hotelId: hotel.id,
+            hotelName: hotel.name,
+            newStatus: "deleted",
+            previousStatus: hotel.isOpen ? "open" : "closed",
+            changedBy: admin.name,
+          }),
+          hotelId: hotel.id,
+          status: "done",
+          completedAt: new Date(),
+        },
+      });
+
+      return { success: true, data: updated };
+    },
+    {
+      params: t.Object({ id: t.String({ format: "uuid" }) }),
+      detail: { tags: ["Platform"], summary: "Soft-delete a hotel (removes it from all listings; order/ledger history is preserved)" },
+    }
+  )
   .get(
     "/admins",
     async ({ headers, jwt, set }) => {
