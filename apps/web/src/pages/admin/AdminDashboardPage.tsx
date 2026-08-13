@@ -60,7 +60,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     return { startDate: format(start), endDate: format(end) };
   };
 
-  const effectiveRange = () => range === "this-month" ? monthRange(0) : range === "last-month" ? monthRange(-1) : range === "custom" ? { startDate, endDate } : {};
+  const effectiveRange = (): { startDate?: string; endDate?: string } => range === "this-month" ? monthRange(0) : range === "last-month" ? monthRange(-1) : range === "custom" ? { startDate, endDate } : {};
   const rangeLabel = () => {
     if (range === "all") return "All time";
     const dates = effectiveRange();

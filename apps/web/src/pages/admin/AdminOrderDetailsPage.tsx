@@ -426,7 +426,7 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
                                     size="sm"
                                     variant="primary"
                                     disabled={paymentStatus === "PAID" || paymentStatus === "REFUNDED"}
-                                    onClick={() => { setPaymentAmount(outstanding ? String(outstanding) : ""); setShowPaymentModal(true); }}
+                                    onClick={() => { setCashAmount(outstanding ? String(outstanding) : ""); setMpesaAmount(""); setShowPaymentModal(true); }}
                                 >
                                     <CreditCard size={14} className="mr-1" /> Record Payment
                                 </Button>
