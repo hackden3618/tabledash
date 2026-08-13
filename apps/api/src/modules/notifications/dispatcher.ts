@@ -7,7 +7,7 @@
  */
 
 import { prisma } from "../../../../../infrastructure/database/prisma";
-import type { EventName } from "../../../../../generated/prisma/client";
+import type { SmsSendResult } from "./sms.service";
 import { handleOrderCreated } from "./handlers/order-created.handler";
 import { handleOrderStatusUpdated } from "./handlers/order-status-updated.handler";
 import { handleOrderPaymentUpdated } from "./handlers/order-payment-updated.handler";
@@ -18,11 +18,12 @@ import { handleHotelStatusUpdated } from "./handlers/hotel-status-updated.handle
 import { handlePlatformAdminCreated } from "./handlers/platform-admin-created.handler";
 import { handleAccountLedgerEvent } from "./handlers/account-ledger.handler";
 
-const MAX_RETRIES = 5;
+const MAX_RETRIES = 7;
 const POLL_INTERVAL_MS = 3000;
 const GRACE_PERIOD_MS = 5000;
 
-type HandlerFn = (payload: Record<string, unknown>) => Promise<boolean>;
+type HandlerResult = boolean | SmsSendResult;
+type HandlerFn = (payload: Record<string, unknown>) => Promise<HandlerResult>;
 
 const HANDLER_MAP: Record<string, HandlerFn> = {
   order_created: handleOrderCreated,
@@ -40,8 +41,21 @@ const HANDLER_MAP: Record<string, HandlerFn> = {
 };
 
 let intervalHandle: ReturnType<typeof setInterval> | null = null;
+let processing = false;
+
+function retryAt(attempt: number): Date {
+  // 3s, 6s, 12s, 24s, 48s, 96s — bounded exponential backoff.
+  return new Date(Date.now() + Math.min(96_000, 3_000 * 2 ** Math.max(0, attempt - 1)));
+}
+
+function resultDetails(result: HandlerResult) {
+  if (typeof result === "boolean") return { success: result, providerMessageId: undefined, providerStatus: undefined, error: undefined };
+  return { success: result.accepted, providerMessageId: result.messageId, providerStatus: result.providerStatus, error: result.error };
+}
 
 async function processOutbox(): Promise<void> {
+  if (processing) return;
+  processing = true;
   try {
     const cutoff = new Date(Date.now() - GRACE_PERIOD_MS);
 
@@ -49,6 +63,7 @@ async function processOutbox(): Promise<void> {
       where: {
         status: { in: ["initialized", "pending"] },
         createdAt: { lte: cutoff },
+        nextAttemptAt: { lte: new Date() },
         attempts: { lt: MAX_RETRIES },
       },
       orderBy: { createdAt: "asc" },
@@ -77,23 +92,23 @@ async function processOutbox(): Promise<void> {
       }
 
       try {
-        const success = await handler(payload);
-        if (success) {
+        const details = resultDetails(await handler(payload));
+        if (details.success) {
           await prisma.eventOutbox.update({
             where: { id: row.id },
-            data: { status: "done", completedAt: new Date() },
+            data: { status: "done", completedAt: new Date(), lastError: null, providerMessageId: details.providerMessageId, providerStatus: details.providerStatus ?? "accepted" },
           });
         } else {
           const newAttempts = row.attempts + 1;
           if (newAttempts >= MAX_RETRIES) {
             await prisma.eventOutbox.update({
               where: { id: row.id },
-              data: { status: "failed", attempts: newAttempts, lastError: "Max retries exceeded" },
+              data: { status: "failed", attempts: newAttempts, lastError: details.error || "SMS provider did not accept the message", providerStatus: details.providerStatus ?? "rejected" },
             });
           } else {
             await prisma.eventOutbox.update({
               where: { id: row.id },
-              data: { status: "pending", attempts: newAttempts, lastError: "Handler returned false" },
+              data: { status: "pending", attempts: newAttempts, lastError: details.error || "SMS provider did not accept the message", providerStatus: details.providerStatus ?? "retrying", nextAttemptAt: retryAt(newAttempts) },
             });
           }
         }
@@ -103,19 +118,19 @@ async function processOutbox(): Promise<void> {
         if (newAttempts >= MAX_RETRIES) {
           await prisma.eventOutbox.update({
             where: { id: row.id },
-            data: { status: "failed", attempts: newAttempts, lastError },
+              data: { status: "failed", attempts: newAttempts, lastError, providerStatus: "error" },
           });
         } else {
           await prisma.eventOutbox.update({
             where: { id: row.id },
-            data: { status: "pending", attempts: newAttempts, lastError },
+              data: { status: "pending", attempts: newAttempts, lastError, providerStatus: "retrying", nextAttemptAt: retryAt(newAttempts) },
           });
         }
       }
     }
   } catch (err) {
     console.error("[Outbox Dispatcher] Poll error:", err);
-  }
+  } finally { processing = false; }
 }
 
 export function startDispatcher(): void {

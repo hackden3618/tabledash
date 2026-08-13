@@ -65,7 +65,7 @@ export async function handleAccountLedgerEvent(type: AccountLedgerEventType, pay
   // SMS
   let smsOk = true;
   if (customer.phone) {
-    smsOk = await smsService.sendSms(customer.phone, msg).catch(() => false);
+    smsOk = (await smsService.sendSms(customer.phone, msg).catch(() => ({ accepted: false }))).accepted;
   }
 
   // In-app notification + Web Push to OS notification shade

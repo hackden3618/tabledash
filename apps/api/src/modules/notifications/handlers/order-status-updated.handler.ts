@@ -84,7 +84,7 @@ export async function handleOrderStatusUpdated(payload: Record<string, unknown>)
     }).catch(() => 0);
   }
 
-  const customerSent = data.customerPhone ? await smsService.sendSms(data.customerPhone, message) : false;
+  const customerSent = data.customerPhone ? (await smsService.sendSms(data.customerPhone, message)).accepted : false;
 
   // Hotel staff abort alert — sent in addition to the customer SMS on cancellation.
   if (data.newStatus === "CANCELLED" && data.hotelId) {
@@ -100,7 +100,7 @@ export async function handleOrderStatusUpdated(payload: Record<string, unknown>)
         stallNumber: data.stallNumber,
         reason: data.cancelReason || "Staff unavailable",
       });
-      await Promise.all(staffPhones.map((phone) => smsService.sendSms(phone, abortMsg).catch(() => false)));
+      await Promise.all(staffPhones.map((phone) => smsService.sendSms(phone, abortMsg).catch(() => ({ accepted: false }))));
     }
   }
 

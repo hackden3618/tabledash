@@ -22,6 +22,5 @@ export async function handleHotelCreated(payload: Record<string, unknown>): Prom
     setupLink: buildSetupLink(data.setupToken),
   });
 
-  const result = await smsService.sendSms(data.adminPhone, message);
-  return result;
+  return (await smsService.sendSms(data.adminPhone, message)).accepted;
 }

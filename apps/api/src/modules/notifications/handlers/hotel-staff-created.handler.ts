@@ -24,6 +24,5 @@ export async function handleHotelStaffCreated(payload: Record<string, unknown>):
     setupLink: data.setupToken ? buildSetupLink(data.setupToken) : undefined,
   });
 
-  const result = await smsService.sendSms(data.staffPhone, message);
-  return result;
+  return (await smsService.sendSms(data.staffPhone, message)).accepted;
 }

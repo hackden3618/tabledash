@@ -61,5 +61,5 @@ export async function handleOrderCreated(payload: Record<string, unknown>): Prom
     staffPhones.map((phone) => smsService.sendSms(phone, message))
   );
 
-  return results.some((r) => r.status === "fulfilled" && r.value);
+  return results.some((r) => r.status === "fulfilled" && r.value.accepted);
 }

@@ -21,6 +21,5 @@ export async function handlePlatformAdminCreated(payload: Record<string, unknown
     setupLink: buildSetupLink(data.setupToken),
   });
 
-  const result = await smsService.sendSms(data.phone, message);
-  return result;
+  return (await smsService.sendSms(data.phone, message)).accepted;
 }

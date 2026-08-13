@@ -141,7 +141,7 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({ orderId, o
               <p className="text-xs text-[#6B7280] mt-1">Location: {order.marketSection}{order.locationDescription ? ` — ${order.locationDescription}` : ""}</p>
             </motion.div>
 
-            {order.status === "OUT_FOR_DELIVERY" && <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-[#EFF6FF] border-2 border-[#60A5FA] rounded-2xl p-4 mb-5 flex items-center gap-3"><div className="w-10 h-10 rounded-xl bg-[#DBEAFE] flex items-center justify-center text-[#1D4ED8] shrink-0"><Truck size={20} /></div><div><p className="font-bold text-sm text-[#1E40AF]">🚀 Out for Delivery!</p><p className="text-xs text-[#1D4ED8] mt-0.5">An SMS update was sent. Keep your phone handy!</p></div></motion.div>}
+            {order.status === "OUT_FOR_DELIVERY" && <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-[#EFF6FF] border-2 border-[#60A5FA] rounded-2xl p-4 mb-5 flex items-center gap-3"><div className="w-10 h-10 rounded-xl bg-[#DBEAFE] flex items-center justify-center text-[#1D4ED8] shrink-0"><Truck size={20} /></div><div><p className="font-bold text-sm text-[#1E40AF]">🚀 Out for Delivery!</p><p className="text-xs text-[#1D4ED8] mt-0.5">We will send an SMS update when the mobile provider accepts it. You can always follow this live order status here.</p></div></motion.div>}
 
             <div className="space-y-4 pl-2">
               {STATUSES.map((step, idx) => {

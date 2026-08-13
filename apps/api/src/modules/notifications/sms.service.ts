@@ -39,7 +39,17 @@ export interface ISmsDriver {
    * @param recipientPhone Destination mobile phone number (e.g. 0712345678 or 254712345678).
    * @param message Text message body.
    */
-  sendSms(recipientPhone: string, message: string): Promise<boolean>;
+  sendSms(recipientPhone: string, message: string): Promise<SmsSendResult>;
+}
+
+/** A gateway acceptance is not the same thing as handset delivery. The gateway
+ * message ID is retained so delivery-report polling can be added without
+ * changing the send contract. */
+export interface SmsSendResult {
+  accepted: boolean;
+  messageId?: string;
+  providerStatus: string;
+  error?: string;
 }
 
 /**
@@ -52,7 +62,7 @@ export class TextSmsDriver implements ISmsDriver {
     console.log(`[SMS Driver] TextSMS.co.ke configured: ${Boolean(env.textSmsApiKey && env.textSmsPartnerId)}`);
   }
 
-  public async sendSms(recipientPhone: string, message: string): Promise<boolean> {
+  public async sendSms(recipientPhone: string, message: string): Promise<SmsSendResult> {
     const formattedPhone = formatPhone(recipientPhone);
     const segments = estimateSegments(message);
     console.log(`[SMS] To ending ${formattedPhone.slice(-4)} chars=${message.length} segments=${segments}`);
@@ -62,7 +72,7 @@ export class TextSmsDriver implements ISmsDriver {
       console.log(`[DEV SMS — TextSMS credentials missing] To: ${formattedPhone}`);
       console.log(`[Message]: ${message}`);
       console.log(`========================================\n`);
-      return true;
+      return { accepted: true, providerStatus: "simulated" };
     }
 
     try {
@@ -97,16 +107,21 @@ export class TextSmsDriver implements ISmsDriver {
         data = rawText;
       }
 
-      if (response.ok) {
-        console.log("[SMS Dispatched successfully via TextSMS.co.ke]");
-        return true;
-      } else {
-        console.error(`[SMS Dispatch Failed] HTTP ${response.status}`);
-        return false;
+      const gateway = typeof data === "object" && data && Array.isArray((data as any).responses) ? (data as any).responses[0] : null;
+      const code = gateway?.["respose-code"] ?? gateway?.["response-code"] ?? gateway?.code;
+      const description = gateway?.["response-description"] ?? gateway?.description;
+      const accepted = response.ok && Number(code) === 200;
+      if (accepted) {
+        const messageId = gateway?.messageid ? String(gateway.messageid) : undefined;
+        console.log(`[SMS Accepted by TextSMS] messageId=${messageId ?? "not returned"}`);
+        return { accepted: true, messageId, providerStatus: description || "accepted" };
       }
+      const error = description || `TextSMS rejected request (HTTP ${response.status}${code ? `, code ${code}` : ""})`;
+      console.error(`[SMS Dispatch Failed] ${error}`);
+      return { accepted: false, providerStatus: "rejected", error };
     } catch (error) {
       console.error("[SMS Dispatch Error via TextSMS.co.ke]:", error);
-      return false;
+      return { accepted: false, providerStatus: "transport_error", error: error instanceof Error ? error.message : "SMS transport error" };
     }
   }
 }
@@ -115,14 +130,14 @@ export class TextSmsDriver implements ISmsDriver {
  * Local development driver printing SMS to stdout console without sending real SMS messages.
  */
 export class ConsoleSmsDriver implements ISmsDriver {
-  public async sendSms(recipientPhone: string, message: string): Promise<boolean> {
+  public async sendSms(recipientPhone: string, message: string): Promise<SmsSendResult> {
     const segments = estimateSegments(message);
     console.log(`\n========================================`);
     console.log(`[DEV SMS SIMULATION] To: ${recipientPhone}`);
     console.log(`[Message]: ${message}`);
     console.log(`[SMS] chars=${message.length} segments=${segments}`);
     console.log(`========================================\n`);
-    return true;
+    return { accepted: true, providerStatus: "simulated" };
   }
 }
 

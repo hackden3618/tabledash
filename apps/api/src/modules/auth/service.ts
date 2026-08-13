@@ -343,9 +343,7 @@ export const requestPasswordResetOtp = async (phone: string): Promise<boolean> =
   }
 
   const message = `Your Ladha password reset code is: ${otpCode}. It expires in 10 minutes. - Ladha Deliveries`;
-  const sent = await smsService.sendSms(formattedPhone, message);
-
-  return sent;
+  return (await smsService.sendSms(formattedPhone, message)).accepted;
 };
 
 export const resetPasswordWithOtp = async (phone: string, otpCode: string, newPassword: string): Promise<boolean> => {

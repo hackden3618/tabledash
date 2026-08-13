@@ -27,6 +27,5 @@ export async function handleOrderPaymentUpdated(payload: Record<string, unknown>
           remaining: data.totalAmount - data.amountPaid,
         });
 
-  const result = await smsService.sendSms(data.customerPhone, msg);
-  return result;
+  return (await smsService.sendSms(data.customerPhone, msg)).accepted;
 }

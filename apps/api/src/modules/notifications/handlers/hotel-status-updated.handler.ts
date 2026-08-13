@@ -33,5 +33,5 @@ export async function handleHotelStatusUpdated(payload: Record<string, unknown>)
 
   // Keep the outbox row retryable when the gateway rejects every delivery.
   // If at least one recipient succeeds, the event has still been delivered.
-  return results.some((result) => result.status === "fulfilled" && result.value);
+  return results.some((result) => result.status === "fulfilled" && result.value.accepted);
 }
