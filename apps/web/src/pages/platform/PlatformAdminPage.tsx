@@ -881,7 +881,15 @@ function ServingRegionsPage({ regions, megaRegions, token, onChanged, onMegaRegi
     const draftFor = (region: DeliveryRegion) => drafts[region.id] ?? region;
     const saveRegion = async (region: DeliveryRegion) => {
         setSaving(region.id);
-        const res = await apiPatch<DeliveryRegion>(`/platform/zones/${region.id}`, draftFor(region), token);
+        const draft = draftFor(region);
+        const res = await apiPatch<DeliveryRegion>(`/platform/zones/${region.id}`, {
+            name: draft.name,
+            megaRegionId: draft.megaRegionId,
+            type: draft.type,
+            locationLabel: draft.locationLabel,
+            locationPlaceholder: draft.locationPlaceholder,
+            active: draft.active,
+        }, token);
         setSaving(null);
         if (res.success && res.data) onChanged(regions.map((item) => item.id === region.id ? res.data! : item));
     };
