@@ -141,6 +141,7 @@ model Zone {
   createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
   hotels Hotel[]
+  deliveryFees HotelDeliveryFee[]
 
   @@index([active, name])
   @@map("zones")
@@ -158,6 +159,7 @@ model Hotel {
   deletedAt   DateTime? @map("deleted_at") @db.Timestamptz()
   zoneId      String    @map("zone_id") @db.Uuid
   vendorGroup VendorGroup @default(FOOD) @map("vendor_group")
+  genericDeliveryFee Decimal @default(50) @map("generic_delivery_fee") @db.Decimal(10, 2)
 
   adminUsers       AdminUser[]
   products         Product[]
@@ -169,8 +171,26 @@ model Hotel {
   reviews          RestaurantReview[]
   productReviews   ProductReview[]
   zone             Zone              @relation(fields: [zoneId], references: [id])
+  deliveryFees     HotelDeliveryFee[]
 
   @@map("hotels")
+}
+
+// A hotel's charge for delivering into a specific platform region. When a
+// region has no row, the hotel's generic delivery fee applies instead.
+model HotelDeliveryFee {
+  id        String   @id @default(uuid()) @db.Uuid
+  hotelId   String   @map("hotel_id") @db.Uuid
+  zoneId    String   @map("zone_id") @db.Uuid
+  amount    Decimal  @db.Decimal(10, 2)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  zone  Zone  @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  @@unique([hotelId, zoneId])
+  @@map("hotel_delivery_fees")
 }
 
 model PlatformAdmin {
@@ -341,6 +361,8 @@ model Order {
   customerId                    String        @map("customer_id") @db.Uuid
   status                        OrderStatus   @default(NEW)
   totalAmount                   Decimal       @map("total_amount") @db.Decimal(10, 2)
+  deliveryFee                   Decimal       @default(0) @map("delivery_fee") @db.Decimal(10, 2)
+  deliveryZoneId                String?       @map("delivery_zone_id") @db.Uuid
   paymentStatus                 PaymentStatus @default(UNPAID) @map("payment_status")
   amountPaid                    Decimal       @default(0) @map("amount_paid") @db.Decimal(10, 2)
   marketSection                 String?       @map("market_section")

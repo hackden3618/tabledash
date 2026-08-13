@@ -238,46 +238,42 @@ export async function recordPayment(
   adminUserId?: string,
   note?: string,
 ) {
+  return recordPayments(hotelId, customerId, orderId, [{ method: paymentMethod, amount }], adminUserId, note);
+}
+
+/** Records one or more tender lines atomically. Split cash/M-PESA payments are
+ * separate immutable ledger events, while the order cache is recomputed once. */
+export async function recordPayments(
+  hotelId: string,
+  customerId: string,
+  orderId: string,
+  payments: Array<{ method: "CASH" | "MPESA"; amount: number }>,
+  adminUserId?: string,
+  note?: string,
+) {
   const order = await prisma.order.findUnique({ where: { id: orderId } });
   if (!order) throw new Error("Order not found");
   if (order.hotelId !== hotelId) throw new Error("Order not found in this hotel");
+  if (!payments.length || payments.some((payment) => !Number.isFinite(payment.amount) || payment.amount <= 0)) {
+    throw new Error("At least one payment amount greater than zero is required");
+  }
+  const totalAmount = payments.reduce((sum, payment) => sum + payment.amount, 0);
 
   const result = await prisma.$transaction(async (tx: any) => {
-    const paymentRecord = await tx.salesRecord.create({
-      data: {
-        hotelId,
-        orderId,
-        type: "ORDER_PAYMENT",
-        paymentMethod,
-        amount,
-        note,
-        createdByAdminUserId: adminUserId,
-      },
-    });
+    const paymentRecords = await Promise.all(payments.map((payment) => tx.salesRecord.create({
+      data: { hotelId, orderId, type: "ORDER_PAYMENT", paymentMethod: payment.method, amount: payment.amount, note, createdByAdminUserId: adminUserId },
+    })));
 
-    const updatedAccount = await adjustAccountTx(tx, hotelId, customerId, 0, amount);
+    const updatedAccount = await adjustAccountTx(tx, hotelId, customerId, 0, totalAmount);
     const updatedOrder = await recomputeOrderCacheTx(tx, orderId);
 
-    await tx.eventOutbox.create({
-      data: {
-        eventName: "customer_account_payment_recorded",
-        hotelId,
-        payload: JSON.stringify({
-          customerId,
-          orderId,
-          orderNumber: updatedOrder.orderNumber,
-          recordId: paymentRecord.id,
-          amount,
-          type: "ORDER_PAYMENT",
-          paymentMethod,
-          balance: accountBalance(updatedAccount),
-          hotelId,
-        }),
-        status: "initialized",
-      },
-    });
+    await Promise.all(paymentRecords.map((paymentRecord, index) => tx.eventOutbox.create({ data: {
+      eventName: "customer_account_payment_recorded", hotelId,
+      payload: JSON.stringify({ customerId, orderId, orderNumber: updatedOrder.orderNumber, recordId: paymentRecord.id, amount: payments[index]!.amount, type: "ORDER_PAYMENT", paymentMethod: payments[index]!.method, balance: accountBalance(updatedAccount), hotelId }),
+      status: "initialized",
+    } })));
 
-    return { paymentRecord, account: updatedAccount, order: updatedOrder };
+    return { paymentRecord: paymentRecords[0], paymentRecords, account: updatedAccount, order: updatedOrder };
   });
 
   broadcastPaymentUpdate(result.order);

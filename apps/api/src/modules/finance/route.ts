@@ -6,7 +6,7 @@ import { verifyCustomerToken } from "../customers/auth.service";
 import { ensureGuestIdentity, isGuestId } from "../customers/guest-identity";
 import {
   getFinanceDashboard, getCustomerAccount, getOrderPaymentHistory, getSalesRecords,
-  recordPayment, recordRefund, recordAdjustment, getWallet, getHotelWalletDetail,
+  recordPayment, recordPayments, recordRefund, recordAdjustment, getWallet, getHotelWalletDetail,
   getNotifications, markNotificationRead, clearNotifications,
 } from "./service";
 
@@ -34,13 +34,15 @@ export const financeRoute = new Elysia({
     try {
       const admin = await requireAdmin(headers, jwt);
       const order = await findOrder(params.orderId, admin.hotelId);
-      const result = await recordPayment(admin.hotelId, order.customerId, params.orderId, body.method, body.amount, admin.sub, body.note);
+      if (!body.payments && (!body.method || !body.amount)) throw new Error("Provide a payment method and amount");
+      const payments = body.payments ?? [{ method: body.method!, amount: body.amount! }];
+      const result = await recordPayments(admin.hotelId, order.customerId, params.orderId, payments, admin.sub, body.note);
       return { success: true, data: result };
     } catch (err: any) {
       set.status = 400;
       return { success: false, error: err.message };
     }
-  }, { params: t.Object({ orderId: UUID }), body: t.Object({ amount: t.Number({ minimum: 0.01 }), method: t.Enum({ CASH: "CASH", MPESA: "MPESA" }), note: t.Optional(t.String({ maxLength: 500 })) }) })
+  }, { params: t.Object({ orderId: UUID }), body: t.Object({ amount: t.Optional(t.Number({ minimum: 0.01 })), method: t.Optional(t.Enum({ CASH: "CASH", MPESA: "MPESA" })), payments: t.Optional(t.Array(t.Object({ method: t.Enum({ CASH: "CASH", MPESA: "MPESA" }), amount: t.Number({ minimum: 0.01 }) }), { minItems: 1, maxItems: 2 })), note: t.Optional(t.String({ maxLength: 500 })) }) })
 
   // ── Unified refund / adjustment (reason required, admin-only) ──
   .post("/orders/:orderId/adjustments", async ({ headers, jwt, params, body, set }) => {

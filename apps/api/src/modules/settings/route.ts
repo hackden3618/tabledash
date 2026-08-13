@@ -22,6 +22,8 @@ import {
   updateStaffUser,
   deleteStaffUser,
   provisionStaffLogin,
+  getHotelDeliverySettings,
+  updateHotelDeliverySettings,
 } from "./service";
 import { verifyAdminToken } from "../auth/service";
 
@@ -61,6 +63,7 @@ export const settingsRoute = new Elysia({
     const status = await getHotelIsOpen(adminHotelId);
     const hotelName = await getHotelName(adminHotelId);
     const hotelImageUrl = await getHotelImageUrl(adminHotelId);
+    const delivery = adminHotelId ? await getHotelDeliverySettings(adminHotelId) : null;
     return {
       success: true,
       data: {
@@ -69,6 +72,7 @@ export const settingsRoute = new Elysia({
         hotelImageUrl,
         hotelIsOpen: status.isOpen,
         autoCloseAt: status.autoCloseAt,
+        delivery,
       },
     };
   })
@@ -105,6 +109,10 @@ export const settingsRoute = new Elysia({
           hotelImageUrl = await updateHotelImageUrl(body.hotelImageUrl, hotelId);
         }
 
+        const delivery = body.genericDeliveryFee !== undefined
+          ? await updateHotelDeliverySettings(hotelId, body.genericDeliveryFee, body.deliveryFees ?? [])
+          : await getHotelDeliverySettings(hotelId);
+
         return {
           success: true,
           data: {
@@ -112,6 +120,7 @@ export const settingsRoute = new Elysia({
             hotelIsOpen: status.isOpen,
             autoCloseAt: status.autoCloseAt,
             hotelImageUrl,
+            delivery,
           },
         };
       } catch (err: any) {
@@ -125,6 +134,8 @@ export const settingsRoute = new Elysia({
         hotelIsOpen: t.Optional(t.Boolean()),
         autoCloseAt: t.Optional(t.Nullable(t.String())),
         hotelImageUrl: t.Optional(t.String()),
+        genericDeliveryFee: t.Optional(t.Number({ minimum: 0 })),
+        deliveryFees: t.Optional(t.Array(t.Object({ zoneId: t.String({ format: "uuid" }), amount: t.Number({ minimum: 0 }) }))),
       }),
     }
   )

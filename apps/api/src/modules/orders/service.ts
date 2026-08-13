@@ -31,6 +31,7 @@ export interface CreateOrderInput {
     items: CreateOrderInputItem[];
     guestId?: string;
     paymentMethod?: "PAY_LATER" | "PAY_ON_DELIVERY";
+    deliveryZoneId?: string;
     /**
      * True when the caller is placing the order for someone else. The order is
      * still attributed to the customer resolved by `phone` (the recipient), but
@@ -47,6 +48,28 @@ interface OrderItemDraft {
     quantity: number;
     unitPrice: number;
     subtotal: number;
+}
+
+export interface DeliveryFeeQuote {
+    hotelId: string;
+    deliveryFee: number;
+}
+
+/** Server-side delivery pricing. A hotel's own region is free; every other
+ * platform region uses its configured price or its KSh 50 generic fallback. */
+export async function getDeliveryFeeQuote(hotelIds: string[], deliveryZoneId?: string): Promise<DeliveryFeeQuote[]> {
+    const uniqueHotelIds = [...new Set(hotelIds)];
+    if (!uniqueHotelIds.length) return [];
+    const hotels = await prisma.hotel.findMany({
+        where: { id: { in: uniqueHotelIds }, deletedAt: null },
+        select: { id: true, zoneId: true, genericDeliveryFee: true, deliveryFees: { select: { zoneId: true, amount: true } } },
+    });
+    if (hotels.length !== uniqueHotelIds.length) throw new Error("One or more hotels are unavailable");
+    return hotels.map((hotel) => {
+        if (deliveryZoneId && hotel.zoneId === deliveryZoneId) return { hotelId: hotel.id, deliveryFee: 0 };
+        const configured = deliveryZoneId ? hotel.deliveryFees.find((fee) => fee.zoneId === deliveryZoneId) : undefined;
+        return { hotelId: hotel.id, deliveryFee: Number(configured?.amount ?? hotel.genericDeliveryFee) };
+    });
 }
 
 // On-behalf orders require the recipient's number to be OTP-verified, and the
@@ -140,18 +163,18 @@ export const placeOrder = async (input: CreateOrderInput) => {
     }
 
     // Group items by hotelId
-    const hotelGroups = new Map<string, { hotelId: string; hotelName: string; items: typeof input.items; orderItemData: OrderItemDraft[]; totalAmount: number }>();
+    const hotelGroups = new Map<string, { hotelId: string; hotelName: string; items: typeof input.items; orderItemData: OrderItemDraft[]; subtotal: number; deliveryFee: number; totalAmount: number }>();
     for (const [productId, quantity] of normalizedItems) {
         const product = productMap.get(productId)!;
         const hId = product.hotelId;
         if (!hotelGroups.has(hId)) {
-            hotelGroups.set(hId, { hotelId: hId, hotelName: product.hotel?.name || "Ladha Deliveries", items: [], orderItemData: [], totalAmount: 0 });
+            hotelGroups.set(hId, { hotelId: hId, hotelName: product.hotel?.name || "Ladha Deliveries", items: [], orderItemData: [], subtotal: 0, deliveryFee: 0, totalAmount: 0 });
         }
         const group = hotelGroups.get(hId)!;
         group.items.push({ productId, quantity });
         const unitPrice = Number(product.price);
         const subtotal = unitPrice * quantity;
-        group.totalAmount += subtotal;
+        group.subtotal += subtotal;
         group.orderItemData.push({
             productId: product.id,
             name: product.name,
@@ -159,6 +182,13 @@ export const placeOrder = async (input: CreateOrderInput) => {
             unitPrice,
             subtotal,
         });
+    }
+
+    const deliveryFees = await getDeliveryFeeQuote([...hotelGroups.keys()], input.deliveryZoneId);
+    for (const quote of deliveryFees) {
+        const group = hotelGroups.get(quote.hotelId)!;
+        group.deliveryFee = quote.deliveryFee;
+        group.totalAmount = group.subtotal + quote.deliveryFee;
     }
 
     const formattedPhone = formatPhone(input.phone);
@@ -269,6 +299,8 @@ export const placeOrder = async (input: CreateOrderInput) => {
                     customerId: customer.id,
                     status: "NEW",
                     totalAmount: group.totalAmount,
+                    deliveryFee: group.deliveryFee,
+                    deliveryZoneId: input.deliveryZoneId,
                     stallNumber: input.stallNumber,
                     marketSection: input.marketSection,
                     locationDescription: input.locationDescription,
@@ -308,6 +340,7 @@ export const placeOrder = async (input: CreateOrderInput) => {
                         knownName: customer.knownName,
                         customerPhone: formattedPhone,
                         totalAmount: group.totalAmount,
+                        deliveryFee: group.deliveryFee,
                         itemsSummary,
                         stallNumber: input.stallNumber,
                         marketSection: input.marketSection,

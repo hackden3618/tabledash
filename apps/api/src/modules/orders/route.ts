@@ -25,6 +25,7 @@ import {
   getOrders,
   getPendingCollection,
   getPendingOrdersCount,
+  getDeliveryFeeQuote,
   getRefundsOwed,
   markUtensilsIssued,
   markUtensilsReturned,
@@ -48,6 +49,15 @@ export const ordersRoute = new Elysia({
       secret: env.jwtSecret,
     })
   )
+  .get("/delivery-fees", async ({ query, set }) => {
+    try {
+      const hotelIds = query.hotelIds.split(",").filter(Boolean);
+      return { success: true, data: await getDeliveryFeeQuote(hotelIds, query.zoneId) };
+    } catch (err: any) {
+      set.status = 400;
+      return { success: false, error: err.message || "Unable to calculate delivery fees" };
+    }
+  }, { query: t.Object({ hotelIds: t.String({ minLength: 1 }), zoneId: t.Optional(t.String({ format: "uuid" })) }) })
   .post(
     "/",
     async ({ body, set, headers }) => {

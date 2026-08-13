@@ -22,6 +22,7 @@ interface StaffUser {
     receiveSms: boolean;
     adminUserId?: string | null;
 }
+interface DeliveryFeeRow { id: string; name: string; type: string; amount: number | null; }
 
 interface AdminSettingsPageProps {
     token: string;
@@ -34,6 +35,8 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ token, onB
     const [hotelIsOpen, setHotelIsOpen] = useState(true);
     const [autoCloseTime, setAutoCloseTime] = useState("");
     const [hotelImageUrl, setHotelImageUrl] = useState("");
+    const [genericDeliveryFee, setGenericDeliveryFee] = useState("50");
+    const [deliveryFees, setDeliveryFees] = useState<DeliveryFeeRow[]>([]);
     const [hotelImageUploading, setHotelImageUploading] = useState(false);
     const hotelImageFileRef = useRef<HTMLInputElement>(null);
     const [loading, setLoading] = useState(true);
@@ -85,7 +88,7 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ token, onB
     const fetchSettingsAndStaff = async () => {
         setLoading(true);
         const [settingsRes, staffRes, profileRes] = await Promise.all([
-            apiGet<{ staffPhone?: string; hotelIsOpen?: boolean; autoCloseAt?: string | null; hotelImageUrl?: string | null }>("/settings", token),
+            apiGet<{ staffPhone?: string; hotelIsOpen?: boolean; autoCloseAt?: string | null; hotelImageUrl?: string | null; delivery?: { genericDeliveryFee: number; deliveryFees: DeliveryFeeRow[] } }>("/settings", token),
             apiGet<StaffUser[]>("/settings/staff", token),
             apiGet<{ name: string; username: string }>("/auth/me", token),
         ]);
@@ -96,6 +99,10 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ token, onB
             if (settingsRes.data.staffPhone !== undefined) setStaffPhone(settingsRes.data.staffPhone);
             if (settingsRes.data.hotelIsOpen !== undefined) setHotelIsOpen(settingsRes.data.hotelIsOpen);
             if (settingsRes.data.hotelImageUrl !== undefined) setHotelImageUrl(settingsRes.data.hotelImageUrl || "");
+            if (settingsRes.data.delivery) {
+                setGenericDeliveryFee(String(settingsRes.data.delivery.genericDeliveryFee));
+                setDeliveryFees(settingsRes.data.delivery.deliveryFees);
+            }
             if (settingsRes.data.autoCloseAt) {
                 const d = new Date(settingsRes.data.autoCloseAt);
                 if (!isNaN(d.getTime())) {
@@ -144,7 +151,13 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ token, onB
             }
         }
         setSaving(true);
-        const body: Record<string, unknown> = { hotelIsOpen, autoCloseAt: autoCloseIso, hotelImageUrl: hotelImageUrl.trim() || null };
+        const genericFee = Number(genericDeliveryFee);
+        if (!Number.isFinite(genericFee) || genericFee < 0) { setModal({ isOpen: true, title: "Invalid delivery fee", message: "Enter a delivery fee of KSh 0 or more.", type: "danger" }); return; }
+        const body: Record<string, unknown> = {
+            hotelIsOpen, autoCloseAt: autoCloseIso, hotelImageUrl: hotelImageUrl.trim() || null,
+            genericDeliveryFee: genericFee,
+            deliveryFees: deliveryFees.filter((fee) => fee.amount !== null).map((fee) => ({ zoneId: fee.id, amount: Number(fee.amount) })),
+        };
         const staffPhoneVal = staffPhone.trim();
         if (staffPhoneVal) body.staffPhone = staffPhoneVal;
         const res = await apiPatch<any>("/settings", body, token);
@@ -314,6 +327,18 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ token, onB
                                             </div>
                                         </div>
                                         <p className="text-[0.65rem] text-[#9CA3AF] mt-1">Image shown to customers on the hotel selection screen.</p>
+                                    </div>
+
+                                    <div className="pt-3 border-t border-[#F3F4F6] space-y-3">
+                                        <div>
+                                            <label className="flex items-center gap-1.5 text-xs font-bold text-[#4B5563] mb-1"><Store size={13} /> General delivery fee (KSh)</label>
+                                            <input type="number" min="0" step="0.01" value={genericDeliveryFee} onChange={(e) => setGenericDeliveryFee(e.target.value)} className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#D1D5DB] outline-none text-sm focus:border-primary" />
+                                            <p className="text-[0.65rem] text-[#9CA3AF] mt-1">Applied to every platform delivery area without a regional rate (for example, KSh 50).</p>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <p className="text-xs font-bold text-[#4B5563]">Regional delivery fees</p>
+                                            {deliveryFees.map((fee) => <div key={fee.id} className="flex items-center gap-2"><span className="min-w-0 flex-1 text-xs font-semibold text-[#4B5563] truncate">{fee.name}</span><input type="number" min="0" step="0.01" value={fee.amount ?? ""} placeholder={genericDeliveryFee || "50"} onChange={(e) => setDeliveryFees((current) => current.map((row) => row.id === fee.id ? { ...row, amount: e.target.value === "" ? null : Number(e.target.value) } : row))} className="w-28 px-2.5 py-2 rounded-lg border border-[#D1D5DB] text-sm outline-none focus:border-primary" /><span className="text-[0.65rem] text-[#9CA3AF]">KSh</span></div>)}
+                                        </div>
                                     </div>
 
                                     <div className="pt-3 border-t border-[#F3F4F6]">

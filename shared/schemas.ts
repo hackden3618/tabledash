@@ -25,6 +25,7 @@ export const CreateOrderSchema = t.Object({
   lastName: t.Optional(t.String()),
   phone: PhoneString,
   knownName: t.Optional(t.String()),
+  deliveryZoneId: t.Optional(t.String({ format: "uuid" })),
   stallNumber: t.Optional(t.String()),
   marketSection: t.Optional(t.String()),
   locationDescription: t.Optional(t.String()),

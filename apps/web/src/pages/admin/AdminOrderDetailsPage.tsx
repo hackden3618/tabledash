@@ -62,8 +62,8 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
 
     // ── Finance state ──
     const [showPaymentModal, setShowPaymentModal] = useState(false);
-    const [paymentMethod, setPaymentMethod] = useState<"CASH" | "MPESA">("CASH");
-    const [paymentAmount, setPaymentAmount] = useState("");
+    const [cashAmount, setCashAmount] = useState("");
+    const [mpesaAmount, setMpesaAmount] = useState("");
     const [paymentNote, setPaymentNote] = useState("");
     const [paymentBusy, setPaymentBusy] = useState(false);
 
@@ -171,19 +171,24 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
     const [excessConfirm, setExcessConfirm] = useState<number | null>(null);
 
     const submitPayment = async () => {
-        const amount = parseFloat(paymentAmount);
-        if (!amount || amount <= 0) { setError("Enter a valid payment amount."); return; }
+        const payments = [
+            { method: "CASH" as const, amount: Number(cashAmount) || 0 },
+            { method: "MPESA" as const, amount: Number(mpesaAmount) || 0 },
+        ].filter((payment) => payment.amount > 0);
+        const amount = payments.reduce((sum, payment) => sum + payment.amount, 0);
+        if (!amount) { setError("Enter a cash or M-PESA amount."); return; }
         setPaymentBusy(true);
         setError(null);
         const res = await apiPost<any>(`/finance/orders/${order.id}/payments`, {
-            amount,
-            method: paymentMethod,
+            payments,
             note: paymentNote.trim() || undefined,
         }, token);
         setPaymentBusy(false);
         if (res.success && res.data?.order) {
             onOrderUpdated(res.data.order);
             setShowPaymentModal(false);
+            setCashAmount("");
+            setMpesaAmount("");
             setPaymentNote("");
             setExcessConfirm(null);
         } else {
@@ -192,8 +197,8 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
     };
 
     const handleRecordPayment = () => {
-        const amount = parseFloat(paymentAmount);
-        if (!amount || amount <= 0) { setError("Enter a valid payment amount."); return; }
+        const amount = (Number(cashAmount) || 0) + (Number(mpesaAmount) || 0);
+        if (!amount || amount <= 0) { setError("Enter a cash or M-PESA amount."); return; }
         const excess = amount - outstanding;
         if (excess > 0.005) {
             setExcessConfirm(excess);
@@ -759,32 +764,24 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
                     Record the amount actually collected for order #{order.orderNumber}. The order&rsquo;s payment status updates automatically from the ledger.
                 </p>
                 <div className="space-y-3">
+                    <p className="text-xs text-[#6B7280]">Enter either amount, or both when the customer splits the payment. Each entered amount is recorded separately in the ledger.</p>
+                    <div className="grid grid-cols-2 gap-3">
                     <div>
-                        <label className="text-xs font-bold text-[#6B7280] uppercase tracking-wider">Method</label>
-                        <div className="flex gap-2 mt-1.5">
-                            {(["CASH", "MPESA"] as const).map((m) => (
-                                <button
-                                    key={m}
-                                    onClick={() => setPaymentMethod(m)}
-                                    className={`flex-1 py-2.5 rounded-xl border-2 text-sm font-bold transition-all cursor-pointer ${paymentMethod === m ? "border-[#114B36] bg-[#EBF5F0] text-[#114B36]" : "border-[#E5E7EB] text-[#6B7280] hover:border-[#D1D5DB]"
-                                        }`}
-                                >
-                                    {m === "CASH" ? "Cash" : "M-PESA"}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                    <div>
-                        <label className="text-xs font-bold text-[#6B7280] uppercase tracking-wider">Amount</label>
+                        <label className="text-xs font-bold text-[#6B7280] uppercase tracking-wider">Cash</label>
                         <input
                             type="number"
                             min="0.01"
                             step="0.01"
-                            value={paymentAmount}
-                            onChange={(e) => setPaymentAmount(e.target.value)}
-                            placeholder={`Outstanding: ${formatKsh(outstanding)}`}
+                            value={cashAmount}
+                            onChange={(e) => setCashAmount(e.target.value)}
+                            placeholder="0.00"
                             className="w-full mt-1.5 px-3.5 py-3 rounded-xl border-2 border-[#D1D5DB] outline-none text-sm font-semibold focus:border-[#114B36]"
                         />
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-[#6B7280] uppercase tracking-wider">M-PESA</label>
+                        <input type="number" min="0" step="0.01" value={mpesaAmount} onChange={(e) => setMpesaAmount(e.target.value)} placeholder="0.00" className="w-full mt-1.5 px-3.5 py-3 rounded-xl border-2 border-[#D1D5DB] outline-none text-sm font-semibold focus:border-[#114B36]" />
+                    </div>
                     </div>
                     <div>
                         <label className="text-xs font-bold text-[#6B7280] uppercase tracking-wider">Note (optional)</label>
@@ -816,7 +813,7 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
                 type="warning"
             >
                 <p className="text-sm text-[#6B7280] mb-4 leading-relaxed">
-                    This payment of {formatKsh(Number(paymentAmount) || 0)} is {formatKsh(excessConfirm ?? 0)} more than the {formatKsh(outstanding)} outstanding. The business will owe this customer the excess as credit on their account.
+                    This payment of {formatKsh((Number(cashAmount) || 0) + (Number(mpesaAmount) || 0))} is {formatKsh(excessConfirm ?? 0)} more than the {formatKsh(outstanding)} outstanding. The business will owe this customer the excess as credit on their account.
                 </p>
                 <div className="bg-[#FEF3C7] border border-[#FCD34D] rounded-xl px-4 py-3 mb-4 text-sm font-semibold text-[#92400E]">
                     The customer&rsquo;s account will be credited {formatKsh(excessConfirm ?? 0)}.

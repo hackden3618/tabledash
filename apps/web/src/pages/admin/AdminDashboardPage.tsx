@@ -128,8 +128,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
           {/* Metrics */}
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-lg text-[#1F2937]">Today's Metrics</h2>
-            <span className="text-xs font-semibold bg-[#E5E7EB] text-[#6B7280] px-3 py-1.5 rounded-full">Today</span>
+            <h2 className="font-bold text-lg text-[#1F2937]">Lifetime Business Metrics</h2>
+            <span className="text-xs font-semibold bg-[#E5E7EB] text-[#6B7280] px-3 py-1.5 rounded-full">All time</span>
           </div>
 
           {loading ? (

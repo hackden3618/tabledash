@@ -140,6 +140,45 @@ export const getHotelName = async (hotelId?: string): Promise<string> => {
   return hotel?.name ?? "Ladha Deliveries";
 };
 
+export interface DeliveryFeeSetting {
+  zoneId: string;
+  amount: number;
+}
+
+export async function getHotelDeliverySettings(hotelId: string) {
+  const [hotel, zones] = await Promise.all([
+    prisma.hotel.findUnique({
+      where: { id: hotelId },
+      select: { genericDeliveryFee: true, deliveryFees: { select: { zoneId: true, amount: true } } },
+    }),
+    prisma.zone.findMany({ where: { active: true }, select: { id: true, name: true, type: true }, orderBy: { name: "asc" } }),
+  ]);
+  if (!hotel) throw new Error("Hotel not found");
+  const fees = new Map(hotel.deliveryFees.map((fee) => [fee.zoneId, Number(fee.amount)]));
+  return {
+    genericDeliveryFee: Number(hotel.genericDeliveryFee),
+    deliveryFees: zones.map((zone) => ({ ...zone, amount: fees.get(zone.id) ?? null })),
+  };
+}
+
+export async function updateHotelDeliverySettings(hotelId: string, genericDeliveryFee: number, deliveryFees: DeliveryFeeSetting[]) {
+  if (!Number.isFinite(genericDeliveryFee) || genericDeliveryFee < 0) throw new Error("Generic delivery fee must be zero or greater");
+  for (const fee of deliveryFees) {
+    if (!Number.isFinite(fee.amount) || fee.amount < 0) throw new Error("Delivery fees must be zero or greater");
+  }
+  await prisma.$transaction(async (tx) => {
+    await tx.hotel.update({ where: { id: hotelId }, data: { genericDeliveryFee } });
+    for (const fee of deliveryFees) {
+      await tx.hotelDeliveryFee.upsert({
+        where: { hotelId_zoneId: { hotelId, zoneId: fee.zoneId } },
+        create: { hotelId, zoneId: fee.zoneId, amount: fee.amount },
+        update: { amount: fee.amount },
+      });
+    }
+  });
+  return getHotelDeliverySettings(hotelId);
+}
+
 export interface StaffUserPayload {
   name: string;
   phone: string;

@@ -65,6 +65,8 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
   const [showVerifyPrompt, setShowVerifyPrompt] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"PAY_LATER" | "PAY_ON_DELIVERY">("PAY_ON_DELIVERY");
   const [deliveryZone, setDeliveryZone] = useState<DeliveryZone | null>(null);
+  const [deliveryFee, setDeliveryFee] = useState(0);
+  const [deliveryFeeLoading, setDeliveryFeeLoading] = useState(false);
 
   // ── Ordering on behalf of someone else ──
   const [orderingForOther, setOrderingForOther] = useState(false);
@@ -107,6 +109,17 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
       if (zone) setDeliveryZone(zone);
     });
   }, []);
+
+  const cartHotelIds = [...new Set(cart.map((item) => item.hotelId).filter((id): id is string => Boolean(id)))];
+  useEffect(() => {
+    if (!cartHotelIds.length) { setDeliveryFee(0); return; }
+    setDeliveryFeeLoading(true);
+    const query = new URLSearchParams({ hotelIds: cartHotelIds.join(",") });
+    if (deliveryZone?.id) query.set("zoneId", deliveryZone.id);
+    void apiGet<Array<{ hotelId: string; deliveryFee: number }>>(`/orders/delivery-fees?${query.toString()}`)
+      .then((result) => { if (result.success && result.data) setDeliveryFee(result.data.reduce((sum, row) => sum + Number(row.deliveryFee), 0)); })
+      .finally(() => setDeliveryFeeLoading(false));
+  }, [deliveryZone?.id, cartHotelIds.join(",")]);
 
   useEffect(() => {
     if (isLoggedIn && customer && !orderingForOther) {
@@ -403,6 +416,7 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
       firstName: firstName.trim(), lastName: lastName.trim() || undefined,
       phone: phone.trim(), knownName: knownName.trim() || undefined,
       stallNumber: stallNumber.trim() || undefined, marketSection, locationDescription,
+      deliveryZoneId: deliveryZone?.id,
       items: cart.map((item) => ({ productId: item.id, quantity: item.quantity })),
       paymentMethod,
       orderingForOther: orderingForOther || undefined,
@@ -756,8 +770,16 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
                 )}
               </div>
             <div className="flex items-center justify-between py-3 px-4 bg-white rounded-2xl border border-[#E5E7EB]">
-              <span className="text-sm text-[#6B7280]">Total</span>
-              <span className="text-xl font-extrabold text-[#114B36]">KSh {totalAmount}</span>
+              <span className="text-sm text-[#6B7280]">Food subtotal</span>
+              <span className="text-sm font-bold text-[#1F2937]">KSh {totalAmount}</span>
+            </div>
+            <div className="flex items-center justify-between py-3 px-4 bg-white rounded-2xl border border-[#E5E7EB]">
+              <span className="text-sm text-[#6B7280]">Delivery {deliveryFeeLoading ? "(calculating…)" : ""}</span>
+              <span className="text-sm font-bold text-[#1F2937]">KSh {deliveryFee.toFixed(2)}</span>
+            </div>
+            <div className="flex items-center justify-between py-3 px-4 bg-[#EBF5F0] rounded-2xl border border-[#BDD9CB]">
+              <span className="text-sm font-bold text-[#114B36]">Order total</span>
+              <span className="text-xl font-extrabold text-[#114B36]">KSh {(totalAmount + deliveryFee).toFixed(2)}</span>
             </div>
             {anyHotelClosed && (
               <div className="bg-[#FEF2F2] border border-[#FCA5A5] rounded-2xl p-4 text-center">
@@ -792,7 +814,7 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
                 {orderingForOther && recipient
                   ? <>By placing this order, you agree that the selected meals will be prepared and delivered to <strong>{recipientDisplayName(recipient)}</strong>. </>
                   : "By placing this order, you agree that your selected meals will be prepared and delivered to your location. "}
-                <strong>Total: KSh {totalAmount}</strong>
+                <strong>Total: KSh {(totalAmount + deliveryFee).toFixed(2)}</strong>
               </p>
               <div className="flex gap-3">
                 <Button variant="secondary" fullWidth onClick={() => setShowConfirmModal(false)}>Cancel</Button>
