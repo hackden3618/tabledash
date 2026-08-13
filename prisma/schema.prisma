@@ -169,10 +169,25 @@ model Zone {
   megaRegion MegaRegion @relation(fields: [megaRegionId], references: [id])
   hotels Hotel[]
   deliveryFees HotelDeliveryFee[]
+  deliveryRegions TownRegion[]
 
   @@unique([megaRegionId, name])
   @@index([megaRegionId, active, name])
   @@map("zones")
+}
+
+model TownRegion {
+  id        String   @id @default(uuid()) @db.Uuid
+  townId    String   @map("town_id") @db.Uuid
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  town Zone @relation(fields: [townId], references: [id], onDelete: Cascade)
+
+  @@unique([townId, name])
+  @@index([townId, active, name])
+  @@map("town_regions")
 }
 
 model Hotel {
