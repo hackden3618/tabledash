@@ -18,13 +18,15 @@ import { handleHotelStaffCreated } from "./handlers/hotel-staff-created.handler"
 import { handleHotelStatusUpdated } from "./handlers/hotel-status-updated.handler";
 import { handlePlatformAdminCreated } from "./handlers/platform-admin-created.handler";
 import { handleAccountLedgerEvent } from "./handlers/account-ledger.handler";
+import { handleSmsDeliveryFailed } from "./handlers/sms-delivery-failed.handler";
 
 const POLL_INTERVAL_MS = 3000;
 const GRACE_PERIOD_MS = 5000;
 const DELIVERY_POLL_MS = 30_000;
-// A notification may be submitted once and resent once. More automatic sends
-// turn a delivery problem into duplicate messages for real customers.
-const MAX_SMS_SEND_ATTEMPTS = 2;
+// A notification is sent once, then retried at most twice after confirmed
+// delivery failures. More automatic sends turn a delivery problem into
+// duplicate messages for real customers.
+const MAX_SMS_SEND_ATTEMPTS = 3;
 
 type HandlerResult = boolean | SmsSendResult;
 type HandlerFn = (payload: Record<string, unknown>) => Promise<HandlerResult>;
@@ -42,6 +44,7 @@ const HANDLER_MAP: Record<string, HandlerFn> = {
   customer_account_payment_recorded: (payload) => handleAccountLedgerEvent("payment", payload),
   customer_account_refund_recorded: (payload) => handleAccountLedgerEvent("refund", payload),
   customer_account_adjusted: (payload) => handleAccountLedgerEvent("adjustment", payload),
+  sms_delivery_failed: handleSmsDeliveryFailed,
 };
 
 let intervalHandle: ReturnType<typeof setInterval> | null = null;
@@ -59,6 +62,25 @@ function isAbsentSubscriber(status: string): boolean { return /absent\s*subscrib
 function resultDetails(result: HandlerResult) {
   if (typeof result === "boolean") return { success: result, providerMessageId: undefined, providerStatus: undefined, error: undefined };
   return { success: result.accepted, providerMessageId: result.messageId, providerStatus: result.providerStatus, error: result.error };
+}
+
+async function alertResponsibleHotelAdmin(row: { id: string; eventName: string; hotelId: string | null; payload: string; providerStatus: string | null }) {
+  // The alert itself must never cause another alert event, otherwise an
+  // unreachable admin phone would create an infinite event chain.
+  if (!row.hotelId || row.eventName === "sms_delivery_failed") return;
+  let orderNumber: number | undefined;
+  try {
+    const payload = JSON.parse(row.payload) as { orderNumber?: unknown };
+    if (typeof payload.orderNumber === "number") orderNumber = payload.orderNumber;
+  } catch { /* The original row is already terminal; omit optional context. */ }
+  await prisma.eventOutbox.create({
+    data: {
+      eventName: "sms_delivery_failed",
+      hotelId: row.hotelId,
+      status: "initialized",
+      payload: JSON.stringify({ hotelId: row.hotelId, eventName: row.eventName, orderNumber, providerStatus: row.providerStatus }),
+    },
+  });
 }
 
 async function processOutbox(): Promise<void> {
@@ -84,9 +106,11 @@ async function processOutbox(): Promise<void> {
         continue;
       }
       const absent = isAbsentSubscriber(report.providerStatus);
-      const exhausted = row.deliveryRetryCount >= 1;
+      const maxResends = absent ? 1 : MAX_SMS_SEND_ATTEMPTS - 1;
+      const exhausted = row.deliveryRetryCount >= maxResends;
       if (exhausted) {
-        await prisma.eventOutbox.update({ where: { id: row.id }, data: { status: "failed", completedAt: new Date(), providerStatus: report.providerStatus, lastError: absent ? "Absent subscriber after one resend" : report.error || "SMS was not delivered after one resend" } });
+        await prisma.eventOutbox.update({ where: { id: row.id }, data: { status: "failed", completedAt: new Date(), providerStatus: report.providerStatus, lastError: absent ? "Absent subscriber after one resend" : report.error || "SMS was not delivered after 3 attempts" } });
+        await alertResponsibleHotelAdmin({ ...row, providerStatus: report.providerStatus });
       } else {
         const resendCount = row.deliveryRetryCount + 1;
         await prisma.eventOutbox.update({ where: { id: row.id }, data: { status: "pending", attempts: 1, providerMessageId: null, providerStatus: absent ? "absent_subscriber_retrying_once" : "delivery_failed_retrying_once", deliveryRetryCount: resendCount, deliveryChecks: 0, lastError: report.error || report.providerStatus, nextAttemptAt: retryAt(resendCount) } });
@@ -134,8 +158,9 @@ async function processOutbox(): Promise<void> {
             if (newAttempts >= MAX_SMS_SEND_ATTEMPTS) {
               await prisma.eventOutbox.update({
                 where: { id: row.id },
-                data: { status: "failed", completedAt: new Date(), attempts: newAttempts, lastError: "SMS gateway accepted the message but did not provide a delivery-report ID after one retry", providerStatus: details.providerStatus ?? "unverifiable_acceptance" },
+              data: { status: "failed", completedAt: new Date(), attempts: newAttempts, lastError: "SMS gateway accepted the message but did not provide a delivery-report ID after 3 attempts", providerStatus: details.providerStatus ?? "unverifiable_acceptance" },
               });
+              await alertResponsibleHotelAdmin({ ...row, providerStatus: details.providerStatus ?? "unverifiable_acceptance" });
               continue;
             }
             await prisma.eventOutbox.update({
@@ -154,7 +179,8 @@ async function processOutbox(): Promise<void> {
         } else {
           const newAttempts = row.attempts + 1;
           if (newAttempts >= MAX_SMS_SEND_ATTEMPTS) {
-            await prisma.eventOutbox.update({ where: { id: row.id }, data: { status: "failed", completedAt: new Date(), attempts: newAttempts, lastError: details.error || "SMS provider rejected the message after one retry", providerStatus: details.providerStatus ?? "rejected" } });
+            await prisma.eventOutbox.update({ where: { id: row.id }, data: { status: "failed", completedAt: new Date(), attempts: newAttempts, lastError: details.error || "SMS provider rejected the message after 3 attempts", providerStatus: details.providerStatus ?? "rejected" } });
+            await alertResponsibleHotelAdmin({ ...row, providerStatus: details.providerStatus ?? "rejected" });
             continue;
           }
           await prisma.eventOutbox.update({
@@ -166,7 +192,8 @@ async function processOutbox(): Promise<void> {
         const newAttempts = row.attempts + 1;
         const lastError = err?.message || "Unknown handler error";
         if (newAttempts >= MAX_SMS_SEND_ATTEMPTS) {
-          await prisma.eventOutbox.update({ where: { id: row.id }, data: { status: "failed", completedAt: new Date(), attempts: newAttempts, lastError: `${lastError} (after one retry)`, providerStatus: "retry_exhausted" } });
+          await prisma.eventOutbox.update({ where: { id: row.id }, data: { status: "failed", completedAt: new Date(), attempts: newAttempts, lastError: `${lastError} (after 3 attempts)`, providerStatus: "retry_exhausted" } });
+          await alertResponsibleHotelAdmin({ ...row, providerStatus: "retry_exhausted" });
           continue;
         }
         await prisma.eventOutbox.update({

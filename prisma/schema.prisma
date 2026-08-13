@@ -76,6 +76,7 @@ enum EventName {
   customer_account_payment_recorded
   customer_account_refund_recorded
   customer_account_adjusted
+  sms_delivery_failed
 }
 
 enum EventStatus {
