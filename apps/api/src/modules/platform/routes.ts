@@ -592,7 +592,7 @@ export const platformRoute = new Elysia({
 
       await prisma.eventOutbox.update({
         where: { id: params.id },
-        data: { status: "initialized", attempts: 0, lastError: null, providerStatus: null, providerMessageId: null, completedAt: null, nextAttemptAt: new Date() },
+        data: { status: "initialized", attempts: 0, deliveryChecks: 0, deliveryRetryCount: 0, lastError: null, providerStatus: null, providerMessageId: null, completedAt: null, nextAttemptAt: new Date() },
       });
 
       return { success: true, data: { retried: entry.id } };

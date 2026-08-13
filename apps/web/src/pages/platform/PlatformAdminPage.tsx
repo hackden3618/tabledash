@@ -813,7 +813,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                     <div key={r.id} style={{ background: r.status === "failed" ? T.dangerMuted : T.surface, borderRadius: T.radius, border: `1px solid ${r.status === "failed" ? "#FECACA" : T.border}`, padding: s(3), fontSize: "0.85rem" }}>
                                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                                             <span style={{ fontWeight: 700, color: T.text }}>{r.eventName}</span>
-                                            <span style={{ color: r.status === "failed" ? T.danger : T.textMuted, fontWeight: 600, fontSize: "0.8rem" }}>{r.status === "done" ? "accepted by SMS provider" : `${r.status} (attempts: ${r.attempts})`}</span>
+                                            <span style={{ color: r.status === "failed" ? T.danger : T.textMuted, fontWeight: 600, fontSize: "0.8rem" }}>{r.status === "delivered" ? "delivered" : r.status === "awaiting_delivery" ? "awaiting delivery report" : `${r.status} (attempts: ${r.attempts})`}</span>
                                         </div>
                                         <div style={{ color: T.textMuted, marginTop: s(1) }}>{new Date(r.createdAt).toLocaleString()}</div>
                                         {r.providerStatus && <div style={{ color: r.status === "failed" ? T.danger : T.textMuted, marginTop: s(1) }}>Provider: {r.providerStatus}{r.providerMessageId ? ` · message ID ${r.providerMessageId}` : ""}</div>}

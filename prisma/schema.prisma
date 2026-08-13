@@ -81,7 +81,9 @@ enum EventName {
 enum EventStatus {
   initialized
   pending
+  awaiting_delivery
   done
+  delivered
   failed
 }
 
@@ -455,6 +457,8 @@ model EventOutbox {
   nextAttemptAt DateTime  @default(now()) @map("next_attempt_at") @db.Timestamptz()
   providerMessageId String? @map("provider_message_id")
   providerStatus String? @map("provider_status")
+  deliveryChecks Int @default(0) @map("delivery_checks")
+  deliveryRetryCount Int @default(0) @map("delivery_retry_count")
   createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz()
   completedAt DateTime?   @map("completed_at") @db.Timestamptz()
 

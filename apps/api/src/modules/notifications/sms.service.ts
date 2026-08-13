@@ -40,6 +40,7 @@ export interface ISmsDriver {
    * @param message Text message body.
    */
   sendSms(recipientPhone: string, message: string): Promise<SmsSendResult>;
+  getDelivery?(messageId: string): Promise<SmsDeliveryResult>;
 }
 
 /** A gateway acceptance is not the same thing as handset delivery. The gateway
@@ -50,6 +51,21 @@ export interface SmsSendResult {
   messageId?: string;
   providerStatus: string;
   error?: string;
+}
+
+export type SmsDeliveryState = "delivered" | "pending" | "failed";
+export interface SmsDeliveryResult {
+  state: SmsDeliveryState;
+  providerStatus: string;
+  error?: string;
+}
+
+function gatewayEntry(data: unknown): any | null {
+  return typeof data === "object" && data && Array.isArray((data as any).responses) ? (data as any).responses[0] : null;
+}
+
+function parseGatewayResponse(rawText: string): unknown {
+  try { return JSON.parse(rawText); } catch { return rawText; }
 }
 
 /**
@@ -100,14 +116,9 @@ export class TextSmsDriver implements ISmsDriver {
       }
 
       // Try parsing JSON; if it fails, treat raw text as the result payload
-      let data: unknown;
-      try {
-        data = JSON.parse(rawText);
-      } catch {
-        data = rawText;
-      }
+      const data = parseGatewayResponse(rawText);
 
-      const gateway = typeof data === "object" && data && Array.isArray((data as any).responses) ? (data as any).responses[0] : null;
+      const gateway = gatewayEntry(data);
       const code = gateway?.["respose-code"] ?? gateway?.["response-code"] ?? gateway?.code;
       const description = gateway?.["response-description"] ?? gateway?.description;
       const accepted = response.ok && Number(code) === 200;
@@ -124,6 +135,35 @@ export class TextSmsDriver implements ISmsDriver {
       return { accepted: false, providerStatus: "transport_error", error: error instanceof Error ? error.message : "SMS transport error" };
     }
   }
+
+  /** TextSMS returns the message ID at submission. Querying its documented
+   * getdlr endpoint distinguishes gateway acceptance from handset delivery. */
+  public async getDelivery(messageId: string): Promise<SmsDeliveryResult> {
+    if (!env.textSmsApiKey || !env.textSmsPartnerId) return { state: "delivered", providerStatus: "simulated" };
+    try {
+      const response = await fetch("https://sms.textsms.co.ke/api/services/getdlr/", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apikey: env.textSmsApiKey, partnerID: env.textSmsPartnerId, messageID: messageId }),
+      });
+      const rawText = await response.text();
+      const entry = gatewayEntry(parseGatewayResponse(rawText));
+      const description = String(entry?.["response-description"] ?? entry?.description ?? rawText).trim();
+      const normalized = description.toLowerCase();
+      if (!response.ok || /no delivery report|details not found|pending|submitted|sent to operator|queued|processing/.test(normalized)) {
+        return { state: "pending", providerStatus: description || `HTTP ${response.status}` };
+      }
+      if (/delivered|delivrd|deliveredtoterminal/.test(normalized) && !/not delivered|undelivered/.test(normalized)) {
+        return { state: "delivered", providerStatus: description };
+      }
+      if (/absent subscriber|absentsubscriber|not delivered|undelivered|expired|failed|rejected|invalid|unknown subscriber|number error|blocked/.test(normalized)) {
+        return { state: "failed", providerStatus: description, error: description };
+      }
+      // A new/undocumented DLR response is never treated as successful.
+      return { state: "pending", providerStatus: description || "DLR response not yet recognized" };
+    } catch (error) {
+      return { state: "pending", providerStatus: "dlr_transport_error", error: error instanceof Error ? error.message : "Unable to query SMS delivery report" };
+    }
+  }
 }
 
 /**
@@ -138,6 +178,10 @@ export class ConsoleSmsDriver implements ISmsDriver {
     console.log(`[SMS] chars=${message.length} segments=${segments}`);
     console.log(`========================================\n`);
     return { accepted: true, providerStatus: "simulated" };
+  }
+
+  public async getDelivery(_messageId: string): Promise<SmsDeliveryResult> {
+    return { state: "delivered", providerStatus: "simulated" };
   }
 }
 
