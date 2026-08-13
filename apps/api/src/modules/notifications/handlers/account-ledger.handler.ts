@@ -1,6 +1,6 @@
 import { prisma } from "../../../../../../infrastructure/database/prisma";
 import type { NotificationType } from "../../../../../../generated/prisma/client";
-import { smsService } from "../sms.service";
+import { smsService, type SmsSendResult } from "../sms.service";
 import { wsHub } from "../../websocket/hub";
 import {
   accountCredit,
@@ -63,9 +63,9 @@ export async function handleAccountLedgerEvent(type: AccountLedgerEventType, pay
   });
 
   // SMS
-  let smsOk = true;
+  let smsResult: SmsSendResult = { accepted: false, providerStatus: "no_recipient", error: "Customer has no phone number" };
   if (customer.phone) {
-    smsOk = (await smsService.sendSms(customer.phone, msg).catch(() => ({ accepted: false }))).accepted;
+    smsResult = await smsService.sendSms(customer.phone, msg).catch((error) => ({ accepted: false, providerStatus: "transport_error", error: error instanceof Error ? error.message : "SMS transport error" }));
   }
 
   // In-app notification + Web Push to OS notification shade
@@ -95,7 +95,7 @@ export async function handleAccountLedgerEvent(type: AccountLedgerEventType, pay
     // Non-critical — notification is a convenience, not a guarantee
   }
 
-  return smsOk;
+  return smsResult;
 }
 
 function buildLedgerSms(

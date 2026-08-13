@@ -1,6 +1,6 @@
 import { prisma } from "../../../../../../infrastructure/database/prisma";
 import { env } from "../../../../../../shared/config";
-import { smsService } from "../sms.service";
+import { smsService, type SmsSendResult } from "../sms.service";
 import { getSmsRecipients } from "../../settings/service";
 import { sendPushToCustomer, sendPushToHotelAdmins } from "../../push/service";
 import {
@@ -84,7 +84,9 @@ export async function handleOrderStatusUpdated(payload: Record<string, unknown>)
     }).catch(() => 0);
   }
 
-  const customerSent = data.customerPhone ? (await smsService.sendSms(data.customerPhone, message)).accepted : false;
+  const customerResult: SmsSendResult = data.customerPhone
+    ? await smsService.sendSms(data.customerPhone, message)
+    : { accepted: false, providerStatus: "no_recipient", error: "Customer has no phone number" };
 
   // Hotel staff abort alert — sent in addition to the customer SMS on cancellation.
   if (data.newStatus === "CANCELLED" && data.hotelId) {
@@ -104,7 +106,7 @@ export async function handleOrderStatusUpdated(payload: Record<string, unknown>)
     }
   }
 
-  return customerSent;
+  return customerResult;
 }
 
 /**
