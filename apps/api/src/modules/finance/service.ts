@@ -486,12 +486,17 @@ export async function getFinanceDashboard(hotelId: string) {
   const mpesaRevenue = mpesaPayments - mpesaRefunds;
   const todayRevenue = cashRevenue + mpesaRevenue;
 
+  const todayStart = new Date(`${todayStr}T00:00:00.000Z`);
+  const tomorrowStart = new Date(todayStart);
+  tomorrowStart.setUTCDate(tomorrowStart.getUTCDate() + 1);
   const orders = await prisma.order.findMany({
     where: { hotelId },
-    select: { status: true, totalAmount: true, orderedAt: true },
+    select: { customerId: true, status: true, totalAmount: true, orderedAt: true, cancelledAt: true },
   });
 
-  const cancelledCount = orders.filter((o) => o.status === "CANCELLED").length;
+  // Cancellation is an event, not an order-creation attribute: today's figure
+  // must count orders cancelled today, even when they were created earlier.
+  const cancelledCount = orders.filter((o) => o.status === "CANCELLED" && o.cancelledAt && o.cancelledAt >= todayStart && o.cancelledAt < tomorrowStart).length;
   // Net cash in the till: cash collected minus cash refunds paid back out.
   const dailyCashPosition = cashRevenue;
 
@@ -510,7 +515,7 @@ export async function getFinanceDashboard(hotelId: string) {
       totalSpent: Number(a.totalPaid),
       totalOwed: Number(a.totalOwed),
       outstandingBalance: Math.max(0, Number(a.totalOwed) - Number(a.totalPaid)),
-      orderCount: orders.filter((o) => o.status !== "CANCELLED").length,
+      orderCount: orders.filter((o) => o.customerId === a.customerId && o.status !== "CANCELLED").length,
     }))
     .sort((a, b) => b.totalSpent - a.totalSpent)
     .slice(0, 10);

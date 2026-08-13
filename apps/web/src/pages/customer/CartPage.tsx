@@ -19,6 +19,20 @@ let cachedWhatsAppPhone = "+254757030743";
 export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDelivery }) => {
   const { cart, updateQuantity, clearCart, totalAmount, updateItemSnapshot, closedHotelIds, setClosedHotelIds } = useCart();
   const [whatsappPhone, setWhatsappPhone] = useState(cachedWhatsAppPhone);
+  const [deliveryFee, setDeliveryFee] = useState<number | null>(null);
+  const [deliveryFeeLoading, setDeliveryFeeLoading] = useState(false);
+
+  const cartHotelIds = [...new Set(cart.map((item) => item.hotelId).filter((id): id is string => Boolean(id)))];
+  useEffect(() => {
+    if (!cartHotelIds.length) { setDeliveryFee(0); return; }
+    setDeliveryFeeLoading(true);
+    const query = new URLSearchParams({ hotelIds: cartHotelIds.join(",") });
+    const zoneId = localStorage.getItem("ladha_zone_id");
+    if (zoneId) query.set("zoneId", zoneId);
+    void apiGet<Array<{ deliveryFee: number }>>(`/orders/delivery-fees?${query}`)
+      .then((res) => setDeliveryFee(res.success && res.data ? res.data.reduce((sum, row) => sum + Number(row.deliveryFee), 0) : null))
+      .finally(() => setDeliveryFeeLoading(false));
+  }, [cartHotelIds.join(",")]);
 
   useEffect(() => {
     const hotelIds = [...new Set(cart.map((item) => item.hotelId).filter((id): id is string => Boolean(id)))];
@@ -248,11 +262,11 @@ export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDe
                 </div>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm text-[#6B7280]">Delivery</span>
-                  <span className="text-sm font-semibold text-[#22C55E]">Free</span>
+                  <span className="text-sm font-semibold text-[#1F2937]">{deliveryFeeLoading ? "Calculating…" : deliveryFee === null ? "Confirmed at checkout" : `KSh ${deliveryFee.toFixed(2)}`}</span>
                 </div>
                 <div className="border-t border-[#E5E7EB] pt-3 mt-3 flex items-center justify-between">
                   <span className="font-bold text-[#1F2937]">Total</span>
-                  <span className="text-xl font-extrabold text-[#114B36]">KSh {totalAmount}</span>
+                  <span className="text-xl font-extrabold text-[#114B36]">{deliveryFee === null ? `KSh ${totalAmount}` : `KSh ${(totalAmount + deliveryFee).toFixed(2)}`}</span>
                 </div>
               </motion.div>
 

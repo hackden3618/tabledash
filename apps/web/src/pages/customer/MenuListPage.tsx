@@ -148,6 +148,14 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
             setDiscovery(res.data);
             setHotels(res.data.restaurants);
             setClosedHotelIds(res.data.restaurants.filter((h) => !h.isOpen).map((h) => h.id));
+            // A general delivery area can be served by every listed hotel. If
+            // it has no home-zone kitchens, immediately surface that list
+            // rather than telling customers the platform is "expanding soon".
+            if (zoneId && !includeAll && res.data.restaurants.length === 0) {
+                setViewAllHotels(true);
+                void fetchHotels(zoneId, true);
+                return;
+            }
             if (res.data.restaurants.length === 1) {
                 selectHotel(res.data.restaurants[0]!);
                 return;
@@ -449,11 +457,9 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
                             {discovery!.trustIndicators.map((item) => { const Icon = item.icon === "shield" ? ShieldCheck : item.icon === "leaf" ? Leaf : item.icon === "route" ? Route : LockKeyhole; return <div key={item.label} className="flex items-center gap-2 text-[0.65rem] font-semibold leading-tight text-[#3B4A42]"><Icon size={15} className="shrink-0 text-[#114B36]" />{item.label}</div>; })}
                         </div></section>}
 
-                        {/* TODO - and if in general delivery area, have all local hotels in the selected location... e.g Naivasha town, Kiambu town, Luanda town */}
-
                         <section>
                             <div className="mb-4 flex items-end justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-[#789083]">Discover</p><h2 className="mt-1 text-xl font-black text-[#1F2937]">{viewAllHotels ? "All kitchens" : "Nearby kitchens"}</h2></div><button type="button" onClick={handleViewAllHotels} className="shrink-0 border-none bg-transparent text-xs font-bold text-[#114B36] underline underline-offset-2">{viewAllHotels ? "Nearby only" : "View all hotels"}</button></div>
-                            {viewAllHotels && <div className="mb-4 flex items-start gap-2 rounded-xl border border-[#F0D9A8] bg-[#FFF8E8] px-3 py-3 text-xs leading-relaxed text-[#805B18]"><ShieldCheck size={15} className="mt-0.5 shrink-0" />Some hotels are outside your selected delivery area. Delivery charges may apply.</div>}
+                            {viewAllHotels && <div className="mb-4 flex items-start gap-2 rounded-xl border border-[#F0D9A8] bg-[#FFF8E8] px-3 py-3 text-xs leading-relaxed text-[#805B18]"><ShieldCheck size={15} className="mt-0.5 shrink-0" />All listed hotels can deliver to this area. Delivery fees are set by each hotel and confirmed at checkout.</div>}
                             {loading ? <div className="grid grid-cols-2 gap-3">{[1, 2, 3, 4].map((i) => <div key={i} className="h-48 animate-pulse rounded-2xl bg-[#E9E5DE]" />)}</div> : hotels.length === 0 ? <DiscoverEmptyState viewAll={viewAllHotels} onExploreOtherOptions={handleViewAllHotels} /> : <div className="grid grid-cols-2 gap-3">{hotels.map((hotel) => <button key={hotel.id} onClick={() => onNavigateToHotel ? onNavigateToHotel(hotel.slug) : selectHotel(hotel)} className="group overflow-hidden rounded-2xl border border-[#E8DED2] bg-white text-left shadow-sm transition hover:-translate-y-1 hover:shadow-lg"><div className="relative h-28 bg-[#EBF5F0]">{hotel.imageUrl ? <img src={hotel.imageUrl} alt={hotel.name} loading="lazy" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" /> : <Building2 size={30} className="absolute inset-0 m-auto text-[#114B36]" />}<span className={`absolute left-2 top-2 rounded-full px-2 py-1 text-[0.58rem] font-bold ${hotel.isOpen ? "bg-[#E7F5EA] text-[#18733C]" : "bg-[#FFF3D6] text-[#9A6500]"}`}>{hotel.isOpen ? "OPEN" : "CLOSED"}</span></div><div className="p-3"><h3 className="truncate text-sm font-black text-[#1F2937]">{hotel.name}</h3><div className="mt-1 flex flex-wrap gap-1"><span className="rounded-full bg-[#EBF5F0] px-2 py-1 text-[0.58rem] font-bold text-[#114B36]"><MapPin size={10} className="mr-1 inline" />{hotel.locationName ?? "Serving area"}</span>{viewAllHotels && !hotel.isLocal && <span className="rounded-full bg-[#FFF3D6] px-2 py-1 text-[0.58rem] font-bold text-[#9A6500]">Delivery charges may apply</span>}</div><p className="mt-1 text-[0.68rem] text-[#6B7280]">{hotel.productCount} available items</p><RatingStars rating={hotel.rating} count={hotel.ratingCount} className="mt-2" /></div></button>)}</div>}
                         </section>
 
@@ -777,16 +783,14 @@ function DiscoverEmptyState({ viewAll, onExploreOtherOptions }: { viewAll: boole
                 </>
             ) : (
                 <>
-                    <h3 className="font-bold text-[#1F2937]">We&rsquo;re expanding here soon</h3>
-                    <p className="mt-1 text-sm text-[#6B7280]">
-                        There are no kitchens in this delivery area yet, but we&rsquo;re working on it. In the meantime, you can explore hotels in other locations.
-                    </p>
+                    <h3 className="font-bold text-[#1F2937]">Showing hotels that deliver here</h3>
+                    <p className="mt-1 text-sm text-[#6B7280]">We&rsquo;ll show every listed hotel serving the platform. Delivery fees are confirmed before you place the order.</p>
                     <button
                         type="button"
                         onClick={onExploreOtherOptions}
                         className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-[#114B36] px-4 py-2.5 text-sm font-bold text-white border-none cursor-pointer hover:bg-[#0D3D2B] transition-colors"
                     >
-                        Explore other options <ArrowRight size={15} />
+                        View all hotels <ArrowRight size={15} />
                     </button>
                 </>
             )}

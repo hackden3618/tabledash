@@ -562,6 +562,7 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus, canc
             status: newStatus,
             completedAt: newStatus === "DELIVERED" ? new Date() : existing.completedAt,
             cancelReason: newStatus === "CANCELLED" ? (cancelReason || "Staff unavailable to deliver at this time") : existing.cancelReason,
+            cancelledAt: newStatus === "CANCELLED" ? new Date() : existing.cancelledAt,
         };
 
         if (newStatus === "CANCELLED") {
@@ -951,6 +952,7 @@ function formatOrderResponse(order: any) {
         deliveryFee: Number(order.deliveryFee ?? 0),
         amountPaid: Number(order.amountPaid),
         refundedAt: order.refundedAt ? order.refundedAt.toISOString() : null,
+        cancelledAt: order.cancelledAt ? order.cancelledAt.toISOString() : null,
         orderItems: order.orderItems?.map((item: any) => ({
             ...item,
             unitPrice: Number(item.unitPrice),

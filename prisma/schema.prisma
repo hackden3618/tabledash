@@ -375,6 +375,7 @@ model Order {
   orderedAt                     DateTime      @default(now()) @map("ordered_at") @db.Timestamptz()
   completedAt                   DateTime?     @map("completed_at") @db.Timestamptz()
   cancelReason                  String?       @map("cancel_reason")
+  cancelledAt                   DateTime?     @map("cancelled_at") @db.Timestamptz()
   cancelledAtStatus             String?       @map("cancelled_at_status")
   refundedAt                    DateTime?     @map("refunded_at") @db.Timestamptz()
   utensilsIssued                Boolean       @default(false) @map("utensils_issued")
