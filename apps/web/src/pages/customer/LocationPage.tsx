@@ -33,6 +33,7 @@ interface DeliveryZone {
   name: string;
   locationLabel: string;
   locationPlaceholder: string;
+  megaRegion?: { id: string; name: string };
 }
 
 export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrderPlaced, onNavigateToVerify }) => {
@@ -65,6 +66,7 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
   const [showVerifyPrompt, setShowVerifyPrompt] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"PAY_LATER" | "PAY_ON_DELIVERY">("PAY_ON_DELIVERY");
   const [deliveryZone, setDeliveryZone] = useState<DeliveryZone | null>(null);
+  const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>([]);
   const [deliveryFee, setDeliveryFee] = useState(0);
   const [deliveryFeeLoading, setDeliveryFeeLoading] = useState(false);
 
@@ -102,13 +104,22 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
   const lockPhone = orderingForOther && (recipientLookupState === "found" || recipientLookupState === "guest");
 
   useEffect(() => {
-    const zoneId = localStorage.getItem("ladha_zone_id");
-    if (!zoneId) return;
     void apiGet<DeliveryZone[]>("/discovery/zones").then((result) => {
-      const zone = result.success ? result.data?.find((item) => item.id === zoneId) : undefined;
-      if (zone) setDeliveryZone(zone);
+      if (!result.success || !result.data?.length) return;
+      setDeliveryZones(result.data);
+      const savedZoneId = localStorage.getItem("ladha_zone_id");
+      const zone = result.data.find((item) => item.id === savedZoneId) ?? result.data[0];
+      setDeliveryZone(zone);
+      localStorage.setItem("ladha_zone_id", zone.id);
     });
   }, []);
+
+  const changeDeliveryTown = (zoneId: string) => {
+    const zone = deliveryZones.find((item) => item.id === zoneId);
+    if (!zone) return;
+    setDeliveryZone(zone);
+    localStorage.setItem("ladha_zone_id", zone.id);
+  };
 
   const cartHotelIds = [...new Set(cart.map((item) => item.hotelId).filter((id): id is string => Boolean(id)))];
   useEffect(() => {
@@ -662,6 +673,13 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
           </div>
 
           <div className="space-y-4">
+            <div>
+              <label className="mb-1.5 block text-sm font-semibold text-[#374151]">Delivery town</label>
+              <select value={deliveryZone?.id ?? ""} onChange={(event) => changeDeliveryTown(event.target.value)} className="w-full rounded-xl border border-[#D1D5DB] bg-white px-3 py-3 text-sm text-[#1F2937] outline-none focus:border-[#114B36]" disabled={deliveryZones.length === 0}>
+                {deliveryZones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}{zone.megaRegion ? ` · ${zone.megaRegion.name}` : ""}</option>)}
+              </select>
+              <p className="mt-1 text-xs text-[#6B7280]">Changing town updates the delivery fee. Hotels from other towns are not shown.</p>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <Input
                 label="First Name *"

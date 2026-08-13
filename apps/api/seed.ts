@@ -29,7 +29,10 @@ export const seedDatabase = async () => {
 
     const defaultZone = await prisma.zone.upsert({
         where: { id: "00000000-0000-0000-0000-000000000001" },
-        update: {},
+        update: {
+            name: "Naivasha Town",
+            megaRegionId: nakuruCounty.id,
+        },
         create: {
             id: "00000000-0000-0000-0000-000000000001",
             name: "Naivasha Town",
