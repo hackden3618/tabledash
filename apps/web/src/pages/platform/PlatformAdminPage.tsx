@@ -27,7 +27,7 @@ interface Hotel {
     zone?: DeliveryRegion;
 }
 interface AdminUser { id: string; name: string; username: string; createdAt: string; }
-interface DeliveryRegion { id: string; name: string; type: string; locationLabel: string; locationPlaceholder: string; active?: boolean; }
+interface DeliveryRegion { id: string; name: string; type: string; locationLabel: string; locationPlaceholder: string; active?: boolean; megaRegionId: string; megaRegion?: MegaRegion; }
 interface MegaRegion { id: string; name: string; type: string; active?: boolean; }
 
 const T = {
@@ -393,6 +393,15 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
     const filteredHotels = hotels.filter((h) =>
         !searchQ || h.name.toLowerCase().includes(searchQ.toLowerCase()) || h.slug.toLowerCase().includes(searchQ.toLowerCase())
     );
+    const hotelGroups = Array.from(filteredHotels.reduce((groups, hotel) => {
+        const megaRegion = hotel.zone?.megaRegion?.name ?? "Town not assigned";
+        const town = hotel.zone?.name ?? "Town not assigned";
+        const key = `${megaRegion}::${town}`;
+        const group = groups.get(key) ?? { megaRegion, town, hotels: [] as Hotel[] };
+        group.hotels.push(hotel);
+        groups.set(key, group);
+        return groups;
+    }, new Map<string, { megaRegion: string; town: string; hotels: Hotel[] }>()).values());
 
     // ── Layout ──
     const sidebarWidth = 240;
@@ -578,8 +587,11 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                         {filteredHotels.length === 0 ? (
                             <div style={{ textAlign: "center", padding: s(10), color: T.textMuted, fontSize: "0.9rem" }}>No hotels found.</div>
                         ) : (
-                            <div style={{ display: "flex", flexDirection: "column", gap: s(3) }}>
-                                {filteredHotels.map((h) => (
+                            <div style={{ display: "flex", flexDirection: "column", gap: s(5) }}>
+                                {hotelGroups.map((group) => <section key={`${group.megaRegion}-${group.town}`}>
+                                    <div style={{ marginBottom: s(2), color: T.textMuted, fontSize: "0.75rem", fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase" }}>{group.megaRegion} · {group.town}</div>
+                                    <div style={{ display: "flex", flexDirection: "column", gap: s(3) }}>
+                                {group.hotels.map((h) => (
                                     <button key={h.id} onClick={() => { setSelectedHotel(h); setView("hotel_detail"); }}
                                         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedHotel(h); setView("hotel_detail"); } }}
                                         style={{ background: T.surface, borderRadius: "12px", border: `1px solid ${T.border}`, borderLeft: `4px solid ${h.isOpen ? T.primary : T.textDim}`, padding: `${s(4)} ${s(5)}`, cursor: "pointer", transition: "box-shadow 0.15s" }}
@@ -589,7 +601,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                             <div>
                                                 <div style={{ fontWeight: 700, color: T.text }}>{h.name}</div>
                                                 <div style={{ fontSize: "0.8rem", color: T.textMuted, marginTop: s(1) }}>
-                                                    {h.slug} · {h.isOpen ? "Open" : "Closed"} · {h.zone?.name ?? "Town not assigned"} · Onboarded {new Date(h.createdAt).toLocaleDateString()}
+                                                    {h.slug} · {h.isOpen ? "Open" : "Closed"} · Onboarded {new Date(h.createdAt).toLocaleDateString()}
                                                     {h.isListed === false && <span style={{ color: T.warning, fontWeight: 700 }}> · Hidden from marketplace</span>}
                                                 </div>
                                             </div>
@@ -601,7 +613,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                             </div>
                                         )}
                                     </button>
-                                ))}
+                                ))}</div></section>)}
                             </div>
                         )}
                     </>
@@ -858,11 +870,13 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
     );
 };
 
-function ServingRegionsPage({ regions, token, onChanged }: { regions: DeliveryRegion[]; token: string; onChanged: (regions: DeliveryRegion[]) => void }) {
+function ServingRegionsPage({ regions, megaRegions, token, onChanged, onMegaRegionsChanged }: { regions: DeliveryRegion[]; megaRegions: MegaRegion[]; token: string; onChanged: (regions: DeliveryRegion[]) => void; onMegaRegionsChanged: (regions: MegaRegion[]) => void }) {
     const [drafts, setDrafts] = useState<Record<string, DeliveryRegion>>({});
-    const [newRegion, setNewRegion] = useState({ name: "", type: "MARKET", locationLabel: "Delivery point", locationPlaceholder: "e.g. stall, bay, floor or office" });
+    const [newRegion, setNewRegion] = useState({ name: "", megaRegionId: megaRegions[0]?.id ?? "", type: "OTHER", locationLabel: "Delivery point", locationPlaceholder: "e.g. building, landmark, stall number" });
+    const [newMegaRegion, setNewMegaRegion] = useState({ name: "", type: "COUNTY" });
     const [saving, setSaving] = useState<string | null>(null);
     const [creating, setCreating] = useState(false);
+    const [creatingMegaRegion, setCreatingMegaRegion] = useState(false);
 
     const draftFor = (region: DeliveryRegion) => drafts[region.id] ?? region;
     const saveRegion = async (region: DeliveryRegion) => {
@@ -872,39 +886,56 @@ function ServingRegionsPage({ regions, token, onChanged }: { regions: DeliveryRe
         if (res.success && res.data) onChanged(regions.map((item) => item.id === region.id ? res.data! : item));
     };
     const createRegion = async () => {
-        if (!newRegion.name.trim() || creating) return;
+        if (!newRegion.name.trim() || !newRegion.megaRegionId || creating) return;
         setCreating(true);
         const res = await apiPost<DeliveryRegion>("/platform/zones", newRegion, token);
         setCreating(false);
         if (res.success && res.data) {
             onChanged([...regions, res.data].sort((a, b) => a.name.localeCompare(b.name)));
-            setNewRegion({ name: "", type: "MARKET", locationLabel: "Delivery point", locationPlaceholder: "e.g. stall, bay, floor or office" });
+            setNewRegion({ name: "", megaRegionId: newRegion.megaRegionId, type: "OTHER", locationLabel: "Delivery point", locationPlaceholder: "e.g. building, landmark, stall number" });
+        }
+    };
+    const createMegaRegion = async () => {
+        if (!newMegaRegion.name.trim() || creatingMegaRegion) return;
+        setCreatingMegaRegion(true);
+        const res = await apiPost<MegaRegion>("/platform/mega-regions", newMegaRegion, token);
+        setCreatingMegaRegion(false);
+        if (res.success && res.data) {
+            const next = [...megaRegions, res.data].sort((a, b) => a.name.localeCompare(b.name));
+            onMegaRegionsChanged(next);
+            setNewRegion((region) => ({ ...region, megaRegionId: res.data!.id }));
+            setNewMegaRegion({ name: "", type: "COUNTY" });
         }
     };
 
     return <div>
-        <div style={{ marginBottom: s(6) }}><p style={{ color: T.primary, fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase" }}>Marketplace geography</p><h1 style={{ fontSize: "1.6rem", fontWeight: 800, color: T.text, margin: 0 }}>Serving Regions</h1><p style={{ color: T.textMuted, fontSize: "0.9rem", marginTop: s(1) }}>Create and maintain delivery areas. Hotels are assigned to one region and appear there first for customers.</p></div>
+        <div style={{ marginBottom: s(6) }}><p style={{ color: T.primary, fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase" }}>Marketplace geography</p><h1 style={{ fontSize: "1.6rem", fontWeight: 800, color: T.text, margin: 0 }}>Counties, cities & towns</h1><p style={{ color: T.textMuted, fontSize: "0.9rem", marginTop: s(1) }}>Create counties or cities first, then add towns under them. Each hotel belongs to one town and customers only see hotels in their selected town.</p></div>
         <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radius, padding: s(4), marginBottom: s(5) }}>
-            <h2 style={{ fontSize: "1rem", fontWeight: 700, color: T.text, marginTop: 0 }}>Add serving region</h2>
+            <h2 style={{ fontSize: "1rem", fontWeight: 700, color: T.text, marginTop: 0 }}>Add county or city</h2>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: s(2) }}><input className="input-field" value={newMegaRegion.name} onChange={(e) => setNewMegaRegion({ ...newMegaRegion, name: e.target.value })} placeholder="e.g. Nakuru County" /><select className="input-field" value={newMegaRegion.type} onChange={(e) => setNewMegaRegion({ ...newMegaRegion, type: e.target.value })}><option value="COUNTY">County</option><option value="CITY">City</option><option value="OTHER">Other</option></select></div>
+            <button type="button" onClick={() => void createMegaRegion()} disabled={creatingMegaRegion || !newMegaRegion.name.trim()} style={{ marginTop: s(3), background: T.primary, color: "white", border: "none", padding: `${s(2)} ${s(4)}`, borderRadius: T.radius, fontWeight: 700, opacity: creatingMegaRegion || !newMegaRegion.name.trim() ? 0.6 : 1 }}>{creatingMegaRegion ? "Adding…" : "Add county or city"}</button>
+        </div>
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radius, padding: s(4), marginBottom: s(5) }}>
+            <h2 style={{ fontSize: "1rem", fontWeight: 700, color: T.text, marginTop: 0 }}>Add town</h2>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: s(2) }}>
-                <input className="input-field" value={newRegion.name} onChange={(e) => setNewRegion({ ...newRegion, name: e.target.value })} placeholder="Region name" />
-                <select className="input-field" value={newRegion.type} onChange={(e) => setNewRegion({ ...newRegion, type: e.target.value })}><option value="MARKET">Market</option><option value="BUS_STATION">Bus station</option><option value="OFFICE_BUILDING">Office building</option><option value="RESIDENTIAL">Residential</option><option value="OTHER">Other</option></select>
+                <input className="input-field" value={newRegion.name} onChange={(e) => setNewRegion({ ...newRegion, name: e.target.value })} placeholder="e.g. Naivasha Town" />
+                <select className="input-field" value={newRegion.megaRegionId} onChange={(e) => setNewRegion({ ...newRegion, megaRegionId: e.target.value })}><option value="">Select county or city</option>{megaRegions.filter((region) => region.active !== false).map((region) => <option key={region.id} value={region.id}>{region.name}</option>)}</select>
                 <input className="input-field" value={newRegion.locationLabel} onChange={(e) => setNewRegion({ ...newRegion, locationLabel: e.target.value })} placeholder="Location label" />
                 <input className="input-field" value={newRegion.locationPlaceholder} onChange={(e) => setNewRegion({ ...newRegion, locationPlaceholder: e.target.value })} placeholder="Location example" />
             </div>
-            <button type="button" onClick={() => void createRegion()} disabled={creating || !newRegion.name.trim()} style={{ marginTop: s(3), background: T.primary, color: "white", border: "none", padding: `${s(2)} ${s(4)}`, borderRadius: T.radius, fontWeight: 700, opacity: creating || !newRegion.name.trim() ? 0.6 : 1 }}>{creating ? "Adding…" : "Add Region"}</button>
+            <button type="button" onClick={() => void createRegion()} disabled={creating || !newRegion.name.trim() || !newRegion.megaRegionId} style={{ marginTop: s(3), background: T.primary, color: "white", border: "none", padding: `${s(2)} ${s(4)}`, borderRadius: T.radius, fontWeight: 700, opacity: creating || !newRegion.name.trim() || !newRegion.megaRegionId ? 0.6 : 1 }}>{creating ? "Adding…" : "Add town"}</button>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: s(3) }}>
             {regions.map((region) => { const draft = draftFor(region); return <div key={region.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radius, padding: s(4) }}>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: s(2) }}>
                     <input className="input-field" value={draft.name} onChange={(e) => setDrafts({ ...drafts, [region.id]: { ...draft, name: e.target.value } })} />
-                    <select className="input-field" value={draft.type} onChange={(e) => setDrafts({ ...drafts, [region.id]: { ...draft, type: e.target.value } })}><option value="MARKET">Market</option><option value="BUS_STATION">Bus station</option><option value="OFFICE_BUILDING">Office building</option><option value="RESIDENTIAL">Residential</option><option value="OTHER">Other</option></select>
+                    <select className="input-field" value={draft.megaRegionId} onChange={(e) => setDrafts({ ...drafts, [region.id]: { ...draft, megaRegionId: e.target.value } })}><option value="">Select county or city</option>{megaRegions.map((megaRegion) => <option key={megaRegion.id} value={megaRegion.id}>{megaRegion.name}</option>)}</select>
                     <input className="input-field" value={draft.locationLabel} onChange={(e) => setDrafts({ ...drafts, [region.id]: { ...draft, locationLabel: e.target.value } })} />
                     <input className="input-field" value={draft.locationPlaceholder} onChange={(e) => setDrafts({ ...drafts, [region.id]: { ...draft, locationPlaceholder: e.target.value } })} />
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: s(3), marginTop: s(3) }}><label style={{ display: "flex", alignItems: "center", gap: s(2), color: T.textMuted, fontSize: "0.85rem" }}><input type="checkbox" checked={draft.active !== false} onChange={(e) => setDrafts({ ...drafts, [region.id]: { ...draft, active: e.target.checked } })} /> Available to customers</label><button type="button" onClick={() => void saveRegion(region)} disabled={saving === region.id} style={{ marginLeft: "auto", background: T.primary, color: "white", border: "none", padding: `${s(2)} ${s(4)}`, borderRadius: T.radius, fontWeight: 700 }}>{saving === region.id ? "Saving…" : "Save changes"}</button></div>
             </div>; })}
-            {regions.length === 0 && <div style={{ color: T.textMuted, padding: s(6), textAlign: "center" }}>No serving regions configured.</div>}
+            {regions.length === 0 && <div style={{ color: T.textMuted, padding: s(6), textAlign: "center" }}>No towns configured.</div>}
         </div>
     </div>;
 }

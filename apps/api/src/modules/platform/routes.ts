@@ -374,7 +374,6 @@ export const platformRoute = new Elysia({
           status: "done",
           completedAt: new Date(),
         },
-        include: { zone: { include: { megaRegion: true } } },
       });
 
       return { success: true, data: updated };
@@ -596,6 +595,7 @@ export const platformRoute = new Elysia({
           autoCloseAt: body.autoCloseAt !== undefined ? (body.autoCloseAt ? new Date(body.autoCloseAt) : null) : hotel.autoCloseAt,
           ...(body.zoneId ? { zoneId: body.zoneId } : {}),
         },
+        include: { zone: { include: { megaRegion: true } } },
       });
 
       return { success: true, data: updated };
