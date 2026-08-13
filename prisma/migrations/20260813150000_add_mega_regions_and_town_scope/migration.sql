@@ -40,6 +40,30 @@ JOIN "zones" target
 WHERE "hotels"."zone_id" = legacy."id"
   AND legacy."name" = 'General delivery area';
 
+-- Keep an existing hotel's configured Naivasha-specific fee if this migration
+-- has to move it from the legacy area to a separately-created Naivasha Town.
+-- A fee already configured for the target town wins; the old duplicate is
+-- removed only after that safe upsert.
+INSERT INTO "hotel_delivery_fees" ("id", "hotel_id", "zone_id", "amount", "created_at", "updated_at")
+SELECT gen_random_uuid(), legacy_fee."hotel_id", target."id", legacy_fee."amount", legacy_fee."created_at", legacy_fee."updated_at"
+FROM "hotel_delivery_fees" legacy_fee
+JOIN "zones" legacy ON legacy."id" = legacy_fee."zone_id"
+JOIN "zones" target
+  ON target."name" = 'Naivasha Town'
+ AND target."mega_region_id" = legacy."mega_region_id"
+WHERE legacy."name" = 'General delivery area'
+ON CONFLICT ("hotel_id", "zone_id") DO NOTHING;
+
+DELETE FROM "hotel_delivery_fees"
+WHERE "zone_id" IN (
+  SELECT legacy."id"
+  FROM "zones" legacy
+  JOIN "zones" target
+    ON target."name" = 'Naivasha Town'
+   AND target."mega_region_id" = legacy."mega_region_id"
+  WHERE legacy."name" = 'General delivery area'
+);
+
 UPDATE "zones"
 SET "name" = 'Naivasha Town'
 WHERE "name" = 'General delivery area'

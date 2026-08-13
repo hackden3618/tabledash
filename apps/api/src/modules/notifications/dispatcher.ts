@@ -151,22 +151,14 @@ async function processOutbox(): Promise<void> {
       try {
         const details = resultDetails(await handler(payload));
         if (details.success) {
-          // A successful submission without a provider message ID cannot ever
-          // be verified. Keep it retryable rather than falsely calling it sent.
+          // Without a provider ID there can be no delivery report. Do not
+          // resend blindly: a gateway may have already accepted the SMS.
           if (env.smsProvider === "textsms" && !details.providerMessageId) {
-            const newAttempts = row.attempts + 1;
-            if (newAttempts >= MAX_SMS_SEND_ATTEMPTS) {
-              await prisma.eventOutbox.update({
-                where: { id: row.id },
-              data: { status: "failed", completedAt: new Date(), attempts: newAttempts, lastError: "SMS gateway accepted the message but did not provide a delivery-report ID after 3 attempts", providerStatus: details.providerStatus ?? "unverifiable_acceptance" },
-              });
-              await alertResponsibleHotelAdmin({ ...row, providerStatus: details.providerStatus ?? "unverifiable_acceptance" });
-              continue;
-            }
             await prisma.eventOutbox.update({
               where: { id: row.id },
-              data: { status: "pending", attempts: newAttempts, lastError: "SMS provider accepted the request but returned no message ID for delivery verification", providerStatus: details.providerStatus ?? "unverifiable_acceptance", nextAttemptAt: retryAt(newAttempts) },
+              data: { status: "failed", completedAt: new Date(), attempts: row.attempts + 1, lastError: "SMS gateway accepted the message but returned no delivery-report ID; no resend was made", providerStatus: details.providerStatus ?? "unverifiable_acceptance" },
             });
+            await alertResponsibleHotelAdmin({ ...row, providerStatus: details.providerStatus ?? "unverifiable_acceptance" });
             continue;
           }
           const awaitDelivery = env.smsProvider === "textsms" && Boolean(details.providerMessageId && smsService.getDelivery);
@@ -178,28 +170,20 @@ async function processOutbox(): Promise<void> {
           });
         } else {
           const newAttempts = row.attempts + 1;
-          if (newAttempts >= MAX_SMS_SEND_ATTEMPTS) {
-            await prisma.eventOutbox.update({ where: { id: row.id }, data: { status: "failed", completedAt: new Date(), attempts: newAttempts, lastError: details.error || "SMS provider rejected the message after 3 attempts", providerStatus: details.providerStatus ?? "rejected" } });
-            await alertResponsibleHotelAdmin({ ...row, providerStatus: details.providerStatus ?? "rejected" });
-            continue;
-          }
           await prisma.eventOutbox.update({
             where: { id: row.id },
-            data: { status: "pending", attempts: newAttempts, lastError: details.error || "SMS provider did not accept the message", providerStatus: details.providerStatus ?? "retrying", nextAttemptAt: retryAt(newAttempts) },
+            data: { status: "failed", completedAt: new Date(), attempts: newAttempts, lastError: details.error || "SMS provider did not accept the message; no resend was made without a failed delivery report", providerStatus: details.providerStatus ?? "rejected" },
           });
+          await alertResponsibleHotelAdmin({ ...row, providerStatus: details.providerStatus ?? "rejected" });
         }
       } catch (err: any) {
         const newAttempts = row.attempts + 1;
         const lastError = err?.message || "Unknown handler error";
-        if (newAttempts >= MAX_SMS_SEND_ATTEMPTS) {
-          await prisma.eventOutbox.update({ where: { id: row.id }, data: { status: "failed", completedAt: new Date(), attempts: newAttempts, lastError: `${lastError} (after 3 attempts)`, providerStatus: "retry_exhausted" } });
-          await alertResponsibleHotelAdmin({ ...row, providerStatus: "retry_exhausted" });
-          continue;
-        }
         await prisma.eventOutbox.update({
           where: { id: row.id },
-          data: { status: "pending", attempts: newAttempts, lastError, providerStatus: "retrying", nextAttemptAt: retryAt(newAttempts) },
+          data: { status: "failed", completedAt: new Date(), attempts: newAttempts, lastError: `${lastError}; no resend was made without a failed delivery report`, providerStatus: "dispatch_error" },
         });
+        await alertResponsibleHotelAdmin({ ...row, providerStatus: "dispatch_error" });
       }
     }
   } catch (err) {

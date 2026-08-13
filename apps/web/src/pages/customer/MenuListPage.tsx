@@ -253,10 +253,17 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
             setZones(zonesResult.data);
             setZonesLoading(false);
             setZoneError(false);
-            const savedZone = zonesResult.data.some((zone) => zone.id === activeZoneId) ? activeZoneId : zonesResult.data[0]!.id;
-            setActiveZoneId(savedZone);
-            localStorage.setItem("ladha_zone_id", savedZone);
-            await fetchHotels(savedZone);
+            const savedZone = zonesResult.data.some((zone) => zone.id === activeZoneId) ? activeZoneId : "";
+            if (savedZone) {
+                setActiveZoneId(savedZone);
+                await fetchHotels(savedZone);
+            } else {
+                // A first-time visitor must choose their town before discovery
+                // runs. Defaulting to the first configured town is both
+                // misleading and can expose the wrong marketplace.
+                setLoading(false);
+                setLocationPickerOpen(true);
+            }
         };
         void loadLocations();
     }, [initialHotelSlug]);
