@@ -55,8 +55,9 @@ export interface DeliveryFeeQuote {
     deliveryFee: number;
 }
 
-/** Server-side delivery pricing. A hotel's own region is free; every other
- * platform region uses its configured price or its KSh 50 generic fallback. */
+/** Server-side delivery pricing. Every hotel charges its configured price for
+ * the selected platform region, falling back to its general-area fee (KSh 50
+ * by default). The hotel's home region is not silently exempt. */
 export async function getDeliveryFeeQuote(hotelIds: string[], deliveryZoneId?: string): Promise<DeliveryFeeQuote[]> {
     const uniqueHotelIds = [...new Set(hotelIds)];
     if (!uniqueHotelIds.length) return [];
@@ -66,7 +67,6 @@ export async function getDeliveryFeeQuote(hotelIds: string[], deliveryZoneId?: s
     });
     if (hotels.length !== uniqueHotelIds.length) throw new Error("One or more hotels are unavailable");
     return hotels.map((hotel) => {
-        if (deliveryZoneId && hotel.zoneId === deliveryZoneId) return { hotelId: hotel.id, deliveryFee: 0 };
         const configured = deliveryZoneId ? hotel.deliveryFees.find((fee) => fee.zoneId === deliveryZoneId) : undefined;
         return { hotelId: hotel.id, deliveryFee: Number(configured?.amount ?? hotel.genericDeliveryFee) };
     });
@@ -930,6 +930,7 @@ function formatOrderResponse(order: any) {
     return {
         ...order,
         totalAmount: Number(order.totalAmount),
+        deliveryFee: Number(order.deliveryFee ?? 0),
         amountPaid: Number(order.amountPaid),
         refundedAt: order.refundedAt ? order.refundedAt.toISOString() : null,
         orderItems: order.orderItems?.map((item: any) => ({

@@ -157,6 +157,25 @@ describe("Finance service — ledger invariants", () => {
     expect(result.order.paymentStatus).toBe("PAID");
   });
 
+  test("a split cash and M-PESA payment writes one ledger row per tender atomically", async () => {
+    resetState();
+    ledgerRows = [{ id: "sr-c0", hotelId: "hotel-A", orderId: "order-X", type: "ORDER_CHARGE", paymentMethod: "CREDIT", amount: 150, note: null }];
+    const { recordPayments } = await import("./service");
+
+    const result = await recordPayments("hotel-A", "cust-1", "order-X", [
+      { method: "CASH", amount: 50 },
+      { method: "MPESA", amount: 100 },
+    ], "admin-1");
+
+    expect(ledgerRows.filter((row) => row.type === "ORDER_PAYMENT")).toEqual([
+      expect.objectContaining({ paymentMethod: "CASH", amount: 50 }),
+      expect.objectContaining({ paymentMethod: "MPESA", amount: 100 }),
+    ]);
+    expect(currentAccount.totalPaid).toBe(150);
+    expect(result.order.paymentStatus).toBe("PAID");
+    expect(outboxRows.filter((row) => row.eventName === "customer_account_payment_recorded")).toHaveLength(2);
+  });
+
   test("recordPayment rejects cross-tenant orders", async () => {
     resetState();
     mockOrderFindUnique.mockResolvedValueOnce({ ...seedOrder, hotelId: "hotel-B" });

@@ -787,7 +787,7 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
                 <p className="text-xs text-[#991B1B] mt-1">Not accepting orders right now.</p>
               </div>
             )}
-            <Button onClick={handlePlaceOrder} disabled={isSubmitting || !firstName.trim() || !isValidPhone(phone.trim()) || (!marketSection && !locationDescription.trim() && !stallNumber.trim()) || anyHotelClosed} loading={isSubmitting} fullWidth size="lg">
+            <Button onClick={handlePlaceOrder} disabled={isSubmitting || deliveryFeeLoading || !firstName.trim() || !isValidPhone(phone.trim()) || (!marketSection && !locationDescription.trim() && !stallNumber.trim()) || anyHotelClosed} loading={isSubmitting || deliveryFeeLoading} fullWidth size="lg">
               {anyHotelClosed ? "Hotel Closed" : "Place Order"}
             </Button>
           </div>

@@ -168,6 +168,9 @@ export async function updateHotelDeliverySettings(hotelId: string, genericDelive
   }
   await prisma.$transaction(async (tx) => {
     await tx.hotel.update({ where: { id: hotelId }, data: { genericDeliveryFee } });
+    await tx.hotelDeliveryFee.deleteMany({
+      where: { hotelId, ...(deliveryFees.length ? { zoneId: { notIn: deliveryFees.map((fee) => fee.zoneId) } } : {}) },
+    });
     for (const fee of deliveryFees) {
       await tx.hotelDeliveryFee.upsert({
         where: { hotelId_zoneId: { hotelId, zoneId: fee.zoneId } },
