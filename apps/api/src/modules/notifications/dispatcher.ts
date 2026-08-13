@@ -22,6 +22,9 @@ import { handleAccountLedgerEvent } from "./handlers/account-ledger.handler";
 const POLL_INTERVAL_MS = 3000;
 const GRACE_PERIOD_MS = 5000;
 const DELIVERY_POLL_MS = 30_000;
+// A notification may be submitted once and resent once. More automatic sends
+// turn a delivery problem into duplicate messages for real customers.
+const MAX_SMS_SEND_ATTEMPTS = 2;
 
 type HandlerResult = boolean | SmsSendResult;
 type HandlerFn = (payload: Record<string, unknown>) => Promise<HandlerResult>;
@@ -45,7 +48,8 @@ let intervalHandle: ReturnType<typeof setInterval> | null = null;
 let processing = false;
 
 function retryAt(attempt: number): Date {
-  // 3s, 6s, 12s, 24s, 48s, 96s — bounded exponential backoff.
+  // The sole automatic resend is delayed briefly to let transient gateway
+  // failures clear; further resends require an explicit platform-admin retry.
   return new Date(Date.now() + Math.min(96_000, 3_000 * 2 ** Math.max(0, attempt - 1)));
 }
 
@@ -80,12 +84,12 @@ async function processOutbox(): Promise<void> {
         continue;
       }
       const absent = isAbsentSubscriber(report.providerStatus);
-      const exhausted = absent && row.deliveryRetryCount >= 1;
+      const exhausted = row.deliveryRetryCount >= 1;
       if (exhausted) {
-        await prisma.eventOutbox.update({ where: { id: row.id }, data: { status: "failed", providerStatus: report.providerStatus, lastError: absent ? "Absent subscriber after one resend" : report.error || "SMS was not delivered after all resend attempts" } });
+        await prisma.eventOutbox.update({ where: { id: row.id }, data: { status: "failed", completedAt: new Date(), providerStatus: report.providerStatus, lastError: absent ? "Absent subscriber after one resend" : report.error || "SMS was not delivered after one resend" } });
       } else {
         const resendCount = row.deliveryRetryCount + 1;
-        await prisma.eventOutbox.update({ where: { id: row.id }, data: { status: "pending", attempts: 0, providerMessageId: null, providerStatus: absent ? "absent_subscriber_retrying_once" : "delivery_failed_retrying", deliveryRetryCount: resendCount, deliveryChecks: 0, lastError: report.error || report.providerStatus, nextAttemptAt: retryAt(resendCount) } });
+        await prisma.eventOutbox.update({ where: { id: row.id }, data: { status: "pending", attempts: 1, providerMessageId: null, providerStatus: absent ? "absent_subscriber_retrying_once" : "delivery_failed_retrying_once", deliveryRetryCount: resendCount, deliveryChecks: 0, lastError: report.error || report.providerStatus, nextAttemptAt: retryAt(resendCount) } });
       }
     }
 
@@ -127,6 +131,13 @@ async function processOutbox(): Promise<void> {
           // be verified. Keep it retryable rather than falsely calling it sent.
           if (env.smsProvider === "textsms" && !details.providerMessageId) {
             const newAttempts = row.attempts + 1;
+            if (newAttempts >= MAX_SMS_SEND_ATTEMPTS) {
+              await prisma.eventOutbox.update({
+                where: { id: row.id },
+                data: { status: "failed", completedAt: new Date(), attempts: newAttempts, lastError: "SMS gateway accepted the message but did not provide a delivery-report ID after one retry", providerStatus: details.providerStatus ?? "unverifiable_acceptance" },
+              });
+              continue;
+            }
             await prisma.eventOutbox.update({
               where: { id: row.id },
               data: { status: "pending", attempts: newAttempts, lastError: "SMS provider accepted the request but returned no message ID for delivery verification", providerStatus: details.providerStatus ?? "unverifiable_acceptance", nextAttemptAt: retryAt(newAttempts) },
@@ -142,6 +153,10 @@ async function processOutbox(): Promise<void> {
           });
         } else {
           const newAttempts = row.attempts + 1;
+          if (newAttempts >= MAX_SMS_SEND_ATTEMPTS) {
+            await prisma.eventOutbox.update({ where: { id: row.id }, data: { status: "failed", completedAt: new Date(), attempts: newAttempts, lastError: details.error || "SMS provider rejected the message after one retry", providerStatus: details.providerStatus ?? "rejected" } });
+            continue;
+          }
           await prisma.eventOutbox.update({
             where: { id: row.id },
             data: { status: "pending", attempts: newAttempts, lastError: details.error || "SMS provider did not accept the message", providerStatus: details.providerStatus ?? "retrying", nextAttemptAt: retryAt(newAttempts) },
@@ -150,6 +165,10 @@ async function processOutbox(): Promise<void> {
       } catch (err: any) {
         const newAttempts = row.attempts + 1;
         const lastError = err?.message || "Unknown handler error";
+        if (newAttempts >= MAX_SMS_SEND_ATTEMPTS) {
+          await prisma.eventOutbox.update({ where: { id: row.id }, data: { status: "failed", completedAt: new Date(), attempts: newAttempts, lastError: `${lastError} (after one retry)`, providerStatus: "retry_exhausted" } });
+          continue;
+        }
         await prisma.eventOutbox.update({
           where: { id: row.id },
           data: { status: "pending", attempts: newAttempts, lastError, providerStatus: "retrying", nextAttemptAt: retryAt(newAttempts) },
