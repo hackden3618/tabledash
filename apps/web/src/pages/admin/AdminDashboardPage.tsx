@@ -70,6 +70,13 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   };
 
   const fetchMetrics = async (quiet = false) => {
+    // A custom range is meaningful only once it has both inclusive endpoints;
+    // don't replace visible metrics with a half-range while the admin is still
+    // choosing the second date.
+    if (range === "custom" && (!startDate || !endDate)) {
+      if (!quiet) setLoading(false);
+      return;
+    }
     if (!quiet) setLoading(true);
     const dates = effectiveRange();
     const query = new URLSearchParams();

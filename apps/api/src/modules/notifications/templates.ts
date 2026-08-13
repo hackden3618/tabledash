@@ -50,12 +50,14 @@ export interface OrderOutForDeliveryToCustomerParams {
   firstName: string;
   orderNumber: number;
   totalAmount: number;
+  link: string;
 }
 export const orderOutForDeliveryToCustomer = (p: OrderOutForDeliveryToCustomerParams): string =>
   `${BRAND}\n` +
   `Good news, ${p.firstName}! Your order #${p.orderNumber} is on the way.\n` +
   `Please be ready to receive it.\n` +
-  `Total: KSh ${p.totalAmount}`;
+  `Total: KSh ${p.totalAmount}\n` +
+  `Track your delivery: ${p.link}`;
 
 export interface FirstDeliveredToCustomerParams {
   firstName: string;

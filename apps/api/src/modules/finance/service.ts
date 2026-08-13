@@ -434,7 +434,7 @@ export async function recordAdjustment(
 
 function broadcastPaymentUpdate(order: any) {
   if (!order) return;
-  wsHub.broadcastToHotelAdmins(order.hotelId ?? undefined, {
+  const message = {
     type: "ORDER_PAYMENT_UPDATED",
     payload: {
       orderId: order.id,
@@ -442,8 +442,13 @@ function broadcastPaymentUpdate(order: any) {
       paymentStatus: order.paymentStatus,
       amountPaid: Number(order.amountPaid),
       totalAmount: Number(order.totalAmount),
+      status: order.status,
     },
-  });
+  } as const;
+  wsHub.broadcastToHotelAdmins(order.hotelId ?? undefined, message);
+  // Payment state is also relevant to the authenticated order owner: it drives
+  // the single review prompt after a delivered order becomes fully paid.
+  wsHub.broadcastToIdentities([`customer:${order.customerId}`], message);
 }
 
 // ── Queries ──

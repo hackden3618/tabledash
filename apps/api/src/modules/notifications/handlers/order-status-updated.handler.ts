@@ -34,6 +34,7 @@ const CUSTOMER_NOTIFIED_STATUSES = ["ACCEPTED", "OUT_FOR_DELIVERY", "DELIVERED",
 export async function handleOrderStatusUpdated(payload: Record<string, unknown>): Promise<boolean | SmsSendResult> {
   const data = payload as unknown as OrderStatusPayload;
   const hotelName = data.hotelName || "Ladha Deliveries";
+  const trackingLink = `${env.publicUrl.replace(/\/$/, "")}/orders/${data.orderId}/tracking`;
 
   if (!CUSTOMER_NOTIFIED_STATUSES.includes(data.newStatus)) return true;
 
@@ -45,13 +46,14 @@ export async function handleOrderStatusUpdated(payload: Record<string, unknown>)
       firstName,
       orderNumber: data.orderNumber,
       hotelName,
-      link: env.publicUrl,
+      link: trackingLink,
     });
   } else if (data.newStatus === "OUT_FOR_DELIVERY") {
     message = orderOutForDeliveryToCustomer({
       firstName,
       orderNumber: data.orderNumber,
       totalAmount: data.totalAmount,
+      link: trackingLink,
     });
   } else if (data.newStatus === "DELIVERED") {
     // The welcome message goes out once, on the very first delivered order.

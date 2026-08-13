@@ -27,6 +27,7 @@ import { useManifestSwitcher } from "./pwa/manifestSwitcher";
 import { registerServiceWorker } from "./pwa/push";
 import { InstallBanner } from "./components/InstallBanner";
 import { PersistentNotificationCard } from "./components/PersistentNotificationCard";
+import { Modal } from "./components/ui/Modal";
 
 import { CartPage } from "./pages/customer/CartPage";
 import { ConfirmationPage } from "./pages/customer/ConfirmationPage";
@@ -95,9 +96,11 @@ function AppContent() {
     const { token: adminToken, user: adminUser } = useAdminAuth();
     const { token: platformToken } = usePlatformAdminAuth();
     const location = useLocation();
+    const navigate = useNavigate();
 
     const [placedOrder, setPlacedOrder] = useState<any>(null);
     const [returnToCheckout, setReturnToCheckout] = useState(false);
+    const [reviewPromptOrderId, setReviewPromptOrderId] = useState<string | null>(null);
 
     const path = location.pathname;
     const isKitchenPath = path === "/kitchen" || path.startsWith("/kitchen/");
@@ -155,10 +158,16 @@ function AppContent() {
             };
             pushNotification(categoryMap[notification.category || ""] || "info", notification.title || "", notification.message || "", { scope: notificationScope });
         } else if (event.type === "ORDER_PAYMENT_UPDATED") {
-            const payment = event.payload as { paymentStatus?: string; amountPaid?: number; totalAmount?: number; orderNumber?: number };
+            const payment = event.payload as { orderId?: string; paymentStatus?: string; status?: string; amountPaid?: number; totalAmount?: number; orderNumber?: number };
             if (isAdminPath) {
                 const statusLabel = payment.paymentStatus === "REFUNDED" ? "Refunded" : payment.paymentStatus === "PAID" ? "Paid" : payment.paymentStatus === "PARTIAL" ? "Partial" : "Unpaid";
                 pushNotification("info", "Payment Updated", `Order #${payment.orderNumber} — ${statusLabel} (KSh ${Number(payment.amountPaid ?? 0).toFixed(2)} / ${Number(payment.totalAmount ?? 0).toFixed(2)})`, { scope: notificationScope });
+            } else if (payment.orderId && payment.paymentStatus === "PAID" && payment.status === "DELIVERED") {
+                const promptKey = `ladha_review_prompted:${payment.orderId}`;
+                if (!localStorage.getItem(promptKey)) {
+                    localStorage.setItem(promptKey, "1");
+                    setReviewPromptOrderId(payment.orderId);
+                }
             }
         } else if (event.type === "HOTEL_CLOSING") {
             const closing = event.payload as { hotelId?: string; hotelName?: string; closingIn?: number };
@@ -185,6 +194,7 @@ function AppContent() {
             <NotificationToastContainer toasts={toasts} onDismiss={dismissToast} />
             <AppFlowContext.Provider value={{ placedOrder, setPlacedOrder, returnToCheckout, setReturnToCheckout }}>
                 <Outlet />
+                <Modal isOpen={Boolean(reviewPromptOrderId)} onClose={() => setReviewPromptOrderId(null)} type="success" title="How was your order?" message="Your order is complete and payment is recorded. Would you like to leave a quick review?" primaryAction={{ label: "Leave a review", onClick: () => { const orderId = reviewPromptOrderId; setReviewPromptOrderId(null); if (orderId) navigate(`/orders/${orderId}/tracking`); } }} secondaryAction={{ label: "Not now", onClick: () => setReviewPromptOrderId(null) }} />
             </AppFlowContext.Provider>
         </>
     );
@@ -268,7 +278,7 @@ function KitchenShell() {
     };
 
     return (
-        <>
+        <div className="kitchen-theme">
             {!hydrating && isLoggedIn && <InstallBanner scope="admin" />}
             {!hydrating && isLoggedIn && !isKitchenNavHidden(location.pathname) && (
                 <PersistentNotificationCard variant="banner" token={adminToken ?? undefined} />
@@ -280,7 +290,7 @@ function KitchenShell() {
                     onSelectTab={handleAdminTab}
                 />
             )}
-        </>
+        </div>
     );
 }
 

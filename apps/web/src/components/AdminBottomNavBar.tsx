@@ -108,16 +108,16 @@ export const AdminBottomNavBar: React.FC<AdminBottomNavBarProps> = ({
             onClick={() => setHotelMenuOpen((open) => !open)}
             aria-expanded={hotelMenuOpen}
             aria-label="Switch hotel"
-            className="w-full flex items-center justify-between gap-2 rounded-xl bg-[#EBF5F0] hover:bg-[#DCE8E2] border border-[#D1E3DA] px-3 py-2 text-left transition-colors cursor-pointer"
+            className="w-full flex items-center justify-between gap-2 rounded-xl bg-[#FFF0E5] hover:bg-[#FED7AA] border border-[#FED7AA] px-3 py-2 text-left transition-colors cursor-pointer"
           >
             <span className="flex items-center gap-2 min-w-0">
-              <Building2 size={14} className="text-[#114B36] shrink-0" />
+              <Building2 size={14} className="text-[#9A3412] shrink-0" />
               <span className="min-w-0">
                 <span className="block text-[0.55rem] uppercase tracking-wide font-bold text-[#6B7280] leading-none mb-0.5">Working at</span>
-                <span className="block text-xs font-bold text-[#114B36] truncate">{currentHotel?.name ?? "Select hotel"}</span>
+                <span className="block text-xs font-bold text-[#9A3412] truncate">{currentHotel?.name ?? "Select hotel"}</span>
               </span>
             </span>
-            <ChevronUp size={16} className={`text-[#114B36] shrink-0 transition-transform ${hotelMenuOpen ? "" : "rotate-180"}`} />
+            <ChevronUp size={16} className={`text-[#9A3412] shrink-0 transition-transform ${hotelMenuOpen ? "" : "rotate-180"}`} />
           </button>
           {hotelMenuOpen && (
             <div className="absolute left-3 right-3 bottom-full mb-1 rounded-xl bg-white border border-[#E5E7EB] shadow-lg overflow-hidden">
@@ -155,14 +155,14 @@ export const AdminBottomNavBar: React.FC<AdminBottomNavBarProps> = ({
               className={`
                 relative flex flex-col items-center justify-center gap-0.5 px-2 py-1.5
                 rounded-xl transition-colors bg-none border-none cursor-pointer min-w-[56px]
-                ${isActive ? "text-[#114B36]" : "text-[#6B7280]"}
+                ${isActive ? "text-[#9A3412]" : "text-[#6B7280]"}
               `}
             >
               {isOrders ? (
                 <div className={`
                   relative flex items-center justify-center w-12 h-12 rounded-full -mt-3
-                  transition-all duration-200 shadow-[0_4px_14px_rgba(17,75,54,0.35)]
-                  ${isActive ? "bg-[#0D3D2B] shadow-[0_4px_18px_rgba(17,75,54,0.45)]" : "bg-[#114B36]"}
+                  transition-all duration-200 shadow-[0_4px_14px_rgba(154,52,18,0.35)]
+                  ${isActive ? "bg-[#7C2D12] shadow-[0_4px_18px_rgba(124,45,18,0.45)]" : "bg-[#9A3412]"}
                   text-white
                 `}>
                   <Icon size={22} strokeWidth={2.5} />
@@ -182,7 +182,7 @@ export const AdminBottomNavBar: React.FC<AdminBottomNavBarProps> = ({
               {isActive && !isOrders && (
                 <motion.div
                   layoutId="admin-nav-indicator"
-                  className="absolute -bottom-0.5 w-6 h-0.5 rounded-full bg-[#114B36]"
+                  className="absolute -bottom-0.5 w-6 h-0.5 rounded-full bg-[#9A3412]"
                   transition={{ type: "spring", damping: 25, stiffness: 300 }}
                 />
               )}
