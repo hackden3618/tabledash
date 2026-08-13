@@ -10,6 +10,7 @@ import { jwt } from "@elysiajs/jwt";
 import { openapi } from "@elysia/openapi";
 import { Elysia, t } from "elysia";
 import { join } from "node:path";
+import { existsSync, statSync } from "node:fs";
 
 // Feature module routes & WS hub
 import { authRoute } from "./src/modules/auth/route";
@@ -210,11 +211,14 @@ export const app = new Elysia()
   .use(financeRoute)
 
   // Serve the built frontend SPA for any non-API route
-  .get("/*", ({ params }) => {
+.get("/*", ({ params }) => {
     const dist = join(import.meta.dir, "..", "web", "dist");
     const wild = params["*"] as string;
     const filePath = !wild ? "/index.html" : `/${wild}`;
-    const file = Bun.file(join(dist, filePath));
-    if (file.size > 0) return file;
+    const resolved = join(dist, filePath);
+    if (existsSync(resolved) && statSync(resolved).isFile()) {
+      const file = Bun.file(resolved);
+      if (file.size > 0) return file;
+    }
     return Bun.file(join(dist, "index.html"));
   });
