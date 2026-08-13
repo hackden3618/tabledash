@@ -889,8 +889,26 @@ export const getRefundsOwed = async (hotelId: string) => {
  * Revenue excludes cancelled orders and nets out refunded amounts; pending uses
  * an explicit allow-list.
  */
-export const getDashboardMetrics = async (hotelId?: string): Promise<DashboardMetrics> => {
-    const where = hotelId ? { hotelId } : {};
+export interface DashboardMetricsRange {
+    startDate?: string;
+    endDate?: string;
+}
+
+function parseDashboardDate(value: string, endOfDay = false): Date {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error("Dates must use YYYY-MM-DD format");
+    const date = new Date(`${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}+03:00`);
+    if (Number.isNaN(date.getTime())) throw new Error("Invalid dashboard date");
+    return date;
+}
+
+export const getDashboardMetrics = async (hotelId?: string, range: DashboardMetricsRange = {}): Promise<DashboardMetrics> => {
+    const start = range.startDate ? parseDashboardDate(range.startDate) : undefined;
+    const end = range.endDate ? parseDashboardDate(range.endDate, true) : undefined;
+    if (start && end && start > end) throw new Error("Start date must be on or before end date");
+    const where: any = {
+        ...(hotelId ? { hotelId } : {}),
+        ...((start || end) ? { orderedAt: { ...(start ? { gte: start } : {}), ...(end ? { lte: end } : {}) } } : {}),
+    };
     const allOrders = await prisma.order.findMany({
         where,
         include: {

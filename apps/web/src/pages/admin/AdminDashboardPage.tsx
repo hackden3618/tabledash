@@ -48,10 +48,34 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [metrics, setMetrics] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [newOrderAlert, setNewOrderAlert] = useState(false);
+  const [range, setRange] = useState<"all" | "this-month" | "last-month" | "custom">("all");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
+  const monthRange = (offset: number) => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + offset + 1, 0);
+    const format = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    return { startDate: format(start), endDate: format(end) };
+  };
+
+  const effectiveRange = () => range === "this-month" ? monthRange(0) : range === "last-month" ? monthRange(-1) : range === "custom" ? { startDate, endDate } : {};
+  const rangeLabel = () => {
+    if (range === "all") return "All time";
+    const dates = effectiveRange();
+    if (range === "this-month") return new Date().toLocaleString("en-KE", { month: "long", year: "numeric" });
+    if (range === "last-month") return new Date(new Date().getFullYear(), new Date().getMonth() - 1).toLocaleString("en-KE", { month: "long", year: "numeric" });
+    return dates.startDate && dates.endDate ? `${dates.startDate} – ${dates.endDate}` : "Choose dates";
+  };
 
   const fetchMetrics = async (quiet = false) => {
     if (!quiet) setLoading(true);
-    const res = await apiGet<any>("/orders/dashboard/metrics", token);
+    const dates = effectiveRange();
+    const query = new URLSearchParams();
+    if (dates.startDate) query.set("startDate", dates.startDate);
+    if (dates.endDate) query.set("endDate", dates.endDate);
+    const res = await apiGet<any>(`/orders/dashboard/metrics${query.size ? `?${query}` : ""}`, token);
     if (res.success && res.data) {
       setMetrics(res.data);
     }
@@ -72,11 +96,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     };
     window.addEventListener("ladha:realtime", handler);
     return () => window.removeEventListener("ladha:realtime", handler);
-  }, [token]);
+  }, [token, range, startDate, endDate]);
 
   useEffect(() => {
     void fetchMetrics();
-  }, [token]);
+  }, [token, range, startDate, endDate]);
 
   const actionOnClick = (label: string) => {
     switch (label) {
@@ -127,9 +151,15 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           </div>
 
           {/* Metrics */}
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-lg text-[#1F2937]">Lifetime Business Metrics</h2>
-            <span className="text-xs font-semibold bg-[#E5E7EB] text-[#6B7280] px-3 py-1.5 rounded-full">All time</span>
+          <div className="mb-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="font-bold text-lg text-[#1F2937]">Business Metrics</h2>
+              <span className="text-xs font-semibold bg-[#E5E7EB] text-[#6B7280] px-3 py-1.5 rounded-full whitespace-nowrap">{rangeLabel()}</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {([ ["all", "All time"], ["this-month", "This month"], ["last-month", "Last month"], ["custom", "Custom range"] ] as const).map(([key, label]) => <button key={key} type="button" onClick={() => setRange(key)} className={`rounded-full px-3 py-1.5 text-xs font-bold border cursor-pointer ${range === key ? "border-[#114B36] bg-[#114B36] text-white" : "border-[#D1D5DB] bg-white text-[#4B5563]"}`}>{label}</button>)}
+            </div>
+            {range === "custom" && <div className="grid grid-cols-2 gap-3 rounded-xl bg-[#F9FAFB] p-3 border border-[#E5E7EB]"><label className="text-xs font-semibold text-[#4B5563]">From<input type="date" value={startDate} max={endDate || undefined} onChange={(event) => setStartDate(event.target.value)} className="mt-1 w-full rounded-lg border border-[#D1D5DB] bg-white px-2 py-2 text-sm" /></label><label className="text-xs font-semibold text-[#4B5563]">To<input type="date" value={endDate} min={startDate || undefined} onChange={(event) => setEndDate(event.target.value)} className="mt-1 w-full rounded-lg border border-[#D1D5DB] bg-white px-2 py-2 text-sm" /></label></div>}
           </div>
 
           {loading ? (

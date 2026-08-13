@@ -101,7 +101,7 @@ export const ordersRoute = new Elysia({
       }),
     }
   )
-  .get("/dashboard/metrics", async ({ headers, jwt, set }) => {
+  .get("/dashboard/metrics", async ({ headers, jwt, set, query }) => {
     const authHeader = headers["authorization"];
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       set.status = 401;
@@ -119,9 +119,14 @@ export const ordersRoute = new Elysia({
       set.status = 403;
       return { success: false, error: "This account is not assigned to a hotel" };
     }
-    const metrics = await getDashboardMetrics(admin.hotelId);
-    return { success: true, data: metrics };
-  })
+    try {
+      const metrics = await getDashboardMetrics(admin.hotelId, { startDate: query.startDate, endDate: query.endDate });
+      return { success: true, data: metrics };
+    } catch (err: any) {
+      set.status = 400;
+      return { success: false, error: err.message || "Unable to calculate dashboard metrics" };
+    }
+  }, { query: t.Object({ startDate: t.Optional(t.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}$" })), endDate: t.Optional(t.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}$" })) }) })
   .get("/pending-count", async ({ headers, jwt, set }) => {
     const authHeader = headers["authorization"];
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
