@@ -39,12 +39,12 @@ const formatProduct = (product: { id: string; name: string; category: string; me
   ratingCount,
 });
 
-const buildHomeDiscovery = async (zoneId?: string, includeAll = false, customerId?: string) => {
+const buildHomeDiscovery = async (zoneId?: string, customerId?: string) => {
   const [hotels, products, paidItems, heroSetting, ratingRows, mealRatingRows, recentOrders] = await Promise.all([
-    prisma.hotel.findMany({ where: { deletedAt: null, isListed: true, ...(!includeAll && zoneId ? { zoneId } : {}) }, select: { id: true, name: true, slug: true, imageUrl: true, isOpen: true, zone: { select: { id: true, name: true, type: true } } }, orderBy: { name: "asc" } }),
+    prisma.hotel.findMany({ where: { deletedAt: null, isListed: true, ...(zoneId ? { zoneId } : {}) }, select: { id: true, name: true, slug: true, imageUrl: true, isOpen: true, zone: { select: { id: true, name: true, type: true, megaRegion: { select: { id: true, name: true, type: true } } } } }, orderBy: { name: "asc" } }),
     prisma.product.findMany({
-      where: { deleted: false, available: true, stockQty: { gt: 0 }, ...(!includeAll && zoneId ? { hotel: { zoneId } } : {}) },
-      include: { hotel: { select: { id: true, name: true, imageUrl: true, isOpen: true, zone: { select: { id: true, name: true, type: true } } } } },
+      where: { deleted: false, available: true, stockQty: { gt: 0 }, ...(zoneId ? { hotel: { zoneId } } : {}) },
+      include: { hotel: { select: { id: true, name: true, imageUrl: true, isOpen: true, zone: { select: { id: true, name: true, type: true, megaRegion: { select: { id: true, name: true, type: true } } } } } } },
       orderBy: { createdAt: "asc" },
     }),
     prisma.orderItem.findMany({
@@ -101,7 +101,7 @@ const buildHomeDiscovery = async (zoneId?: string, includeAll = false, customerI
     locationType: hotel.zone.type,
     rating: ratingRows.find((row) => row.hotelId === hotel.id)?._avg.rating ?? null,
     ratingCount: ratingRows.find((row) => row.hotelId === hotel.id)?._count._all ?? 0,
-    isLocal: includeAll && zoneId ? hotel.zone.id === zoneId : true,
+    isLocal: true,
   })).sort((a, b) => Number(b.isLocal) - Number(a.isLocal) || Number(b.isOpen) - Number(a.isOpen) || b.completedSales - a.completedSales || (b.rating ?? 0) - (a.rating ?? 0) || a.name.localeCompare(b.name));
 
   return {
@@ -124,13 +124,13 @@ const buildHomeDiscovery = async (zoneId?: string, includeAll = false, customerI
 
 export const getActiveZones = async () => prisma.zone.findMany({
   where: { active: true },
-  select: { id: true, name: true, type: true, locationLabel: true, locationPlaceholder: true },
-  orderBy: { name: "asc" },
+  select: { id: true, name: true, type: true, locationLabel: true, locationPlaceholder: true, megaRegion: { select: { id: true, name: true, type: true } } },
+  orderBy: [{ megaRegion: { name: "asc" } }, { name: "asc" }],
 });
 
-export const getHomeDiscovery = async (zoneId?: string, includeAll = false, customerId?: string) => {
-  if (zoneId !== undefined || includeAll || customerId) {
-    const data = await buildHomeDiscovery(zoneId, includeAll, customerId);
+export const getHomeDiscovery = async (zoneId?: string, _includeAll = false, customerId?: string) => {
+  if (zoneId !== undefined || customerId) {
+    const data = await buildHomeDiscovery(zoneId, customerId);
     return data;
   }
   if (homeCache && homeCache.expiresAt > Date.now()) return homeCache.data;

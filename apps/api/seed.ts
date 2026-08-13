@@ -21,13 +21,20 @@ export const seedDatabase = async () => {
         );
     }
 
+    const nakuruCounty = await prisma.megaRegion.upsert({
+        where: { name_type: { name: "Nakuru County", type: "COUNTY" } },
+        update: {},
+        create: { name: "Nakuru County", type: "COUNTY" },
+    });
+
     const defaultZone = await prisma.zone.upsert({
         where: { id: "00000000-0000-0000-0000-000000000001" },
         update: {},
         create: {
             id: "00000000-0000-0000-0000-000000000001",
-            name: "General delivery area",
+            name: "Naivasha Town",
             type: "OTHER",
+            megaRegionId: nakuruCounty.id,
             locationLabel: "Delivery point",
             locationPlaceholder: "e.g. building, landmark, stall number e.g stall 93 or shop name",
         },

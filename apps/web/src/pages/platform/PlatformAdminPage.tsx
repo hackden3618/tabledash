@@ -28,6 +28,7 @@ interface Hotel {
 }
 interface AdminUser { id: string; name: string; username: string; createdAt: string; }
 interface DeliveryRegion { id: string; name: string; type: string; locationLabel: string; locationPlaceholder: string; active?: boolean; }
+interface MegaRegion { id: string; name: string; type: string; active?: boolean; }
 
 const T = {
     bg: "#FFF8F0",
@@ -64,6 +65,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
     const [auditRows, setAuditRows] = useState<any[]>([]);
     const [outboxRows, setOutboxRows] = useState<any[]>([]);
     const [regions, setRegions] = useState<DeliveryRegion[]>([]);
+    const [megaRegions, setMegaRegions] = useState<MegaRegion[]>([]);
     const [heroImageUrl, setHeroImageUrl] = useState("");
     const [heroSaving, setHeroSaving] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -95,7 +97,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
     const [submitting, setSubmitting] = useState(false);
     const [showRegionForm, setShowRegionForm] = useState(false);
     const [regionSaving, setRegionSaving] = useState(false);
-    const [regionForm, setRegionForm] = useState({ name: "", type: "MARKET", locationLabel: "Delivery point", locationPlaceholder: "e.g. stall, bay, floor or office" });
+    const [regionForm, setRegionForm] = useState({ name: "", megaRegionId: "", type: "OTHER", locationLabel: "Delivery point", locationPlaceholder: "e.g. building, landmark, stall number" });
 
     // ── Create Admin ──
     const [adminForm, setAdminForm] = useState({ username: "", name: "", phone: "" });
@@ -108,16 +110,17 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
     const fetch = useCallback(async () => {
         if (!token) { setLoading(false); return; }
         setLoading(true);
-        const [dashRes, hotelsRes, adminsRes, auditRes, outboxRes, regionsRes, heroRes] = await Promise.all([
+        const [dashRes, hotelsRes, adminsRes, auditRes, outboxRes, regionsRes, megaRegionsRes, heroRes] = await Promise.all([
             apiGet<PlatformDashboard>("/platform/dashboard", token),
             apiGet<Hotel[]>("/platform/hotels", token),
             apiGet<AdminUser[]>("/platform/admins", token),
             apiGet<any[]>("/platform/audit", token),
             apiGet<any[]>("/platform/outbox", token),
             apiGet<DeliveryRegion[]>("/platform/zones", token),
+            apiGet<MegaRegion[]>("/platform/mega-regions", token),
             apiGet<{ imageUrl: string }>("/platform/hero", token),
         ]);
-        const authFailed = [dashRes, hotelsRes, adminsRes, auditRes, outboxRes, regionsRes, heroRes].some((res) =>
+        const authFailed = [dashRes, hotelsRes, adminsRes, auditRes, outboxRes, regionsRes, megaRegionsRes, heroRes].some((res) =>
             !res.success && /invalid|expired|session/i.test(res.error ?? "")
         );
         if (authFailed) {
@@ -134,6 +137,10 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
         if (regionsRes.success && regionsRes.data) {
             setRegions(regionsRes.data);
             setHotelForm((form) => form.zoneId ? form : { ...form, zoneId: regionsRes.data![0]?.id ?? "" });
+        }
+        if (megaRegionsRes.success && megaRegionsRes.data) {
+            setMegaRegions(megaRegionsRes.data);
+            setRegionForm((form) => form.megaRegionId ? form : { ...form, megaRegionId: megaRegionsRes.data![0]?.id ?? "" });
         }
         if (heroRes.success && heroRes.data) setHeroImageUrl(heroRes.data.imageUrl);
         setLoading(false);
@@ -189,14 +196,14 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
     };
 
     const handleCreateRegion = async () => {
-        if (!regionForm.name.trim() || regionSaving) return;
+        if (!regionForm.name.trim() || !regionForm.megaRegionId || regionSaving) return;
         setRegionSaving(true);
         const res = await apiPost<DeliveryRegion>("/platform/zones", regionForm, token);
         setRegionSaving(false);
         if (res.success && res.data) {
             setRegions((current) => [...current, res.data!].sort((a, b) => a.name.localeCompare(b.name)));
             setHotelForm((form) => ({ ...form, zoneId: res.data!.id }));
-            setRegionForm({ name: "", type: "MARKET", locationLabel: "Delivery point", locationPlaceholder: "e.g. stall, bay, floor or office" });
+            setRegionForm({ name: "", megaRegionId: megaRegions[0]?.id ?? "", type: "OTHER", locationLabel: "Delivery point", locationPlaceholder: "e.g. building, landmark, stall number" });
             setShowRegionForm(false);
         } else {
             pushNotification("danger", "Failed to create region", res.error || "Unknown error", { scope: "platform" });
@@ -582,7 +589,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                             <div>
                                                 <div style={{ fontWeight: 700, color: T.text }}>{h.name}</div>
                                                 <div style={{ fontSize: "0.8rem", color: T.textMuted, marginTop: s(1) }}>
-                                                    {h.slug} · {h.isOpen ? "Open" : "Closed"} · {h.zone?.name ?? "Unassigned region"} · Onboarded {new Date(h.createdAt).toLocaleDateString()}
+                                                    {h.slug} · {h.isOpen ? "Open" : "Closed"} · {h.zone?.name ?? "Town not assigned"} · Onboarded {new Date(h.createdAt).toLocaleDateString()}
                                                     {h.isListed === false && <span style={{ color: T.warning, fontWeight: 700 }}> · Hidden from marketplace</span>}
                                                 </div>
                                             </div>
@@ -601,7 +608,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                 ) : view === "hotel_detail" && selectedHotel ? (
                     <HotelDetail hotelId={selectedHotel.id} onBack={() => setView("hotels")} onToggle={handleToggleHotel} onToggleListing={handleToggleListing} onDelete={handleDeleteHotel} token={token} regions={regions} />
                 ) : view === "regions" ? (
-                    <ServingRegionsPage regions={regions} token={token} onChanged={setRegions} />
+                    <ServingRegionsPage regions={regions} megaRegions={megaRegions} token={token} onChanged={setRegions} onMegaRegionsChanged={setMegaRegions} />
                 ) : view === "create_hotel" ? (
                     createResult ? (
                         <div style={{ textAlign: "center", padding: s(10) }}>
@@ -636,19 +643,19 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                                 className="input-field" style={{ fontFamily: "monospace" }} />
                                         </div>
                                         <div>
-                                            <label htmlFor="hotelRegion" style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: T.textMuted, marginBottom: s(1) }}>Delivery Region</label>
+                                            <label htmlFor="hotelRegion" style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: T.textMuted, marginBottom: s(1) }}>Hotel town</label>
                                             <select id="hotelRegion" value={hotelForm.zoneId} onChange={(e) => setHotelForm({ ...hotelForm, zoneId: e.target.value })} className="input-field" style={{ fontFamily: T.font }}>
-                                                <option value="">Select a region</option>
-                                                {regions.map((region) => <option key={region.id} value={region.id}>{region.name} · {region.type.replaceAll("_", " ")}</option>)}
+                                                <option value="">Select a town</option>
+                                                {regions.map((region) => <option key={region.id} value={region.id}>{region.name}{region.megaRegion ? ` · ${region.megaRegion.name}` : ""}</option>)}
                                             </select>
-                                            {regions.length === 0 && <p style={{ color: T.warning, fontSize: "0.75rem", marginTop: s(1) }}>Create a delivery region before onboarding a hotel.</p>}
+                                            {regions.length === 0 && <p style={{ color: T.warning, fontSize: "0.75rem", marginTop: s(1) }}>Create a county/city and town before onboarding a hotel.</p>}
                                             <button type="button" onClick={() => setShowRegionForm((open) => !open)} style={{ marginTop: s(2), background: "transparent", border: "none", color: T.primary, fontWeight: 700, cursor: "pointer", padding: 0 }}>{showRegionForm ? "Cancel new region" : "+ Add a new region"}</button>
                                             {showRegionForm && <div style={{ marginTop: s(2), padding: s(3), border: `1px solid ${T.border}`, borderRadius: T.radius, display: "flex", flexDirection: "column", gap: s(2) }}>
-                                                <input value={regionForm.name} onChange={(e) => setRegionForm({ ...regionForm, name: e.target.value })} className="input-field" style={{ fontFamily: T.font }} placeholder="Region name e.g. Machakos Bus Station" />
-                                                <select value={regionForm.type} onChange={(e) => setRegionForm({ ...regionForm, type: e.target.value })} className="input-field" style={{ fontFamily: T.font }}><option value="MARKET">Market</option><option value="BUS_STATION">Bus station</option><option value="OFFICE_BUILDING">Office building</option><option value="RESIDENTIAL">Residential area</option><option value="OTHER">Other</option></select>
+                                                <input value={regionForm.name} onChange={(e) => setRegionForm({ ...regionForm, name: e.target.value })} className="input-field" style={{ fontFamily: T.font }} placeholder="Town name e.g. Naivasha Town" />
+                                                <select value={regionForm.megaRegionId} onChange={(e) => setRegionForm({ ...regionForm, megaRegionId: e.target.value })} className="input-field" style={{ fontFamily: T.font }}><option value="">Select county or city</option>{megaRegions.filter((region) => region.active !== false).map((region) => <option key={region.id} value={region.id}>{region.name}</option>)}</select>
                                                 <input value={regionForm.locationLabel} onChange={(e) => setRegionForm({ ...regionForm, locationLabel: e.target.value })} className="input-field" style={{ fontFamily: T.font }} placeholder="Customer location label" />
                                                 <input value={regionForm.locationPlaceholder} onChange={(e) => setRegionForm({ ...regionForm, locationPlaceholder: e.target.value })} className="input-field" style={{ fontFamily: T.font }} placeholder="Customer location example" />
-                                                <button type="button" onClick={() => void handleCreateRegion()} disabled={regionSaving || !regionForm.name.trim()} style={{ background: T.primary, color: "white", border: "none", padding: s(2), borderRadius: T.radius, fontWeight: 700, cursor: "pointer", opacity: regionSaving || !regionForm.name.trim() ? 0.6 : 1 }}>{regionSaving ? "Saving…" : "Save region"}</button>
+                                                <button type="button" onClick={() => void handleCreateRegion()} disabled={regionSaving || !regionForm.name.trim() || !regionForm.megaRegionId} style={{ background: T.primary, color: "white", border: "none", padding: s(2), borderRadius: T.radius, fontWeight: 700, cursor: "pointer", opacity: regionSaving || !regionForm.name.trim() || !regionForm.megaRegionId ? 0.6 : 1 }}>{regionSaving ? "Saving…" : "Save town"}</button>
                                             </div>}
                                         </div>
                                     </div>

@@ -110,6 +110,12 @@ enum ZoneType {
   OTHER
 }
 
+enum MegaRegionType {
+  COUNTY
+  CITY
+  OTHER
+}
+
 enum MealCategory {
     BREAKFAST
     LUNCH
@@ -133,8 +139,25 @@ enum VendorGroup {
  * ========================
  */
 
+model MegaRegion {
+  id        String          @id @default(uuid()) @db.Uuid
+  name      String
+  type      MegaRegionType
+  active    Boolean         @default(true)
+  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz()
+
+  towns Zone[]
+
+  @@unique([name, type])
+  @@index([active, name])
+  @@map("mega_regions")
+}
+
+// A town is the customer-facing marketplace boundary. Hotels belong to one
+// town, so discovery can never mix hotels from separate towns or counties.
 model Zone {
   id                  String   @id @default(uuid()) @db.Uuid
+  megaRegionId        String   @map("mega_region_id") @db.Uuid
   name                String
   type                ZoneType
   locationLabel       String   @map("location_label")
@@ -142,10 +165,12 @@ model Zone {
   active              Boolean  @default(true)
   createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
+  megaRegion MegaRegion @relation(fields: [megaRegionId], references: [id])
   hotels Hotel[]
   deliveryFees HotelDeliveryFee[]
 
-  @@index([active, name])
+  @@unique([megaRegionId, name])
+  @@index([megaRegionId, active, name])
   @@map("zones")
 }
 

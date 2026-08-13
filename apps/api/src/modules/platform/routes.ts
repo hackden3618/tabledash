@@ -90,8 +90,37 @@ export const platformRoute = new Elysia({
     if (error) { set.status = 401; return error; }
     try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
     catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
-    return { success: true, data: await prisma.zone.findMany({ orderBy: [{ active: "desc" }, { name: "asc" }] }) };
+    return { success: true, data: await prisma.zone.findMany({ include: { megaRegion: true }, orderBy: [{ megaRegion: { name: "asc" } }, { active: "desc" }, { name: "asc" }] }) };
   })
+  .get("/mega-regions", async ({ headers, jwt, set }) => {
+    const { token, error } = extractToken(headers, jwt);
+    if (error) { set.status = 401; return error; }
+    try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
+    catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+    return { success: true, data: await prisma.megaRegion.findMany({ orderBy: [{ active: "desc" }, { name: "asc" }] }) };
+  })
+  .post("/mega-regions", async ({ body, headers, jwt, set }) => {
+    const { token, error } = extractToken(headers, jwt);
+    if (error) { set.status = 401; return error; }
+    try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
+    catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+    try {
+      const region = await prisma.megaRegion.create({ data: body });
+      set.status = 201;
+      return { success: true, data: region };
+    } catch (err: any) {
+      set.status = err.code === "P2002" ? 409 : 400;
+      return { success: false, error: err.code === "P2002" ? "A mega region with that name already exists." : err.message || "Unable to create mega region" };
+    }
+  }, { body: t.Object({ name: t.String({ minLength: 2, maxLength: 120 }), type: t.Union([t.Literal("COUNTY"), t.Literal("CITY"), t.Literal("OTHER")]) }) })
+  .patch("/mega-regions/:id", async ({ params, body, headers, jwt, set }) => {
+    const { token, error } = extractToken(headers, jwt);
+    if (error) { set.status = 401; return error; }
+    try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
+    catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+    try { return { success: true, data: await prisma.megaRegion.update({ where: { id: params.id }, data: body }) }; }
+    catch (err: any) { set.status = err.code === "P2002" ? 409 : 400; return { success: false, error: err.code === "P2002" ? "A mega region with that name already exists." : err.message || "Unable to update mega region" }; }
+  }, { params: t.Object({ id: t.String({ format: "uuid" }) }), body: t.Object({ name: t.Optional(t.String({ minLength: 2, maxLength: 120 })), type: t.Optional(t.Union([t.Literal("COUNTY"), t.Literal("CITY"), t.Literal("OTHER")])), active: t.Optional(t.Boolean()) }) })
   .get("/hero", async ({ headers, jwt, set }) => {
     const { token, error } = extractToken(headers, jwt);
     if (error) { set.status = 401; return error; }
@@ -120,7 +149,7 @@ export const platformRoute = new Elysia({
     try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
     catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
     try {
-      const zone = await prisma.zone.create({ data: body });
+      const zone = await prisma.zone.create({ data: body, include: { megaRegion: true } });
       set.status = 201;
       return { success: true, data: zone };
     } catch (err: any) {
@@ -130,6 +159,7 @@ export const platformRoute = new Elysia({
   }, {
     body: t.Object({
       name: t.String({ minLength: 2 }),
+      megaRegionId: t.String({ format: "uuid" }),
       type: t.Union([t.Literal("MARKET"), t.Literal("BUS_STATION"), t.Literal("OFFICE_BUILDING"), t.Literal("RESIDENTIAL"), t.Literal("OTHER")]),
       locationLabel: t.String({ minLength: 2 }),
       locationPlaceholder: t.String({ minLength: 2 }),
@@ -141,7 +171,7 @@ export const platformRoute = new Elysia({
     try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
     catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
     try {
-      const zone = await prisma.zone.update({ where: { id: params.id }, data: body });
+      const zone = await prisma.zone.update({ where: { id: params.id }, data: body, include: { megaRegion: true } });
       return { success: true, data: zone };
     } catch (err: any) {
       set.status = 400;
@@ -151,6 +181,7 @@ export const platformRoute = new Elysia({
     params: t.Object({ id: t.String({ format: "uuid" }) }),
     body: t.Object({
       name: t.Optional(t.String({ minLength: 2 })),
+      megaRegionId: t.Optional(t.String({ format: "uuid" })),
       type: t.Optional(t.Union([t.Literal("MARKET"), t.Literal("BUS_STATION"), t.Literal("OFFICE_BUILDING"), t.Literal("RESIDENTIAL"), t.Literal("OTHER")])),
       locationLabel: t.Optional(t.String({ minLength: 2 })),
       locationPlaceholder: t.Optional(t.String({ minLength: 2 })),
@@ -170,6 +201,7 @@ export const platformRoute = new Elysia({
         orderBy: { createdAt: "desc" },
         include: {
           adminUsers: { select: { id: true, name: true, username: true, role: true } },
+          zone: { include: { megaRegion: true } },
         },
       });
 
@@ -342,6 +374,7 @@ export const platformRoute = new Elysia({
           status: "done",
           completedAt: new Date(),
         },
+        include: { zone: { include: { megaRegion: true } } },
       });
 
       return { success: true, data: updated };
