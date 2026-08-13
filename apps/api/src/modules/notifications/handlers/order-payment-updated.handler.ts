@@ -1,4 +1,4 @@
-import { smsService } from "../sms.service";
+import { smsService, type SmsSendResult } from "../sms.service";
 import { paymentReceived, partialPayment } from "../templates";
 
 interface OrderPaymentUpdatedPayload {
@@ -12,7 +12,7 @@ interface OrderPaymentUpdatedPayload {
   hotelName?: string;
 }
 
-export async function handleOrderPaymentUpdated(payload: Record<string, unknown>): Promise<boolean> {
+export async function handleOrderPaymentUpdated(payload: Record<string, unknown>): Promise<boolean | SmsSendResult> {
   const data = payload as unknown as OrderPaymentUpdatedPayload;
 
   if (!data.customerPhone || data.paymentStatus === "UNPAID") return true;

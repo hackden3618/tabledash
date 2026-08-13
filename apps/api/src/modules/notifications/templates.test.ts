@@ -57,7 +57,7 @@ const all: Record<string, string> = {
   accountPayment: accountPayment(sample),
   accountRefund: accountRefund(sample),
   accountAdjustment: accountAdjustment(sample),
-  accountAdjustmentNoReason: accountAdjustment({ orderNumber: sample.orderNumber, amount: sample.amount, balance: sample.balance }),
+  accountAdjustmentNoReason: accountAdjustment({ hotelName: sample.hotelName, orderNumber: sample.orderNumber, amount: sample.amount, balance: sample.balance }),
   hotelWelcome: hotelWelcome(sample),
   staffWelcome: staffWelcome(sample),
   staffWelcomeNoSetup: staffWelcome({ staffName: sample.staffName, role: sample.role, hotelName: sample.hotelName }),

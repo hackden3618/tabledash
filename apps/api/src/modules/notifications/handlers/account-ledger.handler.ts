@@ -38,7 +38,7 @@ const NOTIFICATION_META: Record<AccountLedgerEventType, { type: NotificationType
   adjustment: { type: "WALLET_ADJUSTMENT", title: "Account adjusted" },
 };
 
-export async function handleAccountLedgerEvent(type: AccountLedgerEventType, payload: Record<string, unknown>): Promise<boolean> {
+export async function handleAccountLedgerEvent(type: AccountLedgerEventType, payload: Record<string, unknown>): Promise<boolean | SmsSendResult> {
   const data = payload as unknown as AccountLedgerPayload;
 
   const customer = await prisma.customer.findUnique({

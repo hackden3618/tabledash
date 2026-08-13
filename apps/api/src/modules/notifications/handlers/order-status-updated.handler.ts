@@ -31,7 +31,7 @@ interface OrderStatusPayload {
 
 const CUSTOMER_NOTIFIED_STATUSES = ["ACCEPTED", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELLED"];
 
-export async function handleOrderStatusUpdated(payload: Record<string, unknown>): Promise<boolean> {
+export async function handleOrderStatusUpdated(payload: Record<string, unknown>): Promise<boolean | SmsSendResult> {
   const data = payload as unknown as OrderStatusPayload;
   const hotelName = data.hotelName || "Ladha Deliveries";
 
