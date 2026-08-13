@@ -7,6 +7,7 @@
  */
 
 import { prisma } from "../../../../../infrastructure/database/prisma";
+import { env } from "../../../../../shared/config";
 import { smsService, type SmsSendResult } from "./sms.service";
 import { handleOrderCreated } from "./handlers/order-created.handler";
 import { handleOrderStatusUpdated } from "./handlers/order-status-updated.handler";
@@ -124,7 +125,7 @@ async function processOutbox(): Promise<void> {
         if (details.success) {
           // A successful submission without a provider message ID cannot ever
           // be verified. Keep it retryable rather than falsely calling it sent.
-          if (smsService.getDelivery && !details.providerMessageId) {
+          if (env.smsProvider === "textsms" && !details.providerMessageId) {
             const newAttempts = row.attempts + 1;
             await prisma.eventOutbox.update({
               where: { id: row.id },
@@ -132,7 +133,7 @@ async function processOutbox(): Promise<void> {
             });
             continue;
           }
-          const awaitDelivery = Boolean(details.providerMessageId && smsService.getDelivery);
+          const awaitDelivery = env.smsProvider === "textsms" && Boolean(details.providerMessageId && smsService.getDelivery);
           await prisma.eventOutbox.update({
             where: { id: row.id },
             data: awaitDelivery
