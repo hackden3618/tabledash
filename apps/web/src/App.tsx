@@ -17,15 +17,15 @@ import { router } from "./router";
 export function App() {
     return (
         <NotificationsProvider>
-            <CartProvider>
-                <CustomerAuthProvider>
+            <CustomerAuthProvider>
+                <CartProvider>
                     <AdminAuthProvider>
                         <PlatformAdminAuthProvider>
                             <RouterProvider router={router} />
                         </PlatformAdminAuthProvider>
                     </AdminAuthProvider>
-                </CustomerAuthProvider>
-            </CartProvider>
+                </CartProvider>
+            </CustomerAuthProvider>
         </NotificationsProvider>
     );
 }

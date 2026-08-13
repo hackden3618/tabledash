@@ -5,7 +5,9 @@
  * When to modify: When adding discounts, item notes, or altering cart calculation logic.
  */
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import { apiGet, apiPut } from "../lib/api";
+import { useCustomerAuth } from "./CustomerAuthContext";
 
 export interface CartItem {
   id: string; // Product ID
@@ -37,7 +39,11 @@ interface CartContextType {
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { token, isLoggedIn, customer } = useCustomerAuth();
   const [closedHotelIds, setClosedHotelIds] = useState<string[]>([]);
+  const [remoteCartReady, setRemoteCartReady] = useState(false);
+  const lastCustomerId = useRef<string | null>(null);
+  const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [cart, setCart] = useState<CartItem[]>(() => {
     try {
       const saved = localStorage.getItem("ladha_cart");
@@ -51,6 +57,41 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     localStorage.setItem("ladha_cart", JSON.stringify(cart));
   }, [cart]);
+
+  // On sign-in, merge the device cart into the customer's durable cart. This
+  // keeps an item added before login and lets another device resume the same
+  // cart. Server product data is authoritative for price and availability.
+  useEffect(() => {
+    if (!isLoggedIn || !token || !customer?.id) {
+      setRemoteCartReady(false);
+      lastCustomerId.current = null;
+      return;
+    }
+    if (lastCustomerId.current === customer.id) return;
+    lastCustomerId.current = customer.id;
+    setRemoteCartReady(false);
+    void apiGet<CartItem[]>("/customers/me/cart", token).then(async (result) => {
+      const remote = result.success && result.data ? result.data : [];
+      setCart((local) => {
+        const merged = new Map(remote.map((item) => [item.id, item]));
+        for (const item of local) {
+          const existing = merged.get(item.id);
+          merged.set(item.id, existing ? { ...existing, quantity: Math.min(existing.quantity + item.quantity, existing.stockQty ?? Number.MAX_SAFE_INTEGER) } : item);
+        }
+        return [...merged.values()];
+      });
+      setRemoteCartReady(true);
+    });
+  }, [isLoggedIn, token, customer?.id]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !token || !remoteCartReady) return;
+    if (syncTimer.current) clearTimeout(syncTimer.current);
+    syncTimer.current = setTimeout(() => {
+      void apiPut("/customers/me/cart", { items: cart.map((item) => ({ productId: item.id, quantity: item.quantity })) }, token);
+    }, 350);
+    return () => { if (syncTimer.current) clearTimeout(syncTimer.current); };
+  }, [cart, isLoggedIn, token, remoteCartReady]);
 
   useEffect(() => {
     const handleCustomerLogout = () => setCart([]);

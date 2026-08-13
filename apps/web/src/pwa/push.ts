@@ -12,10 +12,10 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
     return outputArray;
 }
 
-export async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
+export async function registerServiceWorker(isKitchen = window.location.pathname.startsWith("/kitchen/")): Promise<ServiceWorkerRegistration | null> {
     if (!("serviceWorker" in navigator)) return null;
     try {
-        return await navigator.serviceWorker.register("/sw.js");
+        return await navigator.serviceWorker.register(isKitchen ? "/kitchen/sw.js" : "/sw.js", { scope: isKitchen ? "/kitchen/" : "/" });
     } catch {
         return null;
     }
@@ -41,9 +41,12 @@ export async function subscribeToPush(token?: string): Promise<PushSubscribeResu
 
     // ─── Step 2: Ensure service worker is registered & active ────────────────
     try {
-        let registration = await navigator.serviceWorker.getRegistration("/sw.js");
+        const isKitchen = window.location.pathname.startsWith("/kitchen/");
+        const workerUrl = isKitchen ? "/kitchen/sw.js" : "/sw.js";
+        const scope = isKitchen ? "/kitchen/" : "/";
+        let registration = await navigator.serviceWorker.getRegistration(scope);
         if (!registration) {
-            registration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+            registration = await navigator.serviceWorker.register(workerUrl, { scope });
         }
         // Wait for the SW to fully activate before using PushManager
         const ready = await navigator.serviceWorker.ready;

@@ -132,8 +132,8 @@ function AppContent() {
     useManifestSwitcher(isKitchenPath);
 
     useEffect(() => {
-        registerServiceWorker();
-    }, []);
+        void registerServiceWorker(isKitchenPath);
+    }, [isKitchenPath]);
 
     // Push subscriptions require a direct user gesture to call requestPermission()
     // on mobile (especially iOS Safari). Auto-calling it from a useEffect silently

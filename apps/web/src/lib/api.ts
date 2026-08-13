@@ -91,6 +91,19 @@ export async function apiPatch<T, B = unknown>(endpoint: string, body: B, token?
   }
 }
 
+export async function apiPut<T, B = unknown>(endpoint: string, body: B, token?: string): Promise<ApiResponse<T>> {
+  try {
+    const headers = { ...makeHeaders(token), "Content-Type": "application/json" };
+    const res = await fetch(`${API_BASE}${endpoint}`, { method: "PUT", headers, body: JSON.stringify(body) });
+    const text = await res.text();
+    const data = text ? safeParse(text) : {};
+    if (!res.ok) return { success: false, error: makeError(res, text) };
+    return data;
+  } catch (err: any) {
+    return { success: false, error: err.message || "Network request failed" };
+  }
+}
+
 export async function apiDelete<T>(endpoint: string, token?: string): Promise<ApiResponse<T>> {
   try {
     const headers = makeHeaders(token);

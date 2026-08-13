@@ -21,6 +21,7 @@ import { getAllCustomers, getCustomerHistory, lookupCustomerByPhone } from "./se
 import { getCustomerProfile, loginCustomer, registerCustomer, sendRegistrationOtp, generatePinResetCode, resetCustomerPin, updateCustomerProfile, verifyPhoneChangeOtp, sendRecipientVerificationOtp, confirmRecipientVerificationOtp, sendOwnPhoneOtp, confirmOwnPhoneOtp, verifyCustomerToken } from "./auth.service";
 import { verifyAdminToken } from "../auth/service";
 import { AUTH_LIMITER } from "../../lib/rate-limiter";
+import { prisma } from "../../../../../infrastructure/database/prisma";
 
 function requireHotelAccount(admin: { hotelId: string | null }): string {
   if (!admin.hotelId) throw new Error("This account is not assigned to a hotel");
@@ -300,6 +301,36 @@ export const customersRoute = new Elysia({
       return { success: false, error: err.code === "P2002" ? "That phone number is already in use." : err.message || "Unable to update profile" };
     }
   }, { body: t.Object({ firstName: t.Optional(t.String({ minLength: 1, maxLength: 80 })), lastName: t.Optional(t.String({ maxLength: 80 })), phone: t.Optional(t.String({ minLength: 9, maxLength: 13 })), knownName: t.Optional(t.Union([t.String({ maxLength: 80 }), t.Null()])), pin: t.Optional(t.String({ minLength: 4, maxLength: 4 })) }) })
+
+  // ─── Customer: persistent cart (authenticated customers only) ────────────
+  .get("/me/cart", async ({ headers, jwt, set }) => {
+    const customerId = await verifyCustomerToken((headers.authorization ?? "").replace("Bearer ", "").trim(), (t) => jwt.verify(t));
+    if (!customerId) { set.status = 401; return { success: false, error: "Invalid or missing token" }; }
+    const cart = await prisma.customerCart.findUnique({
+      where: { customerId },
+      include: { items: { include: { product: { include: { hotel: { select: { name: true } } } } } } },
+    });
+    return { success: true, data: (cart?.items ?? []).filter((item) => !item.product.deleted).map((item) => ({
+      id: item.product.id, name: item.product.name, price: Number(item.product.price), imageUrl: item.product.imageUrl,
+      quantity: item.quantity, hotelId: item.product.hotelId, hotelName: item.product.hotel.name,
+      stockQty: item.product.stockQty, available: item.product.available,
+    })) };
+  })
+  .put("/me/cart", async ({ headers, jwt, body, set }) => {
+    const customerId = await verifyCustomerToken((headers.authorization ?? "").replace("Bearer ", "").trim(), (t) => jwt.verify(t));
+    if (!customerId) { set.status = 401; return { success: false, error: "Invalid or missing token" }; }
+    const quantities = new Map<string, number>();
+    for (const item of body.items) quantities.set(item.productId, Math.max(1, Math.floor(item.quantity)));
+    const productIds = [...quantities.keys()];
+    const products = productIds.length ? await prisma.product.findMany({ where: { id: { in: productIds }, deleted: false }, select: { id: true } }) : [];
+    if (products.length !== productIds.length) { set.status = 400; return { success: false, error: "One or more cart items are no longer available" }; }
+    await prisma.customerCart.upsert({
+      where: { customerId },
+      create: { customerId, items: { create: products.map((product) => ({ productId: product.id, quantity: quantities.get(product.id)! })) } },
+      update: { items: { deleteMany: {}, create: products.map((product) => ({ productId: product.id, quantity: quantities.get(product.id)! })) } },
+    });
+    return { success: true, data: { itemCount: products.length } };
+  }, { body: t.Object({ items: t.Array(t.Object({ productId: t.String({ format: "uuid" }), quantity: t.Integer({ minimum: 1, maximum: 100 }) })) }) })
 
   // ─── Customer: Change phone — send OTP to new number ──────────────
   .post(

@@ -1,10 +1,10 @@
 {
-  "id": "/kitchen",
+  "id": "/kitchen/",
   "name": "Ladha Kitchen",
   "short_name": "Ladha Kitchen",
   "description": "Order management for Ladha partner kitchens — new orders, status updates, dispatch.",
   "start_url": "/kitchen/orders?source=pwa",
-  "scope": "/",
+  "scope": "/kitchen/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#9A3412",

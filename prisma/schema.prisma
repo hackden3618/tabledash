@@ -284,6 +284,7 @@ model Customer {
   notifications    Notification[]
   reviews          RestaurantReview[]
   productReviews   ProductReview[]
+  cart             CustomerCart?
 
   @@map("customers")
 }
@@ -379,8 +380,36 @@ model Product {
   hotel      Hotel       @relation(fields: [hotelId], references: [id])
   orderItems OrderItem[]
   productReviews ProductReview[]
+  cartItems      CustomerCartItem[]
 
   @@map("products")
+}
+
+// A signed-in customer's cart is durable and follows them between devices.
+// Prices and availability are always read from Product; only intent (product +
+// quantity) is stored here.
+model CustomerCart {
+  id         String   @id @default(uuid()) @db.Uuid
+  customerId String   @unique @map("customer_id") @db.Uuid
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  customer Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  items    CustomerCartItem[]
+
+  @@map("customer_carts")
+}
+
+model CustomerCartItem {
+  id        String @id @default(uuid()) @db.Uuid
+  cartId    String @map("cart_id") @db.Uuid
+  productId String @map("product_id") @db.Uuid
+  quantity  Int    @default(1)
+
+  cart    CustomerCart @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, productId])
+  @@map("customer_cart_items")
 }
 
 model Order {

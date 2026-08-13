@@ -24,6 +24,11 @@ export function useManifestSwitcher(isKitchen: boolean) {
         }
         if (link.href !== new URL(href, window.location.origin).href) link.href = href;
 
+        const appleIcon = document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]');
+        if (appleIcon) appleIcon.href = isKitchen ? "/ladha_icon_kitchen.png" : "/ladha_icon_customer.png";
+        const appleTitle = document.querySelector<HTMLMetaElement>('meta[name="apple-mobile-web-app-title"]');
+        if (appleTitle) appleTitle.content = isKitchen ? "Ladha Kitchen" : "Ladha";
+
         const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
         if (meta) meta.content = themeColor;
     }, [isKitchen]);
