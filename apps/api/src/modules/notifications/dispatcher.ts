@@ -158,7 +158,6 @@ async function processOutbox(): Promise<void> {
               where: { id: row.id },
               data: { status: "failed", completedAt: new Date(), attempts: row.attempts + 1, lastError: "SMS gateway accepted the message but returned no delivery-report ID; no resend was made", providerStatus: details.providerStatus ?? "unverifiable_acceptance" },
             });
-            await alertResponsibleHotelAdmin({ ...row, providerStatus: details.providerStatus ?? "unverifiable_acceptance" });
             continue;
           }
           const awaitDelivery = env.smsProvider === "textsms" && Boolean(details.providerMessageId && smsService.getDelivery);
@@ -174,7 +173,6 @@ async function processOutbox(): Promise<void> {
             where: { id: row.id },
             data: { status: "failed", completedAt: new Date(), attempts: newAttempts, lastError: details.error || "SMS provider did not accept the message; no resend was made without a failed delivery report", providerStatus: details.providerStatus ?? "rejected" },
           });
-          await alertResponsibleHotelAdmin({ ...row, providerStatus: details.providerStatus ?? "rejected" });
         }
       } catch (err: any) {
         const newAttempts = row.attempts + 1;
@@ -183,7 +181,6 @@ async function processOutbox(): Promise<void> {
           where: { id: row.id },
           data: { status: "failed", completedAt: new Date(), attempts: newAttempts, lastError: `${lastError}; no resend was made without a failed delivery report`, providerStatus: "dispatch_error" },
         });
-        await alertResponsibleHotelAdmin({ ...row, providerStatus: "dispatch_error" });
       }
     }
   } catch (err) {
