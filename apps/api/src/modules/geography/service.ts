@@ -541,7 +541,7 @@ export const previewReclassification = async (sourceZoneId: string): Promise<Rec
   if (!zone) throw new Error("Legacy town record not found");
   const [hotelCount, deliveryFees] = await Promise.all([
     prisma.hotel.count({ where: { zoneId: sourceZoneId, deletedAt: null } }),
-    prisma.hotelDeliveryFee.count({ where: { zoneId: sourceZoneId } }),
+    prisma.hotelDeliveryFee.count({ where: { townRegion: { townId: sourceZoneId } } }),
   ]);
   // Only a deactivated town with no hotel or fee dependency is safe to fully
   // retire into an area; anything still in use must keep its Zone identity.
