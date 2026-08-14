@@ -135,7 +135,7 @@ export const getActiveZones = async () => prisma.zone.findMany({
   select: {
     id: true, name: true, type: true, locationLabel: true, locationPlaceholder: true,
     megaRegion: { select: { id: true, name: true, type: true } },
-    deliveryRegions: { where: { active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } },
+    deliveryRegions: { where: { active: true }, select: { id: true, name: true, isFallback: true }, orderBy: [{ isFallback: "desc" }, { name: "asc" }] },
   },
   orderBy: [{ megaRegion: { name: "asc" } }, { name: "asc" }],
 });

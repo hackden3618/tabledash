@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useCart } from "../../context/CartContext";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
-import { apiGet, apiPost } from "../../lib/api";
+import { apiGet, apiPost, apiPatch } from "../../lib/api";
 import { Header } from "../../components/ui/Header";
 import { Button } from "../../components/ui/Button";
 import { Input, Textarea } from "../../components/ui/Input";
@@ -28,17 +28,26 @@ interface LocationPageProps {
   onNavigateToVerify?: () => void;
 }
 
+interface DeliveryRegion {
+  id: string;
+  name: string;
+  isFallback?: boolean;
+  note?: string | null;
+  displayOrder?: number;
+}
+
 interface DeliveryZone {
   id: string;
   name: string;
   locationLabel: string;
   locationPlaceholder: string;
   megaRegion?: { id: string; name: string };
+  deliveryRegions?: DeliveryRegion[];
 }
 
 export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrderPlaced, onNavigateToVerify }) => {
   const { cart, totalAmount, clearCart, closedHotelIds, setClosedHotelIds } = useCart();
-  const { customer, isLoggedIn, login } = useCustomerAuth();
+  const { customer, isLoggedIn, login, token } = useCustomerAuth();
 
    const [marketSection, setMarketSection] = useState("");
    const [locationDescription, setLocationDescription] = useState("");
@@ -67,6 +76,7 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
   const [paymentMethod, setPaymentMethod] = useState<"PAY_LATER" | "PAY_ON_DELIVERY">("PAY_ON_DELIVERY");
   const [deliveryZone, setDeliveryZone] = useState<DeliveryZone | null>(null);
   const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>([]);
+  const [selectedTownRegionId, setSelectedTownRegionId] = useState<string>("");
   const [deliveryFee, setDeliveryFee] = useState(0);
   const [deliveryFeeLoading, setDeliveryFeeLoading] = useState(false);
 
@@ -108,9 +118,17 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
       if (!result.success || !result.data?.length) return;
       setDeliveryZones(result.data);
       const savedZoneId = localStorage.getItem("ladha_zone_id");
+      const savedRegionId = localStorage.getItem("ladha_town_region_id");
       const zone = result.data.find((item) => item.id === savedZoneId) ?? result.data[0];
       setDeliveryZone(zone);
       localStorage.setItem("ladha_zone_id", zone.id);
+
+      const activeRegion = zone.deliveryRegions?.find((r) => r.id === savedRegionId) ?? zone.deliveryRegions?.[0];
+      if (activeRegion) {
+        setSelectedTownRegionId(activeRegion.id);
+        localStorage.setItem("ladha_town_region_id", activeRegion.id);
+        localStorage.setItem("ladha_town_region_name", activeRegion.name);
+      }
     });
   }, []);
 
@@ -119,6 +137,27 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
     if (!zone) return;
     setDeliveryZone(zone);
     localStorage.setItem("ladha_zone_id", zone.id);
+    const firstRegion = zone.deliveryRegions?.[0];
+    if (firstRegion) {
+      setSelectedTownRegionId(firstRegion.id);
+      localStorage.setItem("ladha_town_region_id", firstRegion.id);
+      localStorage.setItem("ladha_town_region_name", firstRegion.name);
+      if (isLoggedIn && token) {
+        void apiPatch("/customers/me", { townRegionId: firstRegion.id }, token).catch(() => {});
+      }
+    }
+  };
+
+  const changeDeliverySubRegion = (regionId: string) => {
+    setSelectedTownRegionId(regionId);
+    const region = deliveryZone?.deliveryRegions?.find((r) => r.id === regionId);
+    if (region) {
+      localStorage.setItem("ladha_town_region_id", region.id);
+      localStorage.setItem("ladha_town_region_name", region.name);
+    }
+    if (isLoggedIn && token) {
+      void apiPatch("/customers/me", { townRegionId: regionId }, token).catch(() => {});
+    }
   };
 
   const cartHotelIds = [...new Set(cart.map((item) => item.hotelId).filter((id): id is string => Boolean(id)))];
@@ -126,11 +165,13 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
     if (!cartHotelIds.length) { setDeliveryFee(0); return; }
     setDeliveryFeeLoading(true);
     const query = new URLSearchParams({ hotelIds: cartHotelIds.join(",") });
-    if (deliveryZone?.id) query.set("zoneId", deliveryZone.id);
+    // Use the selected TownRegion sub-area ID so the backend looks up the
+    // per-area fee rather than the generic zone fee.
+    if (selectedTownRegionId) query.set("zoneId", selectedTownRegionId);
     void apiGet<Array<{ hotelId: string; deliveryFee: number }>>(`/orders/delivery-fees?${query.toString()}`)
       .then((result) => { if (result.success && result.data) setDeliveryFee(result.data.reduce((sum, row) => sum + Number(row.deliveryFee), 0)); })
       .finally(() => setDeliveryFeeLoading(false));
-  }, [deliveryZone?.id, cartHotelIds.join(",")]);
+  }, [selectedTownRegionId, cartHotelIds.join(",")]);
 
   useEffect(() => {
     if (isLoggedIn && customer && !orderingForOther) {
@@ -427,7 +468,7 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
       firstName: firstName.trim(), lastName: lastName.trim() || undefined,
       phone: phone.trim(), knownName: knownName.trim() || undefined,
       stallNumber: stallNumber.trim() || undefined, marketSection, locationDescription,
-      deliveryZoneId: deliveryZone?.id,
+      deliveryZoneId: selectedTownRegionId || undefined,
       items: cart.map((item) => ({ productId: item.id, quantity: item.quantity })),
       paymentMethod,
       orderingForOther: orderingForOther || undefined,
@@ -680,6 +721,18 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
               </select>
               <p className="mt-1 text-xs text-[#6B7280]">Changing town updates the delivery fee. Hotels from other towns are not shown.</p>
             </div>
+
+            {deliveryZone && deliveryZone.deliveryRegions && deliveryZone.deliveryRegions.length > 0 && (
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-[#374151]">Delivery Zone / Area in {deliveryZone.name}</label>
+                <select value={selectedTownRegionId} onChange={(e) => changeDeliverySubRegion(e.target.value)} className="w-full rounded-xl border border-[#D1D5DB] bg-white px-3 py-3 text-sm text-[#1F2937] outline-none focus:border-[#114B36]">
+                  {deliveryZone.deliveryRegions.map((region) => (
+                    <option key={region.id} value={region.id}>{region.name}{region.isFallback ? " (General Area)" : ""}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-[#6B7280]">Select your specific local zone (e.g. Sokoni Modern Market, Bus Stage, General Delivery Area).</p>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <Input
                 label="First Name *"

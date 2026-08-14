@@ -135,7 +135,7 @@ export const settingsRoute = new Elysia({
         autoCloseAt: t.Optional(t.Nullable(t.String())),
         hotelImageUrl: t.Optional(t.String()),
         genericDeliveryFee: t.Optional(t.Number({ minimum: 0 })),
-        deliveryFees: t.Optional(t.Array(t.Object({ zoneId: t.String({ format: "uuid" }), amount: t.Number({ minimum: 0 }) }))),
+        deliveryFees: t.Optional(t.Array(t.Object({ townRegionId: t.String({ format: "uuid" }), amount: t.Number({ minimum: 0 }) }))),
       }),
     }
   )

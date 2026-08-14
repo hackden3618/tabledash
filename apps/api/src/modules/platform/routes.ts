@@ -1,12 +1,14 @@
 import { jwt } from "@elysiajs/jwt";
 import { Elysia, t } from "elysia";
 import { env } from "../../../../../shared/config";
-import { formatPhone, PHONE_PATTERN } from "../../../../../shared/phone";
-import { getAllHotels, getHotelById } from "../hotels/service";
-import { loginPlatformAdmin, verifyPlatformAdminToken, updatePlatformAdminProfile, changePlatformAdminPassword } from "../auth/service";
+import { formatPhone } from "../../../../../shared/phone";
+import { getAllHotels } from "../hotels/service";
+import { loginPlatformAdmin, updatePlatformAdminProfile, changePlatformAdminPassword } from "../auth/service";
 import { createPasswordSetupToken, buildSetupLink } from "../auth/password-setup.service";
 import { prisma } from "../../../../../infrastructure/database/prisma";
+import { requirePlatformActor, PlatformAuthError, can } from "./capabilities";
 import { AUTH_LIMITER } from "../../lib/rate-limiter";
+import { writeAudit } from "../geography/service";
 
 export const platformRoute = new Elysia({
   prefix: `${env.apiPrefix}/platform`,
@@ -47,10 +49,8 @@ export const platformRoute = new Elysia({
     }
   )
   .patch("/me", async ({ headers, jwt, body, set }) => {
-    const { token, error } = extractToken(headers, jwt);
-    if (error) { set.status = 401; return error; }
     try {
-      const admin = await verifyPlatformAdminToken(token!, (t) => jwt.verify(t));
+      const admin = await requirePlatformActor(headers, jwt);
       if (body.username?.trim().toLowerCase() === "hackden" && admin.username.toLowerCase() !== "hackden") { set.status = 403; return { success: false, error: "That protected username is reserved" }; }
       if (body.currentPassword || body.newPassword) {
         if (!body.currentPassword || !body.newPassword) throw new Error("Current and new passwords are required");
@@ -63,15 +63,14 @@ export const platformRoute = new Elysia({
   .get(
     "/dashboard",
     async ({ headers, jwt, set }) => {
-      const { token, error } = extractToken(headers, jwt);
-      if (error) { set.status = 401; return error; }
-      try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-      catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+      try { await requirePlatformActor(headers, jwt); }
+      catch (err: any) { set.status = err.status ?? 401; return { success: false, error: err.message }; }
 
       const hotels = await getAllHotels();
       const admins = await prisma.platformAdmin.count();
       const totalOrders = await prisma.order.count();
       const failedOutbox = await prisma.eventOutbox.count({ where: { status: "failed" } });
+
       return {
         success: true,
         data: {
@@ -85,55 +84,15 @@ export const platformRoute = new Elysia({
       };
     }
   )
-  .get("/zones", async ({ headers, jwt, set }) => {
-    const { token, error } = extractToken(headers, jwt);
-    if (error) { set.status = 401; return error; }
-    try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-    catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
-    return { success: true, data: await prisma.zone.findMany({ include: { megaRegion: true }, orderBy: [{ megaRegion: { name: "asc" } }, { active: "desc" }, { name: "asc" }] }) };
-  })
-  .get("/mega-regions", async ({ headers, jwt, set }) => {
-    const { token, error } = extractToken(headers, jwt);
-    if (error) { set.status = 401; return error; }
-    try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-    catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
-    return { success: true, data: await prisma.megaRegion.findMany({ orderBy: [{ active: "desc" }, { name: "asc" }] }) };
-  })
-  .post("/mega-regions", async ({ body, headers, jwt, set }) => {
-    const { token, error } = extractToken(headers, jwt);
-    if (error) { set.status = 401; return error; }
-    try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-    catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
-    try {
-      const region = await prisma.megaRegion.create({ data: body });
-      set.status = 201;
-      return { success: true, data: region };
-    } catch (err: any) {
-      set.status = err.code === "P2002" ? 409 : 400;
-      return { success: false, error: err.code === "P2002" ? "A mega region with that name already exists." : err.message || "Unable to create mega region" };
-    }
-  }, { body: t.Object({ name: t.String({ minLength: 2, maxLength: 120 }), type: t.Union([t.Literal("COUNTY"), t.Literal("CITY"), t.Literal("OTHER")]) }) })
-  .patch("/mega-regions/:id", async ({ params, body, headers, jwt, set }) => {
-    const { token, error } = extractToken(headers, jwt);
-    if (error) { set.status = 401; return error; }
-    try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-    catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
-    try { return { success: true, data: await prisma.megaRegion.update({ where: { id: params.id }, data: body }) }; }
-    catch (err: any) { set.status = err.code === "P2002" ? 409 : 400; return { success: false, error: err.code === "P2002" ? "A mega region with that name already exists." : err.message || "Unable to update mega region" }; }
-  }, { params: t.Object({ id: t.String({ format: "uuid" }) }), body: t.Object({ name: t.Optional(t.String({ minLength: 2, maxLength: 120 })), type: t.Optional(t.Union([t.Literal("COUNTY"), t.Literal("CITY"), t.Literal("OTHER")])), active: t.Optional(t.Boolean()) }) })
   .get("/hero", async ({ headers, jwt, set }) => {
-    const { token, error } = extractToken(headers, jwt);
-    if (error) { set.status = 401; return error; }
-    try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-    catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+    try { await requirePlatformActor(headers, jwt); }
+    catch (err: any) { set.status = err.status ?? 401; return { success: false, error: err.message }; }
     const setting = await prisma.setting.findUnique({ where: { key: "platform_hero_image_url" } });
     return { success: true, data: { imageUrl: setting?.value ?? "" } };
   })
   .patch("/hero", async ({ body, headers, jwt, set }) => {
-    const { token, error } = extractToken(headers, jwt);
-    if (error) { set.status = 401; return error; }
-    try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-    catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+    try { await requirePlatformActor(headers, jwt, "hotels:write"); }
+    catch (err: any) { set.status = err.status ?? 401; return { success: false, error: err.message }; }
     const imageUrl = body.imageUrl.trim();
     const existingHero = await prisma.setting.findUnique({ where: { key: "platform_hero_image_url" } });
     if (existingHero?.value && existingHero.value !== imageUrl) {
@@ -143,113 +102,11 @@ export const platformRoute = new Elysia({
     const setting = await prisma.setting.upsert({ where: { key: "platform_hero_image_url" }, update: { value: imageUrl }, create: { key: "platform_hero_image_url", value: imageUrl } });
     return { success: true, data: { imageUrl: setting.value } };
   }, { body: t.Object({ imageUrl: t.String({ maxLength: 2000 }) }) })
-  .post("/zones", async ({ body, headers, jwt, set }) => {
-    const { token, error } = extractToken(headers, jwt);
-    if (error) { set.status = 401; return error; }
-    try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-    catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
-    try {
-      // Every town gets a "General Area" zone automatically — this is the
-      // guaranteed fallback a guest lands on if they don't pick a specific
-      // zone within the town, and it's what keeps the delivery-fee promise
-      // ("every hotel charges something for general delivery, never silently
-      // free") true by construction rather than by admins remembering to add it.
-      const zone = await prisma.$transaction(async (tx) => {
-        const created = await tx.zone.create({ data: body, include: { megaRegion: true } });
-        await tx.townRegion.create({ data: { name: "General Area", townId: created.id } });
-        return created;
-      });
-      set.status = 201;
-      return { success: true, data: zone };
-    } catch (err: any) {
-      set.status = 400;
-      return { success: false, error: err.message || "Unable to create region" };
-    }
-  }, {
-    body: t.Object({
-      name: t.String({ minLength: 2 }),
-      megaRegionId: t.String({ format: "uuid" }),
-      type: t.Union([t.Literal("MARKET"), t.Literal("BUS_STATION"), t.Literal("OFFICE_BUILDING"), t.Literal("RESIDENTIAL"), t.Literal("OTHER")]),
-      locationLabel: t.String({ minLength: 2 }),
-      locationPlaceholder: t.String({ minLength: 2 }),
-    }),
-  })
-  .patch("/zones/:id", async ({ params, body, headers, jwt, set }) => {
-    const { token, error } = extractToken(headers, jwt);
-    if (error) { set.status = 401; return error; }
-    try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-    catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
-    try {
-      const zone = await prisma.zone.update({ where: { id: params.id }, data: body, include: { megaRegion: true } });
-      return { success: true, data: zone };
-    } catch (err: any) {
-      set.status = 400;
-      return { success: false, error: err.message || "Unable to update region" };
-    }
-  }, {
-    params: t.Object({ id: t.String({ format: "uuid" }) }),
-    body: t.Object({
-      name: t.Optional(t.String({ minLength: 2 })),
-      megaRegionId: t.Optional(t.String({ format: "uuid" })),
-      type: t.Optional(t.Union([t.Literal("MARKET"), t.Literal("BUS_STATION"), t.Literal("OFFICE_BUILDING"), t.Literal("RESIDENTIAL"), t.Literal("OTHER")])),
-      locationLabel: t.Optional(t.String({ minLength: 2 })),
-      locationPlaceholder: t.Optional(t.String({ minLength: 2 })),
-      active: t.Optional(t.Boolean()),
-    }),
-  })
-  .get("/town-regions", async ({ headers, jwt, set, query }) => {
-    const { token, error } = extractToken(headers, jwt);
-    if (error) { set.status = 401; return error; }
-    try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-    catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
-    return {
-      success: true,
-      data: await prisma.townRegion.findMany({
-        where: query.zoneId ? { townId: query.zoneId as string } : undefined,
-        orderBy: [{ active: "desc" }, { name: "asc" }],
-      }),
-    };
-  }, { query: t.Object({ zoneId: t.Optional(t.String({ format: "uuid" })) }) })
-  .post("/town-regions", async ({ body, headers, jwt, set }) => {
-    const { token, error } = extractToken(headers, jwt);
-    if (error) { set.status = 401; return error; }
-    try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-    catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
-    try {
-      const townRegion = await prisma.townRegion.create({ data: { name: body.name, townId: body.zoneId } });
-      set.status = 201;
-      return { success: true, data: townRegion };
-    } catch (err: any) {
-      set.status = err.code === "P2002" ? 409 : 400;
-      return { success: false, error: err.code === "P2002" ? "That zone name already exists in this town." : err.message || "Unable to create zone" };
-    }
-  }, { body: t.Object({ name: t.String({ minLength: 2, maxLength: 120 }), zoneId: t.String({ format: "uuid" }) }) })
-  .patch("/town-regions/:id", async ({ params, body, headers, jwt, set }) => {
-    const { token, error } = extractToken(headers, jwt);
-    if (error) { set.status = 401; return error; }
-    try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-    catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
-    try {
-      const data: any = {};
-      if (body.name !== undefined) data.name = body.name;
-      if (body.active !== undefined) data.active = body.active;
-      const townRegion = await prisma.townRegion.update({ where: { id: params.id }, data });
-      return { success: true, data: townRegion };
-    } catch (err: any) {
-      set.status = err.code === "P2002" ? 409 : 400;
-      return { success: false, error: err.code === "P2002" ? "That zone name already exists in this town." : err.message || "Unable to update zone" };
-    }
-  }, {
-    params: t.Object({ id: t.String({ format: "uuid" }) }),
-    body: t.Object({ name: t.Optional(t.String({ minLength: 2, maxLength: 120 })), active: t.Optional(t.Boolean()) }),
-  })
   .get(
     "/hotels",
     async ({ headers, jwt, set, query }) => {
-      const { token, error } = extractToken(headers, jwt);
-      if (error) { set.status = 401; return error; }
-      try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-      catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+      try { await requirePlatformActor(headers, jwt); }
+      catch (err: any) { set.status = err.status ?? 401; return { success: false, error: err.message }; }
 
       let hotels = await prisma.hotel.findMany({
         where: query.all === "true" ? {} : { deletedAt: null },
@@ -277,10 +134,8 @@ export const platformRoute = new Elysia({
   .get(
     "/hotels/:id",
     async ({ params, headers, jwt, set }) => {
-      const { token, error } = extractToken(headers, jwt);
-      if (error) { set.status = 401; return error; }
-      try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-      catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+      try { await requirePlatformActor(headers, jwt); }
+      catch (err: any) { set.status = err.status ?? 401; return { success: false, error: err.message }; }
 
       const hotel = await prisma.hotel.findUnique({
         where: { id: params.id },
@@ -306,13 +161,17 @@ export const platformRoute = new Elysia({
   .post(
     "/hotels",
     async ({ body, headers, jwt, set }) => {
-      const { token, error } = extractToken(headers, jwt);
-      if (error) { set.status = 401; return error; }
       let admin;
-      try { admin = await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-      catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+      try { admin = await requirePlatformActor(headers, jwt, "hotels:write"); }
+      catch (err: any) { set.status = err.status ?? 401; return { success: false, error: err.message }; }
 
       try {
+        // No inactive town may be used for hotel onboarding — geography rules
+        // are enforced server-side, never by hiding UI options.
+        const town = await prisma.zone.findUnique({ where: { id: body.zoneId } });
+        if (!town) { set.status = 400; return { success: false, error: "The selected town no longer exists." }; }
+        if (!town.active) { set.status = 400; return { success: false, error: `Town "${town.name}" is inactive. Activate it before onboarding hotels.` }; }
+
         // No password is ever generated or stored in plaintext for new accounts.
         // The account starts locked (unknowable random hash); the SMS sent by the
         // outbox handler carries a one-time setup link to set a real password.
@@ -344,11 +203,7 @@ export const platformRoute = new Elysia({
           // the admin has a contactable phone on file (used for WhatsApp "talk to
           // staff" and as their StaffUser identity), but it must NOT auto-enroll
           // in the SMS order-alert list. Whoever creates the hotel account here is
-          // the platform operator doing onboarding, not necessarily hotel staff —
-          // defaulting this to true silently made every new hotel's order alerts
-          // go to whichever phone number was used to set the account up.
-          // The hotel's own admin opts a real staff phone in later, deliberately,
-          // from their own settings.
+          // the platform operator doing onboarding, not necessarily hotel staff.
           await tx.staffUser.create({
             data: {
               name: body.adminName,
@@ -377,6 +232,8 @@ export const platformRoute = new Elysia({
               status: "initialized",
             },
           });
+
+          await writeAudit(tx, admin, "hotel", hotel.id, "create_hotel", `Created "${hotel.name}" in town "${town.name}"`);
 
           return { hotel, adminUser, setupToken: rawToken };
         });
@@ -410,11 +267,9 @@ export const platformRoute = new Elysia({
   .patch(
     "/hotels/:id/toggle",
     async ({ params, headers, jwt, set }) => {
-      const { token, error } = extractToken(headers, jwt);
-      if (error) { set.status = 401; return error; }
       let admin;
-      try { admin = await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-      catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+      try { admin = await requirePlatformActor(headers, jwt, "hotels:write"); }
+      catch (err: any) { set.status = err.status ?? 401; return { success: false, error: err.message }; }
 
       const hotel = await prisma.hotel.findUnique({ where: { id: params.id } });
       if (!hotel) { set.status = 404; return { success: false, error: "Hotel not found" }; }
@@ -447,11 +302,9 @@ export const platformRoute = new Elysia({
   .patch(
     "/hotels/:id/listing",
     async ({ params, body, headers, jwt, set }) => {
-      const { token, error } = extractToken(headers, jwt);
-      if (error) { set.status = 401; return error; }
       let admin;
-      try { admin = await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-      catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+      try { admin = await requirePlatformActor(headers, jwt, "hotels:write"); }
+      catch (err: any) { set.status = err.status ?? 401; return { success: false, error: err.message }; }
 
       const hotel = await prisma.hotel.findUnique({ where: { id: params.id } });
       if (!hotel) { set.status = 404; return { success: false, error: "Hotel not found" }; }
@@ -488,11 +341,9 @@ export const platformRoute = new Elysia({
   .delete(
     "/hotels/:id",
     async ({ params, headers, jwt, set }) => {
-      const { token, error } = extractToken(headers, jwt);
-      if (error) { set.status = 401; return error; }
       let admin;
-      try { admin = await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-      catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+      try { admin = await requirePlatformActor(headers, jwt, "hotels:write"); }
+      catch (err: any) { set.status = err.status ?? 401; return { success: false, error: err.message }; }
 
       const hotel = await prisma.hotel.findUnique({ where: { id: params.id } });
       if (!hotel) { set.status = 404; return { success: false, error: "Hotel not found" }; }
@@ -500,8 +351,7 @@ export const platformRoute = new Elysia({
 
       // Soft delete only — an order history, ledger, and review trail can exist
       // for this hotel, and hard-deleting would either cascade-destroy that
-      // financial record or fail on the FK constraints protecting it. deletedAt
-      // is what every hotel-listing query already filters on.
+      // financial record or fail on the FK constraints protecting it.
       const updated = await prisma.hotel.update({
         where: { id: params.id },
         data: { deletedAt: new Date(), isListed: false, isOpen: false },
@@ -530,136 +380,41 @@ export const platformRoute = new Elysia({
       detail: { tags: ["Platform"], summary: "Soft-delete a hotel (removes it from all listings; order/ledger history is preserved)" },
     }
   )
-  .get(
-    "/admins",
-    async ({ headers, jwt, set }) => {
-      const { token, error } = extractToken(headers, jwt);
-      if (error) { set.status = 401; return error; }
-      try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-      catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
-
-      const admins = await prisma.platformAdmin.findMany({
-        orderBy: { createdAt: "desc" },
-        select: { id: true, username: true, name: true, createdAt: true },
-      });
-      return { success: true, data: admins };
-    }
-  )
-  .post(
-    "/admins",
-    async ({ body, headers, jwt, set }) => {
-      const { token, error } = extractToken(headers, jwt);
-      if (error) { set.status = 401; return error; }
-      let creator;
-      try { creator = await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-      catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
-
-      if (body.username.trim().toLowerCase() === "hackden" && creator.username.toLowerCase() !== "hackden") {
-        set.status = 403;
-        return { success: false, error: "Only the hackden platform owner can reserve this username" };
-      }
-
-      const existing = await prisma.platformAdmin.findUnique({ where: { username: body.username } });
-      if (existing) { set.status = 409; return { success: false, error: "Username already taken" }; }
-
-      const lockedHash = await Bun.password.hash(crypto.randomUUID());
-      const formattedPhone = formatPhone(body.phone);
-
-      const admin = await prisma.platformAdmin.create({
-        data: { username: body.username, passwordHash: lockedHash, name: body.name },
-      });
-
-      const { rawToken } = await createPasswordSetupToken(admin.id, "PLATFORM_ADMIN");
-
-      await prisma.eventOutbox.create({
-        data: {
-          eventName: "platform_admin_created",
-          payload: JSON.stringify({
-            platformAdminId: admin.id,
-            name: admin.name,
-            username: admin.username,
-            phone: formattedPhone,
-            setupToken: rawToken,
-            createdBy: creator.name,
-          }),
-          status: "initialized",
-        },
-      });
-
-      return {
-        success: true,
-        data: { id: admin.id, username: admin.username, name: admin.name, setupLink: buildSetupLink(rawToken) },
-      };
-    },
-    {
-      body: t.Object({
-        username: t.String({ minLength: 3 }),
-        name: t.String({ minLength: 1 }),
-        phone: t.String({ minLength: 10, maxLength: 13 }),
-      }),
-    }
-  )
-  .delete(
-    "/admins/:id",
-    async ({ params, headers, jwt, set }) => {
-      const { token, error } = extractToken(headers, jwt);
-      if (error) { set.status = 401; return error; }
-      let remover;
-      try { remover = await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-      catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
-
-      const target = await prisma.platformAdmin.findUnique({ where: { id: params.id } });
-      if (!target) { set.status = 404; return { success: false, error: "Platform admin not found" }; }
-      if (target.id === remover.id) { set.status = 400; return { success: false, error: "You cannot remove yourself" }; }
-      if (remover.username.toLowerCase() !== "hackden") { set.status = 403; return { success: false, error: "Only the hackden platform owner can remove platform administrators" }; }
-
-      await prisma.platformAdmin.delete({ where: { id: params.id } });
-      return { success: true, data: { removed: target.name } };
-    },
-    { params: t.Object({ id: t.String({ format: "uuid" }) }) }
-  )
-  .delete(
-    "/hotels/:id",
-    async ({ params, headers, jwt, set }) => {
-      const { token, error } = extractToken(headers, jwt);
-      if (error) { set.status = 401; return error; }
-      try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-      catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
-
-      const hotel = await prisma.hotel.findUnique({ where: { id: params.id } });
-      if (!hotel) { set.status = 404; return { success: false, error: "Hotel not found" }; }
-
-      await prisma.hotel.update({
-        where: { id: params.id },
-        data: { deletedAt: new Date() },
-      });
-
-      return { success: true, data: { deleted: hotel.name } };
-    },
-    { params: t.Object({ id: t.String({ format: "uuid" }) }) }
-  )
   .patch(
     "/hotels/:id",
     async ({ params, body, headers, jwt, set }) => {
-      const { token, error } = extractToken(headers, jwt);
-      if (error) { set.status = 401; return error; }
-      try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-      catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+      let admin;
+      try { admin = await requirePlatformActor(headers, jwt, "hotels:write"); }
+      catch (err: any) { set.status = err.status ?? 401; return { success: false, error: err.message }; }
 
-      const hotel = await prisma.hotel.findUnique({ where: { id: params.id } });
+      const hotel = await prisma.hotel.findUnique({ where: { id: params.id }, include: { zone: true } });
       if (!hotel) { set.status = 404; return { success: false, error: "Hotel not found" }; }
 
-      const updated = await prisma.hotel.update({
-        where: { id: params.id },
-        data: {
-          name: body.name ?? hotel.name,
-          slug: body.slug ?? hotel.slug,
-          isOpen: body.isOpen !== undefined ? body.isOpen : hotel.isOpen,
-          imageUrl: body.imageUrl !== undefined ? body.imageUrl : hotel.imageUrl,
-          autoCloseAt: body.autoCloseAt !== undefined ? (body.autoCloseAt ? new Date(body.autoCloseAt) : null) : hotel.autoCloseAt,
-          ...(body.zoneId ? { zoneId: body.zoneId } : {}),
-        },
-        include: { zone: { include: { megaRegion: true } } },
+      // Reassigning a hotel to another town is a sensitive geography change:
+      // audit it explicitly and never allow moving into an inactive town.
+      let moved = "";
+      if (body.zoneId && body.zoneId !== hotel.zoneId) {
+        const targetTown = await prisma.zone.findUnique({ where: { id: body.zoneId } });
+        if (!targetTown) { set.status = 400; return { success: false, error: "The selected town no longer exists." }; }
+        if (!targetTown.active) { set.status = 400; return { success: false, error: `Town "${targetTown.name}" is inactive. Activate it before moving the hotel.` }; }
+        moved = `; moved to town "${targetTown.name}"`;
+      }
+
+      const updated = await prisma.$transaction(async (tx) => {
+        const result = await tx.hotel.update({
+          where: { id: params.id },
+          data: {
+            name: body.name ?? hotel.name,
+            slug: body.slug ?? hotel.slug,
+            isOpen: body.isOpen !== undefined ? body.isOpen : hotel.isOpen,
+            imageUrl: body.imageUrl !== undefined ? body.imageUrl : hotel.imageUrl,
+            autoCloseAt: body.autoCloseAt !== undefined ? (body.autoCloseAt ? new Date(body.autoCloseAt) : null) : hotel.autoCloseAt,
+            ...(body.zoneId ? { zoneId: body.zoneId } : {}),
+          },
+          include: { zone: { include: { megaRegion: true } } },
+        });
+        if (moved) await writeAudit(tx, admin, "hotel", hotel.id, "reassign_hotel", `Updated "${hotel.name}"${moved}`);
+        return result;
       });
 
       return { success: true, data: updated };
@@ -676,13 +431,139 @@ export const platformRoute = new Elysia({
       }),
     }
   )
+  .get(
+    "/admins",
+    async ({ headers, jwt, set }) => {
+      try { await requirePlatformActor(headers, jwt, "admins:read"); }
+      catch (err: any) { set.status = err.status ?? 401; return { success: false, error: err.message }; }
+
+      const admins = await prisma.platformAdmin.findMany({
+        orderBy: { createdAt: "desc" },
+        select: { id: true, username: true, name: true, role: true, createdAt: true },
+      });
+      return { success: true, data: admins };
+    }
+  )
+  .post(
+    "/admins",
+    async ({ body, headers, jwt, set }) => {
+      let creator;
+      try { creator = await requirePlatformActor(headers, jwt, "admins:write"); }
+      catch (err: any) { set.status = err.status ?? 401; return { success: false, error: err.message }; }
+
+      // Only the platform owner can grant platform access at all.
+      if (!can(creator.role, "admins:write")) { set.status = 403; return { success: false, error: "Only the platform owner can manage platform access." }; }
+
+      if (body.username.trim().toLowerCase() === "hackden" && creator.username.toLowerCase() !== "hackden") {
+        set.status = 403;
+        return { success: false, error: "Only the hackden platform owner can reserve this username" };
+      }
+
+      // PLATFORM_OWNER grants access + irreversible governance; the more
+      // privileged target roles can only be granted by an owner, and an owner
+      // cannot be self-demoted to a lower role (identical promotion is fine).
+      if (body.role && creator.role !== "PLATFORM_OWNER") {
+        set.status = 403;
+        return { success: false, error: "Only the platform owner can assign roles." };
+      }
+
+      const existing = await prisma.platformAdmin.findUnique({ where: { username: body.username } });
+      if (existing) { set.status = 409; return { success: false, error: "Username already taken" }; }
+
+      const lockedHash = await Bun.password.hash(crypto.randomUUID());
+      const formattedPhone = formatPhone(body.phone);
+
+      const admin = await prisma.$transaction(async (tx) => {
+        const created = await tx.platformAdmin.create({
+          data: { username: body.username, passwordHash: lockedHash, name: body.name, role: (body.role as any) ?? "PLATFORM_OPERATIONS" },
+        });
+
+        const { rawToken } = await createPasswordSetupToken(created.id, "PLATFORM_ADMIN");
+
+        await tx.eventOutbox.create({
+          data: {
+            eventName: "platform_admin_created",
+            payload: JSON.stringify({
+              platformAdminId: created.id,
+              name: created.name,
+              username: created.username,
+              phone: formattedPhone,
+              setupToken: rawToken,
+              createdBy: creator.name,
+            }),
+            status: "initialized",
+          },
+        });
+
+        await writeAudit(tx, creator, "admin", created.id, "create_admin_access", `Created platform admin "${created.name}" (@${created.username}) with role ${created.role}`);
+        return { created, setupToken: rawToken };
+      });
+
+      return {
+        success: true,
+        data: { id: admin.created.id, username: admin.created.username, name: admin.created.name, role: admin.created.role, setupLink: buildSetupLink(admin.setupToken) },
+      };
+    },
+    {
+      body: t.Object({
+        username: t.String({ minLength: 3 }),
+        name: t.String({ minLength: 1 }),
+        phone: t.String({ minLength: 10, maxLength: 13 }),
+        role: t.Optional(t.Union([t.Literal("PLATFORM_OWNER"), t.Literal("PLATFORM_OPERATIONS"), t.Literal("PLATFORM_SUPPORT"), t.Literal("PLATFORM_AUDITOR")])),
+      }),
+    }
+  )
+  .patch(
+    "/admins/:id/role",
+    async ({ params, body, headers, jwt, set }) => {
+      let actor;
+      try { actor = await requirePlatformActor(headers, jwt, "admins:write"); }
+      catch (err: any) { set.status = err.status ?? 401; return { success: false, error: err.message }; }
+
+      if (actor.role !== "PLATFORM_OWNER") { set.status = 403; return { success: false, error: "Only the platform owner can change platform roles." }; }
+      const target = await prisma.platformAdmin.findUnique({ where: { id: params.id } });
+      if (!target) { set.status = 404; return { success: false, error: "Platform admin not found" }; }
+      if (target.id === actor.id) { set.status = 400; return { success: false, error: "You cannot change your own role." }; }
+
+      const updated = await prisma.$transaction(async (tx) => {
+        const result = await tx.platformAdmin.update({ where: { id: params.id }, data: { role: body.role } });
+        await writeAudit(tx, actor, "admin", params.id, "change_admin_access", `Changed ${target.name}'s platform role from ${target.role} to ${body.role}`);
+        return result;
+      });
+      return { success: true, data: updated };
+    },
+    {
+      params: t.Object({ id: t.String({ format: "uuid" }) }),
+      body: t.Object({ role: t.Union([t.Literal("PLATFORM_OWNER"), t.Literal("PLATFORM_OPERATIONS"), t.Literal("PLATFORM_SUPPORT"), t.Literal("PLATFORM_AUDITOR")]) }),
+    }
+  )
+  .delete(
+    "/admins/:id",
+    async ({ params, headers, jwt, set }) => {
+      let remover;
+      try { remover = await requirePlatformActor(headers, jwt, "admins:write"); }
+      catch (err: any) { set.status = err.status ?? 401; return { success: false, error: err.message }; }
+
+      if (remover.role !== "PLATFORM_OWNER") { set.status = 403; return { success: false, error: "Only the platform owner can remove platform administrators." }; }
+
+      const target = await prisma.platformAdmin.findUnique({ where: { id: params.id } });
+      if (!target) { set.status = 404; return { success: false, error: "Platform admin not found" }; }
+      if (target.id === remover.id) { set.status = 400; return { success: false, error: "You cannot remove yourself" }; }
+      if (remover.username.toLowerCase() !== "hackden") { set.status = 403; return { success: false, error: "Only the hackden platform owner can remove platform administrators" }; }
+
+      await prisma.$transaction(async (tx) => {
+        await tx.platformAdmin.delete({ where: { id: params.id } });
+        await writeAudit(tx, remover, "admin", params.id, "remove_admin_access", `Removed platform admin "${target.name}" (@${target.username})`);
+      });
+      return { success: true, data: { removed: target.name } };
+    },
+    { params: t.Object({ id: t.String({ format: "uuid" }) }) }
+  )
   .patch(
     "/outbox/:id/retry",
     async ({ params, headers, jwt, set }) => {
-      const { token, error } = extractToken(headers, jwt);
-      if (error) { set.status = 401; return error; }
-      try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-      catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+      try { await requirePlatformActor(headers, jwt, "outbox:retry"); }
+      catch (err: any) { set.status = err.status ?? 401; return { success: false, error: err.message }; }
 
       const entry = await prisma.eventOutbox.findUnique({ where: { id: params.id } });
       if (!entry) { set.status = 404; return { success: false, error: "Outbox entry not found" }; }
@@ -699,32 +580,34 @@ export const platformRoute = new Elysia({
   .get(
     "/audit",
     async ({ headers, jwt, set, query }) => {
-      const { token, error } = extractToken(headers, jwt);
-      if (error) { set.status = 401; return error; }
-      try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-      catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+      try { await requirePlatformActor(headers, jwt, "audit:read"); }
+      catch (err: any) { set.status = err.status ?? 401; return { success: false, error: err.message }; }
 
+      // Combined audit: SMS-relevant outbox events (existing hotel surface) plus
+      // the durable AuditLog rows written by platform actions.
       const eventNames: any[] = ["hotel_created", "hotel_status_updated", "hotel_admin_created"];
-      const where: any = { eventName: { in: eventNames } };
-      if (query.hotelId) where.hotelId = query.hotelId;
+      const outboxWhere: any = { eventName: { in: eventNames } };
+      if (query.hotelId) outboxWhere.hotelId = query.hotelId;
 
-      const rows = await prisma.eventOutbox.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        take: 100,
-      });
+      const [outbox, auditRows] = await Promise.all([
+        prisma.eventOutbox.findMany({ where: outboxWhere, orderBy: { createdAt: "desc" }, take: 100 }),
+        prisma.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 100 }),
+      ]);
 
-      return { success: true, data: rows.map((r) => ({ ...r, payload: JSON.parse(r.payload) })) };
+      const combined = [
+        ...outbox.map((r) => ({ id: r.id, createdAt: r.createdAt.toISOString(), action: r.eventName, entity: "hotel", actorName: r.payload ? (() => { try { return JSON.parse(r.payload).createdBy ?? ""; } catch { return ""; } })() : "", detail: r.payload || "", source: "outbox" })),
+        ...auditRows.map((r) => ({ id: r.id, createdAt: r.createdAt.toISOString(), action: r.action, entity: r.entity, actorName: r.actorName, detail: r.detail, source: "auditlog" })),
+      ].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 150);
+
+      return { success: true, data: combined };
     },
     { query: t.Object({ hotelId: t.Optional(t.String()) }) }
   )
   .get(
     "/outbox",
     async ({ headers, jwt, set, query }) => {
-      const { token, error } = extractToken(headers, jwt);
-      if (error) { set.status = 401; return error; }
-      try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
-      catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+      try { await requirePlatformActor(headers, jwt, "outbox:retry"); }
+      catch (err: any) { set.status = err.status ?? 401; return { success: false, error: err.message }; }
 
       const where: any = {};
       if ((query as any).failed === "true") where.status = "failed";
@@ -738,11 +621,3 @@ export const platformRoute = new Elysia({
       return { success: true, data: rows.map((r) => ({ ...r, payload: JSON.parse(r.payload) })) };
     }
   );
-
-function extractToken(headers: Record<string, string | undefined>, jwt: any) {
-  const authHeader = headers["authorization"];
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return { token: null, error: { success: false, error: "Missing or invalid authorization header" } };
-  }
-  return { token: authHeader.split(" ")[1]!, error: null };
-}

@@ -5,12 +5,13 @@ import { usePlatformAdminAuth } from "../../context/PlatformAdminAuthContext";
 import { AdminNotificationPanel } from "../../components/AdminNotificationPanel";
 import { Modal } from "../../components/ui/Modal";
 import { InboxPage } from "../InboxPage";
+import { GeographyWorkspace } from "./GeographyWorkspace";
 import { Activity, Bell, Building2, ChevronRight, ClipboardList, LayoutDashboard, LogOut, MapPin, Menu, MessageCircle, Plus, RefreshCw, Send, UserPlus, Users, UserCircle, X } from "lucide-react";
 
-type PlatformView = "login" | "overview" | "hotels" | "hotel_detail" | "create_hotel" | "regions" | "admins" | "create_admin" | "audit" | "outbox" | "communications" | "profile";
+type PlatformView = "login" | "overview" | "hotels" | "hotel_detail" | "create_hotel" | "geography" | "admins" | "create_admin" | "audit" | "outbox" | "communications" | "profile";
 
 interface PlatformMe {
-    id: string; username: string; name: string;
+    id: string; username: string; name: string; role: string;
 }
 interface PlatformDashboard {
     hotelCount: number; activeHotelCount: number; platformAdminCount: number;
@@ -29,6 +30,10 @@ interface Hotel {
 interface AdminUser { id: string; name: string; username: string; createdAt: string; }
 interface DeliveryRegion { id: string; name: string; type: string; locationLabel: string; locationPlaceholder: string; active?: boolean; megaRegionId: string; megaRegion?: MegaRegion; }
 interface MegaRegion { id: string; name: string; type: string; active?: boolean; }
+interface GeoAreaNode { id: string; townId: string; name: string; active: boolean; isFallback: boolean; note: string | null; displayOrder: number; customerCount: number; }
+interface GeoTownNode { id: string; name: string; active: boolean; type: string; hotelCount: number; areaCount: number; activeAreaCount: number; locationLabel: string; locationPlaceholder: string; areas: GeoAreaNode[]; }
+interface GeoCountyNode { id: string; name: string; type: string; active: boolean; townCount: number; activeTownCount: number; areaCount: number; activeAreaCount: number; towns: GeoTownNode[]; }
+interface GeoHierarchyNode { counties: GeoCountyNode[]; summary: { countyCount: number; townCount: number; areaCount: number; hotelCount: number }; }
 
 const T = {
     bg: "#FFF8F0",
@@ -66,6 +71,8 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
     const [outboxRows, setOutboxRows] = useState<any[]>([]);
     const [regions, setRegions] = useState<DeliveryRegion[]>([]);
     const [megaRegions, setMegaRegions] = useState<MegaRegion[]>([]);
+    const [geoAlerts, setGeoAlerts] = useState<{ townsMissingActiveArea: { id: string; name: string; county: string }[]; hotelsInInactiveTowns: { id: string; name: string; count: number }[]; inactiveAreasWithCustomers: { id: string; name: string; townId: string; townName: string; count: number }[] }>({ townsMissingActiveArea: [], hotelsInInactiveTowns: [], inactiveAreasWithCustomers: [] });
+    const [focusTownId, setFocusTownId] = useState<string | null>(null);
     const [heroImageUrl, setHeroImageUrl] = useState("");
     const [heroSaving, setHeroSaving] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -110,17 +117,16 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
     const fetch = useCallback(async () => {
         if (!token) { setLoading(false); return; }
         setLoading(true);
-        const [dashRes, hotelsRes, adminsRes, auditRes, outboxRes, regionsRes, megaRegionsRes, heroRes] = await Promise.all([
+        const [dashRes, hotelsRes, adminsRes, auditRes, outboxRes, geoRes, heroRes] = await Promise.all([
             apiGet<PlatformDashboard>("/platform/dashboard", token),
             apiGet<Hotel[]>("/platform/hotels", token),
             apiGet<AdminUser[]>("/platform/admins", token),
             apiGet<any[]>("/platform/audit", token),
             apiGet<any[]>("/platform/outbox", token),
-            apiGet<DeliveryRegion[]>("/platform/zones", token),
-            apiGet<MegaRegion[]>("/platform/mega-regions", token),
+            apiGet<GeoHierarchyNode>("/platform/geography", token),
             apiGet<{ imageUrl: string }>("/platform/hero", token),
         ]);
-        const authFailed = [dashRes, hotelsRes, adminsRes, auditRes, outboxRes, regionsRes, megaRegionsRes, heroRes].some((res) =>
+        const authFailed = [dashRes, hotelsRes, adminsRes, auditRes, outboxRes, geoRes, heroRes].some((res) =>
             !res.success && /invalid|expired|session/i.test(res.error ?? "")
         );
         if (authFailed) {
@@ -134,13 +140,30 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
         if (adminsRes.success && adminsRes.data) setAdmins(adminsRes.data);
         if (auditRes.success && auditRes.data) setAuditRows(auditRes.data);
         if (outboxRes.success && outboxRes.data) setOutboxRows(outboxRes.data);
-        if (regionsRes.success && regionsRes.data) {
-            setRegions(regionsRes.data);
-            setHotelForm((form) => form.zoneId ? form : { ...form, zoneId: regionsRes.data![0]?.id ?? "" });
-        }
-        if (megaRegionsRes.success && megaRegionsRes.data) {
-            setMegaRegions(megaRegionsRes.data);
-            setRegionForm((form) => form.megaRegionId ? form : { ...form, megaRegionId: megaRegionsRes.data![0]?.id ?? "" });
+        if (geoRes.success && geoRes.data) {
+            const counties = geoRes.data.counties;
+            const flatTowns = counties.flatMap((c) => c.towns.map((t) => ({
+                id: t.id, name: t.name, type: t.type, locationLabel: t.locationLabel, locationPlaceholder: t.locationPlaceholder,
+                active: t.active, megaRegionId: c.id, megaRegion: { id: c.id, name: c.name, type: c.type, active: c.active },
+            })));
+            const countyOptions = counties.map((c) => ({ id: c.id, name: c.name, type: c.type, active: c.active }));
+            setRegions(flatTowns);
+            setMegaRegions(countyOptions);
+            setHotelForm((form) => form.zoneId ? form : { ...form, zoneId: flatTowns[0]?.id ?? "" });
+            setRegionForm((form) => form.megaRegionId ? form : { ...form, megaRegionId: countyOptions[0]?.id ?? "" });
+            const townsMissingActiveArea: { id: string; name: string; county: string }[] = [];
+            const hotelsInInactiveTowns: { id: string; name: string; count: number }[] = [];
+            const inactiveAreasWithCustomers: { id: string; name: string; townId: string; townName: string; count: number }[] = [];
+            for (const c of counties) {
+                for (const t of c.towns) {
+                    if (t.activeAreaCount === 0) townsMissingActiveArea.push({ id: t.id, name: t.name, county: c.name });
+                    if (!t.active && t.hotelCount > 0) hotelsInInactiveTowns.push({ id: t.id, name: t.name, count: t.hotelCount });
+                    for (const a of t.areas) {
+                        if (!a.active && a.customerCount > 0) inactiveAreasWithCustomers.push({ id: a.id, name: a.name, townId: t.id, townName: t.name, count: a.customerCount });
+                    }
+                }
+            }
+            setGeoAlerts({ townsMissingActiveArea, hotelsInInactiveTowns, inactiveAreasWithCustomers });
         }
         if (heroRes.success && heroRes.data) setHeroImageUrl(heroRes.data.imageUrl);
         setLoading(false);
@@ -198,15 +221,15 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
     const handleCreateRegion = async () => {
         if (!regionForm.name.trim() || !regionForm.megaRegionId || regionSaving) return;
         setRegionSaving(true);
-        const res = await apiPost<DeliveryRegion>("/platform/zones", regionForm, token);
+        const res = await apiPost<{ id: string }>("/platform/towns", { name: regionForm.name.trim(), megaRegionId: regionForm.megaRegionId, locationLabel: regionForm.locationLabel.trim(), locationPlaceholder: regionForm.locationPlaceholder.trim() }, token);
         setRegionSaving(false);
         if (res.success && res.data) {
-            setRegions((current) => [...current, res.data!].sort((a, b) => a.name.localeCompare(b.name)));
-            setHotelForm((form) => ({ ...form, zoneId: res.data!.id }));
-            setRegionForm({ name: "", megaRegionId: megaRegions[0]?.id ?? "", type: "OTHER", locationLabel: "Delivery point", locationPlaceholder: "e.g. building, landmark, stall number" });
             setShowRegionForm(false);
+            setRegionForm({ name: "", megaRegionId: megaRegions[0]?.id ?? "", type: "OTHER", locationLabel: "Delivery point", locationPlaceholder: "e.g. building, landmark, stall number" });
+            setHotelForm((form) => ({ ...form, zoneId: res.data!.id }));
+            await fetch();
         } else {
-            pushNotification("danger", "Failed to create region", res.error || "Unknown error", { scope: "platform" });
+            pushNotification("danger", "Failed to create town", res.error || "Unknown error", { scope: "platform" });
         }
     };
 
@@ -335,7 +358,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
             case "overview": return <LayoutDashboard size={17} />;
             case "hotels": return <Building2 size={17} />;
             case "create_hotel": return <Plus size={17} />;
-            case "regions": return <MapPin size={17} />;
+            case "geography": return <MapPin size={17} />;
             case "admins": return <Users size={17} />;
             case "create_admin": return <UserPlus size={17} />;
             case "audit": return <ClipboardList size={17} />;
@@ -362,6 +385,12 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
             {label}
         </button>
     );
+
+    const navGroup = (label: string) => (
+        <div style={{ marginTop: s(4), marginBottom: s(1), fontSize: "0.62rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.textDim, padding: `0 ${s(3)}`, pointerEvents: "none" }}>{label}</div>
+    );
+
+    const healthRowStyle: React.CSSProperties = { background: T.bg, border: `1px solid ${T.border}`, borderRadius: T.radius, padding: `${s(2)} ${s(3)}`, display: "flex", justifyContent: "space-between", alignItems: "center", gap: s(2), fontFamily: T.font, fontSize: "0.82rem", color: T.text, cursor: "pointer", textAlign: "left", width: "100%", textDecoration: "none" };
 
     // ── Login View ──
     if (view === "login") {
@@ -498,18 +527,23 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                 </div>
 
                 {navItem("overview", "Overview")}
+                {navGroup("Operations")}
                 {navItem("hotels", "Hotels")}
                 {navItem("create_hotel", "Add Hotel")}
-                {navItem("regions", "Serving Regions")}
+                {navItem("geography", "Geography")}
+                {navGroup("People")}
                 {navItem("admins", "Platform Admins")}
                 {navItem("create_admin", "Add Admin")}
+                {navGroup("Communications")}
+                {navItem("communications", "Communications")}
+                {navGroup("Governance")}
                 {navItem("audit", "Audit Log")}
                 {navItem("outbox", "Outbox")}
-                {navItem("communications", "Communications")}
+                {navGroup("Account")}
                 {navItem("profile", "My Profile")}
 
                 <div style={{ marginTop: "auto", paddingTop: s(5), borderTop: `1px solid ${T.border}` }}>
-                    {user && <div style={{ fontSize: "0.8rem", color: T.textMuted, marginBottom: s(2), fontWeight: 500 }}>{user.name}</div>}
+                    {user && <div style={{ fontSize: "0.8rem", color: T.textMuted, marginBottom: s(1), fontWeight: 500 }}>{user.name} <span style={{ fontSize: "0.68rem", color: T.textDim, fontWeight: 800 }}>· {user.role?.replace("PLATFORM_", "").toLowerCase()}</span></div>}
                     <button onClick={handleLogout} style={{ background: "none", border: "none", color: T.textDim, fontSize: "0.85rem", cursor: "pointer", padding: 0, fontWeight: 500, display: "inline-flex", alignItems: "center", gap: s(2) }}><LogOut size={15} /> Sign Out</button>
                 </div>
             </nav>
@@ -571,6 +605,34 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                 ⚠ {dashboard.failedOutboxCount} failed outbox message{dashboard.failedOutboxCount > 1 ? "s" : ""} — review
                             </div>
                         )}
+                        {(geoAlerts.townsMissingActiveArea.length > 0 || geoAlerts.hotelsInInactiveTowns.length > 0 || geoAlerts.inactiveAreasWithCustomers.length > 0) && (
+                            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: "18px", padding: s(4), marginBottom: s(5) }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: s(2), marginBottom: s(3) }}>
+                                    <MapPin size={16} color={T.warning} />
+                                    <h2 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 800, color: T.text }}>Geography health</h2>
+                                </div>
+                                <div style={{ display: "flex", flexDirection: "column", gap: s(1) }}>
+                                    {geoAlerts.townsMissingActiveArea.map((t) => (
+                                        <button key={t.id} onClick={() => { setFocusTownId(t.id); setView("geography"); }} style={healthRowStyle}>
+                                            <span style={{ fontWeight: 700 }}>⚠<span style={{ marginLeft: s(1) }}>"{t.name}" has no active local area</span></span>
+                                            <span style={{ color: T.textDim }}>Open →</span>
+                                        </button>
+                                    ))}
+                                    {geoAlerts.hotelsInInactiveTowns.map((t) => (
+                                        <button key={`h-${t.id}`} onClick={() => { setFocusTownId(t.id); setView("geography"); }} style={healthRowStyle}>
+                                            <span style={{ fontWeight: 700 }}>⚠<span style={{ marginLeft: s(1) }}>{t.count} hotel{t.count > 1 ? "s are" : " is"} in the inactive town "{t.name}"</span></span>
+                                            <span style={{ color: T.textDim }}>Open →</span>
+                                        </button>
+                                    ))}
+                                    {geoAlerts.inactiveAreasWithCustomers.map((a) => (
+                                        <a key={`a-${a.id}`} href="#" onClick={(e) => { e.preventDefault(); setFocusTownId(a.townId); setView("geography"); }} style={healthRowStyle}>
+                                            <span style={{ fontWeight: 700 }}>⚠<span style={{ marginLeft: s(1) }}>{a.count} saved customer{a.count > 1 ? "s" : ""} on inactive area "{a.name}" ({a.townName})</span></span>
+                                            <span style={{ color: T.textDim }}>Open →</span>
+                                        </a>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                         <div style={{ display: "flex", gap: s(4) }}>
                             <button onClick={() => setView("create_hotel")} style={{ background: T.primary, color: "white", border: "none", padding: `${s(3)} ${s(6)}`, borderRadius: T.radius, fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}>＋ Add Hotel</button>
                             <button onClick={() => setView("create_admin")} style={{ background: T.surface, color: T.primary, border: `1px solid ${T.primary}`, padding: `${s(3)} ${s(6)}`, borderRadius: T.radius, fontWeight: 600, fontSize: "0.9rem", cursor: "pointer" }}>＋ Add Platform Admin</button>
@@ -619,8 +681,8 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                     </>
                 ) : view === "hotel_detail" && selectedHotel ? (
                     <HotelDetail hotelId={selectedHotel.id} onBack={() => setView("hotels")} onToggle={handleToggleHotel} onToggleListing={handleToggleListing} onDelete={handleDeleteHotel} token={token} regions={regions} />
-                ) : view === "regions" ? (
-                    <ServingRegionsPage regions={regions} megaRegions={megaRegions} token={token} onChanged={setRegions} onMegaRegionsChanged={setMegaRegions} />
+                ) : view === "geography" ? (
+                    <GeographyWorkspace token={token} user={{ id: user?.id ?? "", username: user?.username ?? "", name: user?.name ?? "", role: user?.role ?? "" }} focusTownId={focusTownId} onOpenHotel={(id) => { const h = hotels.find((x) => x.id === id); if (h) { setSelectedHotel(h); setView("hotel_detail"); } }} />
                 ) : view === "create_hotel" ? (
                     createResult ? (
                         <div style={{ textAlign: "center", padding: s(10) }}>
@@ -870,86 +932,8 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
     );
 };
 
-function ServingRegionsPage({ regions, megaRegions, token, onChanged, onMegaRegionsChanged }: { regions: DeliveryRegion[]; megaRegions: MegaRegion[]; token: string; onChanged: (regions: DeliveryRegion[]) => void; onMegaRegionsChanged: (regions: MegaRegion[]) => void }) {
-    const [drafts, setDrafts] = useState<Record<string, DeliveryRegion>>({});
-    const [newRegion, setNewRegion] = useState({ name: "", megaRegionId: megaRegions[0]?.id ?? "", type: "OTHER", locationLabel: "Delivery point", locationPlaceholder: "e.g. building, landmark, stall number" });
-    const [newMegaRegion, setNewMegaRegion] = useState({ name: "", type: "COUNTY" });
-    const [saving, setSaving] = useState<string | null>(null);
-    const [creating, setCreating] = useState(false);
-    const [creatingMegaRegion, setCreatingMegaRegion] = useState(false);
-
-    const draftFor = (region: DeliveryRegion) => drafts[region.id] ?? region;
-    const saveRegion = async (region: DeliveryRegion) => {
-        setSaving(region.id);
-        const draft = draftFor(region);
-        const res = await apiPatch<DeliveryRegion>(`/platform/zones/${region.id}`, {
-            name: draft.name,
-            megaRegionId: draft.megaRegionId,
-            type: draft.type,
-            locationLabel: draft.locationLabel,
-            locationPlaceholder: draft.locationPlaceholder,
-            active: draft.active,
-        }, token);
-        setSaving(null);
-        if (res.success && res.data) onChanged(regions.map((item) => item.id === region.id ? res.data! : item));
-    };
-    const createRegion = async () => {
-        if (!newRegion.name.trim() || !newRegion.megaRegionId || creating) return;
-        setCreating(true);
-        const res = await apiPost<DeliveryRegion>("/platform/zones", newRegion, token);
-        setCreating(false);
-        if (res.success && res.data) {
-            onChanged([...regions, res.data].sort((a, b) => a.name.localeCompare(b.name)));
-            setNewRegion({ name: "", megaRegionId: newRegion.megaRegionId, type: "OTHER", locationLabel: "Delivery point", locationPlaceholder: "e.g. building, landmark, stall number" });
-        }
-    };
-    const createMegaRegion = async () => {
-        if (!newMegaRegion.name.trim() || creatingMegaRegion) return;
-        setCreatingMegaRegion(true);
-        const res = await apiPost<MegaRegion>("/platform/mega-regions", newMegaRegion, token);
-        setCreatingMegaRegion(false);
-        if (res.success && res.data) {
-            const next = [...megaRegions, res.data].sort((a, b) => a.name.localeCompare(b.name));
-            onMegaRegionsChanged(next);
-            setNewRegion((region) => ({ ...region, megaRegionId: res.data!.id }));
-            setNewMegaRegion({ name: "", type: "COUNTY" });
-        }
-    };
-
-    return <div>
-        <div style={{ marginBottom: s(6) }}><p style={{ color: T.primary, fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase" }}>Marketplace geography</p><h1 style={{ fontSize: "1.6rem", fontWeight: 800, color: T.text, margin: 0 }}>Counties, cities & towns</h1><p style={{ color: T.textMuted, fontSize: "0.9rem", marginTop: s(1) }}>Create counties or cities first, then add towns under them. Each hotel belongs to one town and customers only see hotels in their selected town.</p></div>
-        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radius, padding: s(4), marginBottom: s(5) }}>
-            <h2 style={{ fontSize: "1rem", fontWeight: 700, color: T.text, marginTop: 0 }}>Add county or city</h2>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: s(2) }}><input className="input-field" value={newMegaRegion.name} onChange={(e) => setNewMegaRegion({ ...newMegaRegion, name: e.target.value })} placeholder="e.g. Nakuru County" /><select className="input-field" value={newMegaRegion.type} onChange={(e) => setNewMegaRegion({ ...newMegaRegion, type: e.target.value })}><option value="COUNTY">County</option><option value="CITY">City</option><option value="OTHER">Other</option></select></div>
-            <button type="button" onClick={() => void createMegaRegion()} disabled={creatingMegaRegion || !newMegaRegion.name.trim()} style={{ marginTop: s(3), background: T.primary, color: "white", border: "none", padding: `${s(2)} ${s(4)}`, borderRadius: T.radius, fontWeight: 700, opacity: creatingMegaRegion || !newMegaRegion.name.trim() ? 0.6 : 1 }}>{creatingMegaRegion ? "Adding…" : "Add county or city"}</button>
-        </div>
-        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radius, padding: s(4), marginBottom: s(5) }}>
-            <h2 style={{ fontSize: "1rem", fontWeight: 700, color: T.text, marginTop: 0 }}>Add town</h2>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: s(2) }}>
-                <input className="input-field" value={newRegion.name} onChange={(e) => setNewRegion({ ...newRegion, name: e.target.value })} placeholder="e.g. Naivasha Town" />
-                <select className="input-field" value={newRegion.megaRegionId} onChange={(e) => setNewRegion({ ...newRegion, megaRegionId: e.target.value })}><option value="">Select county or city</option>{megaRegions.filter((region) => region.active !== false).map((region) => <option key={region.id} value={region.id}>{region.name}</option>)}</select>
-                <input className="input-field" value={newRegion.locationLabel} onChange={(e) => setNewRegion({ ...newRegion, locationLabel: e.target.value })} placeholder="Location label" />
-                <input className="input-field" value={newRegion.locationPlaceholder} onChange={(e) => setNewRegion({ ...newRegion, locationPlaceholder: e.target.value })} placeholder="Location example" />
-            </div>
-            <button type="button" onClick={() => void createRegion()} disabled={creating || !newRegion.name.trim() || !newRegion.megaRegionId} style={{ marginTop: s(3), background: T.primary, color: "white", border: "none", padding: `${s(2)} ${s(4)}`, borderRadius: T.radius, fontWeight: 700, opacity: creating || !newRegion.name.trim() || !newRegion.megaRegionId ? 0.6 : 1 }}>{creating ? "Adding…" : "Add town"}</button>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: s(3) }}>
-            {regions.map((region) => { const draft = draftFor(region); return <div key={region.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radius, padding: s(4) }}>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: s(2) }}>
-                    <input className="input-field" value={draft.name} onChange={(e) => setDrafts({ ...drafts, [region.id]: { ...draft, name: e.target.value } })} />
-                    <select className="input-field" value={draft.megaRegionId} onChange={(e) => setDrafts({ ...drafts, [region.id]: { ...draft, megaRegionId: e.target.value } })}><option value="">Select county or city</option>{megaRegions.map((megaRegion) => <option key={megaRegion.id} value={megaRegion.id}>{megaRegion.name}</option>)}</select>
-                    <input className="input-field" value={draft.locationLabel} onChange={(e) => setDrafts({ ...drafts, [region.id]: { ...draft, locationLabel: e.target.value } })} />
-                    <input className="input-field" value={draft.locationPlaceholder} onChange={(e) => setDrafts({ ...drafts, [region.id]: { ...draft, locationPlaceholder: e.target.value } })} />
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: s(3), marginTop: s(3) }}><label style={{ display: "flex", alignItems: "center", gap: s(2), color: T.textMuted, fontSize: "0.85rem" }}><input type="checkbox" checked={draft.active !== false} onChange={(e) => setDrafts({ ...drafts, [region.id]: { ...draft, active: e.target.checked } })} /> Available to customers</label><button type="button" onClick={() => void saveRegion(region)} disabled={saving === region.id} style={{ marginLeft: "auto", background: T.primary, color: "white", border: "none", padding: `${s(2)} ${s(4)}`, borderRadius: T.radius, fontWeight: 700 }}>{saving === region.id ? "Saving…" : "Save changes"}</button></div>
-            </div>; })}
-            {regions.length === 0 && <div style={{ color: T.textMuted, padding: s(6), textAlign: "center" }}>No towns configured.</div>}
-        </div>
-    </div>;
-}
-
 // ── Hotel Detail sub-view ──
-function HotelDetail({ hotelId, onBack, onToggle, onToggleListing, onDelete, token: tok, regions }: { hotelId: string; onBack: () => void; onToggle: (id: string, action: "open" | "close") => void; onToggleListing: (id: string, currentlyListed: boolean) => void; onDelete: (id: string) => void; token: string; regions: DeliveryRegion[] }) {
+function HotelDetail({ hotelId, onBack, onToggle, onToggleListing, onDelete, token: tok, regions: townOptions }: { hotelId: string; onBack: () => void; onToggle: (id: string, action: "open" | "close") => void; onToggleListing: (id: string, currentlyListed: boolean) => void; onDelete: (id: string) => void; token: string; regions: { id: string; name: string }[] }) {
     const [hotel, setHotel] = useState<Hotel | null>(null);
     const [detailLoading, setDetailLoading] = useState(true);
     const [zoneId, setZoneId] = useState("");
@@ -1082,14 +1066,14 @@ function HotelDetail({ hotelId, onBack, onToggle, onToggleListing, onDelete, tok
             </div>
 
             <div style={{ marginBottom: s(6), padding: s(4), background: T2.surface, border: `1px solid ${T2.border}`, borderRadius: T2.radius, maxWidth: "520px" }}>
-                <h3 style={{ fontSize: "0.9rem", fontWeight: 700, color: T2.text, marginBottom: s(2) }}>Delivery Region</h3>
-                <p style={{ color: T2.textMuted, fontSize: "0.8rem", marginBottom: s(2) }}>Customers see this hotel when they choose this delivery area.</p>
+                <h3 style={{ fontSize: "0.9rem", fontWeight: 700, color: T2.text, marginBottom: s(2) }}>Hotel Relocation & Delivery Town</h3>
+                <p style={{ color: T2.textMuted, fontSize: "0.8rem", marginBottom: s(2) }}>Relocate this hotel to a different town or delivery area. Customers browsing in the chosen town will discover this hotel.</p>
                 <div style={{ display: "flex", gap: s(2) }}>
                     <select value={zoneId} onChange={(event) => setZoneId(event.target.value)} className="input-field" style={{ fontFamily: T2.font, flex: 1 }}>
-                        <option value="">Select a region</option>
-                        {regions.map((region) => <option key={region.id} value={region.id}>{region.name}</option>)}
+                        <option value="">Select target town</option>
+                        {townOptions.map((region) => <option key={region.id} value={region.id}>{region.name}</option>)}
                     </select>
-                    <button type="button" onClick={() => void saveRegion()} disabled={zoneSaving || !zoneId} style={{ background: T2.primary, color: "white", border: "none", borderRadius: T2.radius, padding: `0 ${s(3)}`, fontWeight: 700, opacity: zoneSaving || !zoneId ? 0.6 : 1 }}>{zoneSaving ? "Saving…" : "Save"}</button>
+                    <button type="button" onClick={() => void saveRegion()} disabled={zoneSaving || !zoneId || zoneId === hotel.zone?.id} style={{ background: T2.primary, color: "white", border: "none", borderRadius: T2.radius, padding: `${s(2)} ${s(4)}`, fontWeight: 700, opacity: zoneSaving || !zoneId || zoneId === hotel.zone?.id ? 0.6 : 1, cursor: zoneSaving || !zoneId || zoneId === hotel.zone?.id ? "not-allowed" : "pointer" }}>{zoneSaving ? "Relocating…" : "Relocate Hotel"}</button>
                 </div>
             </div>
 

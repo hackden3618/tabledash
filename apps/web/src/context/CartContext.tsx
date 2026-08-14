@@ -75,8 +75,9 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setCart((local) => {
         const merged = new Map(remote.map((item) => [item.id, item]));
         for (const item of local) {
-          const existing = merged.get(item.id);
-          merged.set(item.id, existing ? { ...existing, quantity: Math.min(existing.quantity + item.quantity, existing.stockQty ?? Number.MAX_SAFE_INTEGER) } : item);
+          if (!merged.has(item.id)) {
+            merged.set(item.id, item);
+          }
         }
         return [...merged.values()];
       });

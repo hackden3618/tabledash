@@ -245,7 +245,7 @@ export const loginPlatformAdmin = async (
   username: string,
   password: string,
   jwtSign: (payload: Record<string, any>) => Promise<string>
-): Promise<{ token: string; user: { id: string; username: string; name: string } }> => {
+): Promise<{ token: string; user: { id: string; username: string; name: string; role: string } }> => {
   const user = await prisma.platformAdmin.findUnique({
     where: { username: username.trim() },
   });
@@ -264,6 +264,7 @@ export const loginPlatformAdmin = async (
     type: "platform",
     username: user.username,
     name: user.name,
+    role: user.role,
     exp: Math.floor(Date.now() / 1000) + 7200,
   });
 
@@ -273,6 +274,7 @@ export const loginPlatformAdmin = async (
       id: user.id,
       username: user.username,
       name: user.name,
+      role: user.role,
     },
   };
 };
@@ -280,7 +282,7 @@ export const loginPlatformAdmin = async (
 export const verifyPlatformAdminToken = async (
   token: string,
   jwtVerify: (token: string) => Promise<Record<string, any> | false>
-): Promise<{ id: string; username: string; name: string }> => {
+): Promise<{ id: string; username: string; name: string; role: string }> => {
   try {
     const payload = await jwtVerify(token);
 
@@ -300,6 +302,7 @@ export const verifyPlatformAdminToken = async (
       id: user.id,
       username: user.username,
       name: user.name,
+      role: user.role,
     };
   } catch (err) {
     throw new Error("Invalid or expired session token");
@@ -307,7 +310,7 @@ export const verifyPlatformAdminToken = async (
 };
 
 export const updatePlatformAdminProfile = async (adminId: string, input: { name?: string; username?: string }) => {
-  return prisma.platformAdmin.update({ where: { id: adminId }, data: { ...(input.name !== undefined ? { name: input.name.trim() } : {}), ...(input.username !== undefined ? { username: input.username.trim() } : {}) }, select: { id: true, username: true, name: true } });
+  return prisma.platformAdmin.update({ where: { id: adminId }, data: { ...(input.name !== undefined ? { name: input.name.trim() } : {}), ...(input.username !== undefined ? { username: input.username.trim() } : {}) }, select: { id: true, username: true, name: true, role: true } });
 };
 
 export const changePlatformAdminPassword = async (adminId: string, currentPassword: string, newPassword: string) => {

@@ -250,7 +250,22 @@ export const updateCustomerProfile = async (customerId: string, input: { firstNa
   if (input.firstName !== undefined) data.firstName = input.firstName.trim();
   if (input.lastName !== undefined) data.lastName = input.lastName?.trim() || null;
   if (input.knownName !== undefined) data.knownName = input.knownName?.trim() || null;
-  if (input.townRegionId !== undefined) data.townRegionId = input.townRegionId;
+  if (input.townRegionId !== undefined) {
+    // An inactive local area (or one whose town/county is inactive) can never
+    // be selected by a customer — the check is server-side so a stale or
+    // deactivated record can't silently become someone's saved delivery zone.
+    if (input.townRegionId !== null) {
+      const area = await prisma.townRegion.findUnique({
+        where: { id: input.townRegionId },
+        select: { active: true, town: { select: { active: true, megaRegion: { select: { active: true } } } } },
+      });
+      if (!area) throw new Error("That delivery area is no longer available.");
+      if (!area.active || !area.town.active || !area.town.megaRegion.active) {
+        throw new Error("That delivery area is currently unavailable. Please choose another.");
+      }
+    }
+    data.townRegionId = input.townRegionId;
+  }
 
   const updated = await prisma.customer.update({
     where: { id: customerId },

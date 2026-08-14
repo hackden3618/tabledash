@@ -19,6 +19,7 @@ import { hotelsRoute } from "./src/modules/hotels/route";
 import { menuRoute } from "./src/modules/menu/route";
 import { ordersRoute } from "./src/modules/orders/route";
 import { platformRoute } from "./src/modules/platform/routes";
+import { geographyRoute } from "./src/modules/geography/route";
 import { settingsRoute } from "./src/modules/settings/route";
 import { uploadRoute } from "./src/modules/upload/route";
 import { pushRoute } from "./src/modules/push/route";
@@ -207,6 +208,7 @@ export const app = new Elysia()
   .use(uploadRoute)
   .use(pushRoute)
   .use(platformRoute)
+  .use(geographyRoute)
   .use(messagingRoute)
   .use(financeRoute)
 

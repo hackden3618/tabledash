@@ -56,18 +56,19 @@ export interface DeliveryFeeQuote {
 }
 
 /** Server-side delivery pricing. Every hotel charges its configured price for
- * the selected platform region, falling back to its general-area fee (KSh 50
- * by default). The hotel's home region is not silently exempt. */
+ * the selected delivery sub-area (TownRegion), falling back to its generic fee
+ * (KSh 50 by default). Hotels in the customer's exact sub-area typically get a
+ * lower or zero fee; ones elsewhere in the town use their generic rate. */
 export async function getDeliveryFeeQuote(hotelIds: string[], deliveryZoneId?: string): Promise<DeliveryFeeQuote[]> {
     const uniqueHotelIds = [...new Set(hotelIds)];
     if (!uniqueHotelIds.length) return [];
     const hotels = await prisma.hotel.findMany({
         where: { id: { in: uniqueHotelIds }, deletedAt: null },
-        select: { id: true, zoneId: true, genericDeliveryFee: true, deliveryFees: { select: { zoneId: true, amount: true } } },
+        select: { id: true, zoneId: true, genericDeliveryFee: true, deliveryFees: { select: { townRegionId: true, amount: true } } },
     });
     if (hotels.length !== uniqueHotelIds.length) throw new Error("One or more hotels are unavailable");
     return hotels.map((hotel) => {
-        const configured = deliveryZoneId ? hotel.deliveryFees.find((fee) => fee.zoneId === deliveryZoneId) : undefined;
+        const configured = deliveryZoneId ? hotel.deliveryFees.find((fee) => fee.townRegionId === deliveryZoneId) : undefined;
         return { hotelId: hotel.id, deliveryFee: Number(configured?.amount ?? hotel.genericDeliveryFee) };
     });
 }

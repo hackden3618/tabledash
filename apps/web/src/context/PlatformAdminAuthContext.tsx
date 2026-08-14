@@ -7,6 +7,7 @@ interface PlatformMe {
   id: string;
   username: string;
   name: string;
+  role: string;
 }
 
 interface PlatformAdminAuthContextValue {

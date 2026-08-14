@@ -141,23 +141,42 @@ export const getHotelName = async (hotelId?: string): Promise<string> => {
 };
 
 export interface DeliveryFeeSetting {
-  zoneId: string;
+  townRegionId: string;
   amount: number;
 }
 
 export async function getHotelDeliverySettings(hotelId: string) {
-  const [hotel, zones] = await Promise.all([
-    prisma.hotel.findUnique({
-      where: { id: hotelId },
-      select: { genericDeliveryFee: true, deliveryFees: { select: { zoneId: true, amount: true } } },
-    }),
-    prisma.zone.findMany({ where: { active: true }, select: { id: true, name: true, type: true }, orderBy: { name: "asc" } }),
-  ]);
+  const hotel = await prisma.hotel.findUnique({
+    where: { id: hotelId },
+    select: {
+      zoneId: true,
+      genericDeliveryFee: true,
+      deliveryFees: { select: { townRegionId: true, amount: true } },
+      zone: { select: { id: true, name: true } },
+    },
+  });
   if (!hotel) throw new Error("Hotel not found");
-  const fees = new Map(hotel.deliveryFees.map((fee) => [fee.zoneId, Number(fee.amount)]));
+
+  // Only show sub-areas (TownRegion) within this hotel's own town.
+  const townRegions = await prisma.townRegion.findMany({
+    where: { townId: hotel.zoneId, active: true },
+    select: { id: true, name: true, isFallback: true },
+    orderBy: [{ isFallback: "desc" }, { displayOrder: "asc" }, { name: "asc" }],
+  });
+
+  const fees = new Map(hotel.deliveryFees.map((fee) => [fee.townRegionId, Number(fee.amount)]));
+
+  const list = townRegions.map((tr) => ({
+    id: tr.id,
+    name: tr.isFallback ? `${tr.name} (default)` : tr.name,
+    type: "ZONE",
+    isFallback: tr.isFallback,
+    amount: fees.get(tr.id) ?? null,
+  }));
+
   return {
     genericDeliveryFee: Number(hotel.genericDeliveryFee),
-    deliveryFees: zones.map((zone) => ({ ...zone, amount: fees.get(zone.id) ?? null })),
+    deliveryFees: list,
   };
 }
 
@@ -166,15 +185,26 @@ export async function updateHotelDeliverySettings(hotelId: string, genericDelive
   for (const fee of deliveryFees) {
     if (!Number.isFinite(fee.amount) || fee.amount < 0) throw new Error("Delivery fees must be zero or greater");
   }
+
+  // Validate that all incoming townRegionIds actually exist in the DB to avoid FK violations.
+  const validRegions = deliveryFees.length > 0
+    ? await prisma.townRegion.findMany({
+        where: { id: { in: deliveryFees.map((fee) => fee.townRegionId) } },
+        select: { id: true },
+      })
+    : [];
+  const validIds = new Set(validRegions.map((r) => r.id));
+  const safeFees = deliveryFees.filter((fee) => validIds.has(fee.townRegionId));
+
   await prisma.$transaction(async (tx) => {
     await tx.hotel.update({ where: { id: hotelId }, data: { genericDeliveryFee } });
     await tx.hotelDeliveryFee.deleteMany({
-      where: { hotelId, ...(deliveryFees.length ? { zoneId: { notIn: deliveryFees.map((fee) => fee.zoneId) } } : {}) },
+      where: { hotelId, ...(safeFees.length ? { townRegionId: { notIn: safeFees.map((fee) => fee.townRegionId) } } : {}) },
     });
-    for (const fee of deliveryFees) {
+    for (const fee of safeFees) {
       await tx.hotelDeliveryFee.upsert({
-        where: { hotelId_zoneId: { hotelId, zoneId: fee.zoneId } },
-        create: { hotelId, zoneId: fee.zoneId, amount: fee.amount },
+        where: { hotelId_townRegionId: { hotelId, townRegionId: fee.townRegionId } },
+        create: { hotelId, townRegionId: fee.townRegionId, amount: fee.amount },
         update: { amount: fee.amount },
       });
     }

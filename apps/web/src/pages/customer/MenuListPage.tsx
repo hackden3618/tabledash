@@ -78,7 +78,7 @@ interface ZoneItem {
     locationLabel: string;
     locationPlaceholder: string;
     megaRegion?: { id: string; name: string; type: string };
-    deliveryRegions?: { id: string; name: string }[];
+    deliveryRegions?: { id: string; name: string; isFallback: boolean }[];
 }
 
 interface MenuListPageProps {
@@ -139,6 +139,15 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
     const [activeZoneId, setActiveZoneId] = useState(() => localStorage.getItem("ladha_zone_id") || "");
     const [activeTownRegionId, setActiveTownRegionId] = useState(() => localStorage.getItem("ladha_town_region_id") || "");
     const [activeTownRegionName, setActiveTownRegionName] = useState(() => localStorage.getItem("ladha_town_region_name") || "");
+    // True when the customer is in the town's fallback/general delivery area —
+    // no specific sub-zone, so every hotel is "not nearby" and delivery charges
+    // may apply. Derived from the active zone list once loaded.
+    const isInFallbackArea = React.useMemo(() => {
+        if (!activeTownRegionId) return false;
+        const activeZone = zones.find((z) => z.id === activeZoneId);
+        const activeRegion = activeZone?.deliveryRegions?.find((r) => r.id === activeTownRegionId);
+        return activeRegion?.isFallback === true;
+    }, [activeTownRegionId, activeZoneId, zones]);
     // Wizard state — county then town then zone. Drafts, not committed until
     // the final zone tap; backing out doesn't touch activeZoneId/localStorage.
     const [pickerStep, setPickerStep] = useState<"county" | "town" | "zone">("county");
@@ -550,14 +559,13 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
 
                                             {pickerStep === "zone" && zonesInTown.map((zoneOption) => {
                                                 const selected = zoneOption.id === activeTownRegionId;
-                                                const isGeneral = zoneOption.name === "General Area";
                                                 return (
                                                     <button type="button" key={zoneOption.id} onClick={() => handleZoneChange(pickerTownId, zoneOption.id, zoneOption.name)}
                                                         className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${selected ? "border-[#114B36] bg-[#EBF5F0]" : "border-transparent bg-white hover:border-[#D1E4D8] hover:bg-[#F7FBF8]"}`}>
                                                         <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${selected ? "bg-[#114B36] text-white" : "bg-[#F1EAE1] text-[#114B36]"}`}><MapPin size={18} /></span>
                                                         <span className="min-w-0 flex-1">
                                                             <span className="block text-sm font-black text-[#1F2937]">{zoneOption.name}</span>
-                                                            {isGeneral && <span className="mt-0.5 block text-xs text-[#6B7280]">Not sure of your exact area? Start here.</span>}
+                                                            {zoneOption.isFallback && <span className="mt-0.5 block text-xs text-[#6B7280]">Not sure of your exact area? Start here.</span>}
                                                         </span>
                                                         {selected && <Check size={19} className="text-[#114B36]" />}
                                                     </button>
@@ -593,7 +601,7 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
 
                         <section>
                             <div className="mb-4"><p className="text-xs font-bold uppercase tracking-[0.16em] text-[#789083]">Discover</p><h2 className="mt-1 text-xl font-black text-[#1F2937]">Hotels in your town</h2></div>
-                            {loading ? <div className="grid grid-cols-2 gap-3">{[1, 2, 3, 4].map((i) => <div key={i} className="h-48 animate-pulse rounded-2xl bg-[#E9E5DE]" />)}</div> : hotels.length === 0 ? <DiscoverEmptyState /> : <div className="grid grid-cols-2 gap-3">{hotels.map((hotel) => <button key={hotel.id} onClick={() => onNavigateToHotel ? onNavigateToHotel(hotel.slug) : selectHotel(hotel)} className="group overflow-hidden rounded-2xl border border-[#E8DED2] bg-white text-left shadow-sm transition hover:-translate-y-1 hover:shadow-lg"><div className="relative h-28 bg-[#EBF5F0]">{hotel.imageUrl ? <img src={hotel.imageUrl} alt={hotel.name} loading="lazy" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" /> : <Building2 size={30} className="absolute inset-0 m-auto text-[#114B36]" />}<span className={`absolute left-2 top-2 rounded-full px-2 py-1 text-[0.58rem] font-bold ${hotel.isOpen ? "bg-[#E7F5EA] text-[#18733C]" : "bg-[#FFF3D6] text-[#9A6500]"}`}>{hotel.isOpen ? "OPEN" : "CLOSED"}</span></div><div className="p-3"><h3 className="truncate text-sm font-black text-[#1F2937]">{hotel.name}</h3><div className="mt-1 flex flex-wrap gap-1"><span className="rounded-full bg-[#EBF5F0] px-2 py-1 text-[0.58rem] font-bold text-[#114B36]"><MapPin size={10} className="mr-1 inline" />{hotel.locationName ?? "Serving area"}</span></div><p className="mt-1 text-[0.68rem] text-[#6B7280]">{hotel.productCount} available items</p><RatingStars rating={hotel.rating} count={hotel.ratingCount} className="mt-2" /></div></button>)}</div>}
+                            {loading ? <div className="grid grid-cols-2 gap-3">{[1, 2, 3, 4].map((i) => <div key={i} className="h-48 animate-pulse rounded-2xl bg-[#E9E5DE]" />)}</div> : hotels.length === 0 ? <DiscoverEmptyState /> : <div className="grid grid-cols-2 gap-3">{hotels.map((hotel) => <button key={hotel.id} onClick={() => onNavigateToHotel ? onNavigateToHotel(hotel.slug) : selectHotel(hotel)} className="group overflow-hidden rounded-2xl border border-[#E8DED2] bg-white text-left shadow-sm transition hover:-translate-y-1 hover:shadow-lg"><div className="relative h-28 bg-[#EBF5F0]">{hotel.imageUrl ? <img src={hotel.imageUrl} alt={hotel.name} loading="lazy" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" /> : <Building2 size={30} className="absolute inset-0 m-auto text-[#114B36]" />}<span className={`absolute left-2 top-2 rounded-full px-2 py-1 text-[0.58rem] font-bold ${hotel.isOpen ? "bg-[#E7F5EA] text-[#18733C]" : "bg-[#FFF3D6] text-[#9A6500]"}`}>{hotel.isOpen ? "OPEN" : "CLOSED"}</span></div><div className="p-3"><h3 className="truncate text-sm font-black text-[#1F2937]">{hotel.name}</h3><div className="mt-1 flex flex-wrap gap-1"><span className="rounded-full bg-[#EBF5F0] px-2 py-1 text-[0.58rem] font-bold text-[#114B36]"><MapPin size={10} className="mr-1 inline" />{hotel.locationName ?? "Serving area"}</span>{isInFallbackArea && <span className="rounded-full bg-[#FFF7ED] px-2 py-1 text-[0.58rem] font-bold text-[#92400E]">Delivery charges may apply</span>}</div><p className="mt-1 text-[0.68rem] text-[#6B7280]">{hotel.productCount} available items</p><RatingStars rating={hotel.rating} count={hotel.ratingCount} className="mt-2" /></div></button>)}</div>}
                         </section>
 
                         {discoveryMeals.length > 0 && <section><div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-[#789083]">Based on completed paid orders</p><h2 className="mt-1 text-xl font-black text-[#1F2937]">{mealRanking === "trending" ? "Trending meals" : "Popular meals"}</h2></div><div className="flex gap-1.5" aria-label="Meal ranking"><button onClick={() => setMealRanking("popular")} className={`rounded-full px-3 py-1.5 text-[0.65rem] font-bold transition ${mealRanking === "popular" ? "bg-[#114B36] text-white" : "border border-[#DCE5DE] bg-white text-[#6B7280]"}`}>Popular</button><button onClick={() => setMealRanking("trending")} className={`rounded-full px-3 py-1.5 text-[0.65rem] font-bold transition ${mealRanking === "trending" ? "bg-[#114B36] text-white" : "border border-[#DCE5DE] bg-white text-[#6B7280]"}`}>Trending</button><Sparkles size={17} className="ml-1 self-center text-[#C58A1A]" /></div></div><div className="flex gap-3 overflow-x-auto scrollbar-hide">{discoveryMeals.slice(0, 6).map((meal) => <button key={meal.id} onClick={() => { const hotel = hotels.find((entry) => entry.id === meal.hotelId); if (hotel) selectHotel(hotel); }} className="min-w-[152px] overflow-hidden rounded-2xl border border-[#E8DED2] bg-white text-left shadow-sm transition hover:shadow-md"><div className="h-28 bg-[#F3F0E9]">{meal.imageUrl ? <img src={meal.imageUrl} alt={meal.name} loading="lazy" className="h-full w-full object-cover" /> : <Utensils size={24} className="mx-auto pt-10 text-[#9CA3AF]" />}</div><div className="p-3"><h3 className="truncate text-sm font-black text-[#1F2937]">{meal.name}</h3><p className="mt-1 truncate text-[0.65rem] text-[#6B7280]">{meal.hotelName}</p>{meal.rating ? <p className="mt-1 text-[0.65rem] font-bold text-[#A16207]">★ {meal.rating.toFixed(1)} ({meal.ratingCount})</p> : <p className="mt-1 text-[0.62rem] text-[#9CA3AF]">No ratings yet</p>}<p className="mt-2 text-sm font-black text-[#114B36]">KSh {meal.price}</p></div></button>)}</div></section>}

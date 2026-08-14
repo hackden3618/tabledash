@@ -22,7 +22,7 @@ interface StaffUser {
     receiveSms: boolean;
     adminUserId?: string | null;
 }
-interface DeliveryFeeRow { id: string; name: string; type: string; amount: number | null; }
+interface DeliveryFeeRow { id: string; name: string; type: string; isFallback?: boolean; amount: number | null; }
 
 interface AdminSettingsPageProps {
     token: string;
@@ -156,7 +156,7 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ token, onB
         const body: Record<string, unknown> = {
             hotelIsOpen, autoCloseAt: autoCloseIso, hotelImageUrl: hotelImageUrl.trim() || null,
             genericDeliveryFee: genericFee,
-            deliveryFees: deliveryFees.filter((fee) => fee.amount !== null).map((fee) => ({ zoneId: fee.id, amount: Number(fee.amount) })),
+            deliveryFees: deliveryFees.filter((fee) => fee.amount !== null).map((fee) => ({ townRegionId: fee.id, amount: Number(fee.amount) })),
         };
         const staffPhoneVal = staffPhone.trim();
         if (staffPhoneVal) body.staffPhone = staffPhoneVal;
@@ -333,10 +333,10 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ token, onB
                                         <div>
                                             <label className="flex items-center gap-1.5 text-xs font-bold text-[#4B5563] mb-1"><Store size={13} /> General delivery fee (KSh)</label>
                                             <input type="number" min="0" step="0.01" value={genericDeliveryFee} onChange={(e) => setGenericDeliveryFee(e.target.value)} className="w-full px-3.5 py-2.5 rounded-xl border-2 border-[#D1D5DB] outline-none text-sm focus:border-primary" />
-                                            <p className="text-[0.65rem] text-[#9CA3AF] mt-1">Applied to every platform delivery area without a regional rate (for example, KSh 50).</p>
+                                            <p className="text-[0.65rem] text-[#9CA3AF] mt-1">Applied to any delivery zone in your town without a specific rate (for example, KSh 50).</p>
                                         </div>
                                         <div className="space-y-2">
-                                            <p className="text-xs font-bold text-[#4B5563]">Regional delivery fees</p>
+                                            <p className="text-xs font-bold text-[#4B5563]">Delivery zone fees (in your town)</p>
                                             {deliveryFees.map((fee) => <div key={fee.id} className="flex items-center gap-2"><span className="min-w-0 flex-1 text-xs font-semibold text-[#4B5563] truncate">{fee.name}</span><input type="number" min="0" step="0.01" value={fee.amount ?? ""} placeholder={genericDeliveryFee || "50"} onChange={(e) => setDeliveryFees((current) => current.map((row) => row.id === fee.id ? { ...row, amount: e.target.value === "" ? null : Number(e.target.value) } : row))} className="w-28 px-2.5 py-2 rounded-lg border border-[#D1D5DB] text-sm outline-none focus:border-primary" /><span className="text-[0.65rem] text-[#9CA3AF]">KSh</span></div>)}
                                         </div>
                                     </div>

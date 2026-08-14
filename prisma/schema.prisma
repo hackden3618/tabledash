@@ -117,6 +117,13 @@ enum MegaRegionType {
   OTHER
 }
 
+enum PlatformRole {
+  PLATFORM_OWNER
+  PLATFORM_OPERATIONS
+  PLATFORM_SUPPORT
+  PLATFORM_AUDITOR
+}
+
 enum MealCategory {
     BREAKFAST
     LUNCH
@@ -168,7 +175,6 @@ model Zone {
 
   megaRegion MegaRegion @relation(fields: [megaRegionId], references: [id])
   hotels Hotel[]
-  deliveryFees HotelDeliveryFee[]
   deliveryRegions TownRegion[]
 
   @@unique([megaRegionId, name])
@@ -177,14 +183,23 @@ model Zone {
 }
 
 model TownRegion {
-  id        String   @id @default(uuid()) @db.Uuid
-  townId    String   @map("town_id") @db.Uuid
-  name      String
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  id           String   @id @default(uuid()) @db.Uuid
+  townId       String   @map("town_id") @db.Uuid
+  name         String
+  active       Boolean  @default(true)
+  /// The guaranteed fallback ("General Area") a guest lands on if they don't
+  /// pick a specific local area. Must always exist per town; protected from
+  /// deletion/deactivation and only renamable with deliberate confirmation.
+  isFallback   Boolean  @default(false) @map("is_fallback")
+  /// Optional operational note or landmark guidance shown to delivery staff.
+  note         String?  @db.Text
+  /// Optional display ordering within the town (ascending).
+  displayOrder Int      @default(0) @map("display_order")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
-  town Zone @relation(fields: [townId], references: [id], onDelete: Cascade)
-  customers Customer[]
+  town         Zone              @relation(fields: [townId], references: [id], onDelete: Cascade)
+  customers    Customer[]
+  deliveryFees HotelDeliveryFee[]
 
   @@unique([townId, name])
   @@index([townId, active, name])
@@ -220,29 +235,31 @@ model Hotel {
   @@map("hotels")
 }
 
-// A hotel's charge for delivering into a specific platform region. When a
-// region has no row, the hotel's generic delivery fee applies instead.
+// A hotel's charge for delivering into a specific delivery sub-area (TownRegion)
+// within the hotel's town. When a sub-area has no row, the hotel's generic
+// delivery fee applies instead.
 model HotelDeliveryFee {
-  id        String   @id @default(uuid()) @db.Uuid
-  hotelId   String   @map("hotel_id") @db.Uuid
-  zoneId    String   @map("zone_id") @db.Uuid
-  amount    Decimal  @db.Decimal(10, 2)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+  id           String   @id @default(uuid()) @db.Uuid
+  hotelId      String   @map("hotel_id") @db.Uuid
+  townRegionId String   @map("town_region_id") @db.Uuid
+  amount       Decimal  @db.Decimal(10, 2)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
-  hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
-  zone  Zone  @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  hotel      Hotel      @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  townRegion TownRegion @relation(fields: [townRegionId], references: [id], onDelete: Cascade)
 
-  @@unique([hotelId, zoneId])
+  @@unique([hotelId, townRegionId])
   @@map("hotel_delivery_fees")
 }
 
 model PlatformAdmin {
-  id           String   @id @default(uuid()) @db.Uuid
-  username     String   @unique
-  passwordHash String   @map("password_hash")
+  id           String       @id @default(uuid()) @db.Uuid
+  username     String       @unique
+  passwordHash String       @map("password_hash")
   name         String
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  role         PlatformRole @default(PLATFORM_OPERATIONS)
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz()
 
   @@map("platform_admins")
 }
@@ -577,6 +594,50 @@ model Setting {
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
 
   @@map("settings")
+}
+
+/// Durable platform-level audit trail. Distinct from EventOutbox: outbox
+/// events exist for guaranteed external delivery (SMS), while every sensitive
+/// platform action (geography mutations, hotel reassignment, admin access
+/// changes, reclassifications) writes one immutable AuditLog row in the same
+/// transaction so the whole action is attributable to a specific admin.
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  actorId   String   @map("actor_id") @db.Uuid
+  actorName String   @map("actor_name")
+  action    String
+  entity    String
+  entityId  String?  @map("entity_id") @db.Uuid
+  detail    String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@index([entity, entityId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+/// Temporary migration queue for reclassifying legacy Zone records that were
+/// mis-named as towns when the fine-grained TownRegion level was introduced.
+/// Every row keeps an immutable audit snapshot of the source geometry so the
+/// apply step can re-run safely (idempotent) even if names have changed since.
+model GeographyReclassification {
+  id            String    @id @default(uuid()) @db.Uuid
+  sourceZoneId  String    @map("source_zone_id") @db.Uuid
+  sourceName    String    @map("source_name")
+  proposedTownId String   @map("proposed_town_id") @db.Uuid
+  proposedTownName String @map("proposed_town_name")
+  areaName      String    @map("area_name")
+  status        String    @default("pending") // pending | applied | skipped
+  createdById   String    @map("created_by_id") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  appliedAt     DateTime? @map("applied_at") @db.Timestamptz()
+  appliesTo     Int       @default(0) @map("applies_to")
+  rejectedCount Int       @default(0) @map("rejected_count")
+  error         String?   @db.Text
+
+  @@index([status])
+  @@map("geography_reclassifications")
 }
 
 /// A browser Web Push subscription. ownerType+ownerId identifies who receives
