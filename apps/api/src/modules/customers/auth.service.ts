@@ -168,6 +168,7 @@ export const getCustomerProfile = async (customerId: string) => {
         orderBy: { orderedAt: "desc" },
         take: 10,
       },
+      townRegion: { select: { id: true, name: true, town: { select: { id: true, name: true, megaRegion: { select: { id: true, name: true } } } } } },
     },
   });
 
@@ -187,6 +188,8 @@ export const getCustomerProfile = async (customerId: string) => {
     marketSection: customer.marketSection,
     locationDescription: customer.locationDescription,
     hasPin: Boolean(customer.pinHash),
+    townRegionId: customer.townRegionId,
+    townRegion: customer.townRegion,
     recentOrders: customer.orders.map((order) => ({
       ...order,
       totalAmount: Number(order.totalAmount),
@@ -199,8 +202,8 @@ export const getCustomerProfile = async (customerId: string) => {
   };
 };
 
-export const updateCustomerProfile = async (customerId: string, input: { firstName?: string; lastName?: string; phone?: string; knownName?: string | null }, pin?: string) => {
-  const hasChanges = input.firstName !== undefined || input.lastName !== undefined || input.phone !== undefined || input.knownName !== undefined;
+export const updateCustomerProfile = async (customerId: string, input: { firstName?: string; lastName?: string; phone?: string; knownName?: string | null; townRegionId?: string | null }, pin?: string) => {
+  const hasChanges = input.firstName !== undefined || input.lastName !== undefined || input.phone !== undefined || input.knownName !== undefined || input.townRegionId !== undefined;
   if (!hasChanges) return null;
 
   const customer = await prisma.customer.findUnique({ where: { id: customerId } });
@@ -213,6 +216,10 @@ export const updateCustomerProfile = async (customerId: string, input: { firstNa
   } else if (input.phone !== undefined || input.firstName !== undefined || input.lastName !== undefined || input.knownName !== undefined) {
     throw new Error("PIN is required to update profile information.");
   }
+  // townRegionId is deliberately NOT PIN-gated — picking or changing a
+  // delivery zone is routine, frequent, low-stakes data entry (unlike name/
+  // phone changes which affect account identity), and gating it behind a PIN
+  // the customer may not have set yet would block first-time zone selection.
 
   const phoneChanged = input.phone !== undefined && formatPhone(input.phone) !== customer.phone;
   if (phoneChanged) {
@@ -243,11 +250,17 @@ export const updateCustomerProfile = async (customerId: string, input: { firstNa
   if (input.firstName !== undefined) data.firstName = input.firstName.trim();
   if (input.lastName !== undefined) data.lastName = input.lastName?.trim() || null;
   if (input.knownName !== undefined) data.knownName = input.knownName?.trim() || null;
+  if (input.townRegionId !== undefined) data.townRegionId = input.townRegionId;
 
   const updated = await prisma.customer.update({
     where: { id: customerId },
     data,
-    select: { id: true, accountId: true, firstName: true, lastName: true, phone: true, knownName: true, stallNumber: true, marketSection: true, locationDescription: true, pinHash: true, verifiedAt: true },
+    select: {
+      id: true, accountId: true, firstName: true, lastName: true, phone: true, knownName: true,
+      stallNumber: true, marketSection: true, locationDescription: true, pinHash: true, verifiedAt: true,
+      townRegionId: true,
+      townRegion: { select: { id: true, name: true, town: { select: { id: true, name: true, megaRegion: { select: { id: true, name: true } } } } } },
+    },
   });
 
   return { ...updated, hasPin: Boolean(updated.pinHash), pinHash: undefined, isVerified: Boolean(updated.verifiedAt) };

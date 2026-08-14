@@ -3,11 +3,11 @@ import { motion } from "framer-motion";
 import { useCart } from "../../context/CartContext";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
 import { useNotifications } from "../../context/NotificationsContext";
-import { apiGet, apiPost } from "../../lib/api";
+import { apiGet, apiPost, apiPatch } from "../../lib/api";
 import {
     Utensils, UserCircle2, Moon, Building2,
     Search, Sparkles, MessageCircle, HelpCircle, X, Send,
-    MapPin, ShieldCheck, Leaf, Route, LockKeyhole, ArrowRight, SlidersHorizontal, ChevronDown, Check
+    MapPin, ShieldCheck, Leaf, Route, LockKeyhole, ArrowRight, SlidersHorizontal, ChevronDown, ChevronLeft, Check
 } from "lucide-react";
 import { CustomerNotificationPanel } from "../../components/CustomerNotificationPanel";
 import { Header } from "../../components/ui/Header";
@@ -78,6 +78,7 @@ interface ZoneItem {
     locationLabel: string;
     locationPlaceholder: string;
     megaRegion?: { id: string; name: string; type: string };
+    deliveryRegions?: { id: string; name: string }[];
 }
 
 interface MenuListPageProps {
@@ -136,6 +137,13 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
     const [zoneError, setZoneError] = useState(false);
     const [locationPickerOpen, setLocationPickerOpen] = useState(false);
     const [activeZoneId, setActiveZoneId] = useState(() => localStorage.getItem("ladha_zone_id") || "");
+    const [activeTownRegionId, setActiveTownRegionId] = useState(() => localStorage.getItem("ladha_town_region_id") || "");
+    const [activeTownRegionName, setActiveTownRegionName] = useState(() => localStorage.getItem("ladha_town_region_name") || "");
+    // Wizard state — county then town then zone. Drafts, not committed until
+    // the final zone tap; backing out doesn't touch activeZoneId/localStorage.
+    const [pickerStep, setPickerStep] = useState<"county" | "town" | "zone">("county");
+    const [pickerCountyId, setPickerCountyId] = useState("");
+    const [pickerTownId, setPickerTownId] = useState("");
 
     const fetchHotels = async (zoneId: string | null = activeZoneId || null) => {
         setLoading(true);
@@ -262,19 +270,68 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
                 // runs. Defaulting to the first configured town is both
                 // misleading and can expose the wrong marketplace.
                 setLoading(false);
+                setPickerCountyId("");
+                setPickerTownId("");
+                setPickerStep("county");
                 setLocationPickerOpen(true);
             }
         };
         void loadLocations();
     }, [initialHotelSlug]);
 
-    const handleZoneChange = (zoneId: string) => {
+    const handleZoneChange = (zoneId: string, townRegionId?: string, townRegionName?: string) => {
         if (!zoneId) return;
         setLocationPickerOpen(false);
         setActiveZoneId(zoneId);
         localStorage.setItem("ladha_zone_id", zoneId);
+        if (townRegionId) {
+            setActiveTownRegionId(townRegionId);
+            setActiveTownRegionName(townRegionName || "");
+            localStorage.setItem("ladha_town_region_id", townRegionId);
+            localStorage.setItem("ladha_town_region_name", townRegionName || "");
+            // Best-effort — a guest with no account simply keeps this in
+            // localStorage only, which is fine; nothing here blocks ordering.
+            if (isLoggedIn && token) {
+                void apiPatch("/customers/me", { townRegionId }, token).catch(() => {});
+            }
+        }
         void fetchHotels(zoneId);
     };
+
+    const openLocationPicker = () => {
+        // Resume where they left off rather than always restarting at county —
+        // if a town/county is already selected, jump straight to picking a
+        // zone within it; "change my whole area" is the rare case, reachable
+        // via the back arrows inside the wizard.
+        const currentZone = zones.find((zone) => zone.id === activeZoneId);
+        if (currentZone?.megaRegion) {
+            setPickerCountyId(currentZone.megaRegion.id);
+            setPickerTownId(currentZone.id);
+            setPickerStep("zone");
+        } else {
+            setPickerCountyId("");
+            setPickerTownId("");
+            setPickerStep("county");
+        }
+        setLocationPickerOpen(true);
+    };
+
+    // A returning, logged-in customer's saved zone (set on another device, or
+    // before they'd logged in on this one) takes over from whatever's in this
+    // browser's localStorage — the account is the source of truth once known.
+    useEffect(() => {
+        if (isLoggedIn && customer?.townRegion && customer.townRegion.id !== activeTownRegionId) {
+            const town = customer.townRegion.town;
+            setActiveZoneId(town.id);
+            setActiveTownRegionId(customer.townRegion.id);
+            setActiveTownRegionName(customer.townRegion.name);
+            localStorage.setItem("ladha_zone_id", town.id);
+            localStorage.setItem("ladha_town_region_id", customer.townRegion.id);
+            localStorage.setItem("ladha_town_region_name", customer.townRegion.name);
+            void fetchHotels(town.id);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isLoggedIn, customer?.townRegion?.id]);
 
     const closingTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -416,7 +473,7 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
                         <section className="relative -mx-4 -mt-6 min-h-[19rem] overflow-hidden bg-[#114B36] px-5 pb-12 pt-5 text-white">
                             {heroImage && <><img src={heroImage} alt="Homepage food discovery" loading="eager" className="absolute inset-0 z-0 h-full w-full object-cover opacity-100" /><div className="pointer-events-none absolute inset-y-0 left-0 z-[1] w-[68%] bg-gradient-to-r from-[#063522]/80 via-[#114B36]/45 to-transparent backdrop-blur-[10px] [mask-image:linear-gradient(to_right,black_0%,black_52%,transparent_100%)]" /></>}
                             <div className="relative z-10 max-w-[76%]">
-                                <button type="button" onClick={() => setLocationPickerOpen(true)} disabled={zonesLoading || zones.length === 0} className="inline-flex items-center gap-2 rounded-full border border-white/25 bg-black/15 px-3 py-2 text-left text-xs font-bold text-white backdrop-blur-sm transition hover:bg-black/25 disabled:opacity-70" aria-label="Choose delivery area"><MapPin size={16} /><span>{zonesLoading ? "Loading areas…" : zoneError ? "Delivery area unavailable" : zones.find((zone) => zone.id === activeZoneId)?.name ?? "Choose delivery area"}</span><ChevronDown size={14} /></button>
+                                <button type="button" onClick={openLocationPicker} disabled={zonesLoading || zones.length === 0} className="inline-flex items-center gap-2 rounded-full border border-white/25 bg-black/15 px-3 py-2 text-left text-xs font-bold text-white backdrop-blur-sm transition hover:bg-black/25 disabled:opacity-70" aria-label="Choose delivery area"><MapPin size={16} /><span>{zonesLoading ? "Loading areas…" : zoneError ? "Delivery area unavailable" : (() => { const town = zones.find((zone) => zone.id === activeZoneId); if (!town) return "Choose delivery area"; return activeTownRegionName ? `${activeTownRegionName}, ${town.name}` : town.name; })()}</span><ChevronDown size={14} /></button>
                                 <p className="mt-7 text-sm font-semibold text-white/75">{discovery?.greeting ?? "Good food, close to you."}</p>
                                 <h2 className="mt-2 text-[2.35rem] leading-[1.02] text-white font-black tracking-tight">{discovery?.hero.title ?? "Taste moments that matter."}</h2>
                                 <p className="mt-3 max-w-xs text-sm leading-relaxed text-white/75">{discovery?.hero.description ?? "Fresh meals from trusted local kitchens."}</p>
@@ -424,7 +481,97 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
                             {heroImage && <span className="absolute bottom-4 right-5 z-10 rounded-full bg-white/90 px-3 py-1 text-[0.62rem] font-bold text-[#114B36]">Fresh from a local kitchen</span>}
                         </section>
 
-                        {locationPickerOpen && <div className="fixed inset-0 z-[80] flex items-end justify-center bg-[#10271E]/55 p-3 backdrop-blur-[2px] sm:items-center" role="dialog" aria-modal="true" aria-labelledby="location-picker-title" onMouseDown={(event) => { if (event.target === event.currentTarget) setLocationPickerOpen(false); }}><div className="w-full max-w-md overflow-hidden rounded-[1.75rem] bg-[#FFFDF9] shadow-2xl"><div className="flex items-start justify-between border-b border-[#E8DED2] px-5 py-4"><div><p className="text-[0.65rem] font-black uppercase tracking-[0.16em] text-[#789083]">Delivery location</p><h2 id="location-picker-title" className="mt-1 text-xl font-black text-[#1F2937]">Where should we deliver?</h2><p className="mt-1 text-xs text-[#6B7280]">Hotels are shown only for your selected town.</p></div><button type="button" onClick={() => setLocationPickerOpen(false)} className="rounded-full border-none bg-[#EBF5F0] p-2 text-[#114B36]" aria-label="Close location picker"><span className="text-lg leading-none">×</span></button></div><div className="max-h-[55vh] overflow-y-auto p-3">{zones.map((zone) => { const selected = zone.id === activeZoneId; return <button type="button" key={zone.id} onClick={() => handleZoneChange(zone.id)} className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${selected ? "border-[#114B36] bg-[#EBF5F0]" : "border-transparent bg-white hover:border-[#D1E4D8] hover:bg-[#F7FBF8]"}`}><span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${selected ? "bg-[#114B36] text-white" : "bg-[#F1EAE1] text-[#114B36]"}`}><MapPin size={18} /></span><span className="min-w-0 flex-1"><span className="block text-sm font-black text-[#1F2937]">{zone.name}</span><span className="mt-0.5 block text-xs text-[#6B7280]">{zone.megaRegion?.name ?? "County or city"} · {zone.locationLabel}</span></span>{selected && <Check size={19} className="text-[#114B36]" />}</button>; })}</div><div className="border-t border-[#E8DED2] px-5 py-4"><p className="text-[0.7rem] leading-relaxed text-[#6B7280]">You can change this anytime. Delivery fees are configured by each hotel for your selected town.</p></div></div></div>}
+                        {locationPickerOpen && (() => {
+                            const counties = [...new Map(zones.filter((z) => z.megaRegion).map((z) => [z.megaRegion!.id, z.megaRegion!])).values()];
+                            const townsInCounty = zones.filter((z) => z.megaRegion?.id === pickerCountyId);
+                            const currentTown = zones.find((z) => z.id === pickerTownId);
+                            const zonesInTown = currentTown?.deliveryRegions ?? [];
+                            const stepTitle = pickerStep === "county" ? "Select your county" : pickerStep === "town" ? "Select your town" : "Select your area";
+                            const stepSubtitle = pickerStep === "county"
+                                ? "Which county are you in?"
+                                : pickerStep === "town"
+                                    ? `Towns in ${counties.find((c) => c.id === pickerCountyId)?.name ?? "this county"}`
+                                    : `Areas in ${currentTown?.name ?? "this town"} — pick General Area if you're not sure`;
+                            const canGoBack = pickerStep !== "county";
+                            const handleBack = () => {
+                                if (pickerStep === "zone") setPickerStep("town");
+                                else if (pickerStep === "town") setPickerStep("county");
+                            };
+                            return (
+                                <div className="fixed inset-0 z-[80] flex items-end justify-center bg-[#10271E]/55 p-3 backdrop-blur-[2px] sm:items-center" role="dialog" aria-modal="true" aria-labelledby="location-picker-title" onMouseDown={(event) => { if (event.target === event.currentTarget) setLocationPickerOpen(false); }}>
+                                    <div className="w-full max-w-md overflow-hidden rounded-[1.75rem] bg-[#FFFDF9] shadow-2xl">
+                                        <div className="flex items-start justify-between border-b border-[#E8DED2] px-5 py-4">
+                                            <div className="flex min-w-0 items-start gap-2">
+                                                {canGoBack && (
+                                                    <button type="button" onClick={handleBack} aria-label="Back" className="mt-0.5 shrink-0 rounded-full border-none bg-[#EBF5F0] p-2 text-[#114B36]">
+                                                        <ChevronLeft size={16} />
+                                                    </button>
+                                                )}
+                                                <div className="min-w-0">
+                                                    <p className="text-[0.65rem] font-black uppercase tracking-[0.16em] text-[#789083]">
+                                                        {pickerStep === "county" ? "Step 1 of 3" : pickerStep === "town" ? "Step 2 of 3" : "Step 3 of 3"} · Delivery location
+                                                    </p>
+                                                    <h2 id="location-picker-title" className="mt-1 text-xl font-black text-[#1F2937]">{stepTitle}</h2>
+                                                    <p className="mt-1 text-xs text-[#6B7280]">{stepSubtitle}</p>
+                                                </div>
+                                            </div>
+                                            <button type="button" onClick={() => setLocationPickerOpen(false)} className="shrink-0 rounded-full border-none bg-[#EBF5F0] p-2 text-[#114B36]" aria-label="Close location picker">
+                                                <span className="text-lg leading-none">×</span>
+                                            </button>
+                                        </div>
+
+                                        <div className="max-h-[55vh] overflow-y-auto p-3">
+                                            {pickerStep === "county" && counties.map((county) => {
+                                                const selected = county.id === pickerCountyId;
+                                                return (
+                                                    <button type="button" key={county.id} onClick={() => { setPickerCountyId(county.id); setPickerStep("town"); }}
+                                                        className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${selected ? "border-[#114B36] bg-[#EBF5F0]" : "border-transparent bg-white hover:border-[#D1E4D8] hover:bg-[#F7FBF8]"}`}>
+                                                        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${selected ? "bg-[#114B36] text-white" : "bg-[#F1EAE1] text-[#114B36]"}`}><MapPin size={18} /></span>
+                                                        <span className="min-w-0 flex-1"><span className="block text-sm font-black text-[#1F2937]">{county.name}</span></span>
+                                                        <ChevronLeft size={16} className="rotate-180 text-[#9CA3AF]" />
+                                                    </button>
+                                                );
+                                            })}
+
+                                            {pickerStep === "town" && townsInCounty.map((town) => {
+                                                const selected = town.id === pickerTownId;
+                                                return (
+                                                    <button type="button" key={town.id} onClick={() => { setPickerTownId(town.id); setPickerStep("zone"); }}
+                                                        className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${selected ? "border-[#114B36] bg-[#EBF5F0]" : "border-transparent bg-white hover:border-[#D1E4D8] hover:bg-[#F7FBF8]"}`}>
+                                                        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${selected ? "bg-[#114B36] text-white" : "bg-[#F1EAE1] text-[#114B36]"}`}><MapPin size={18} /></span>
+                                                        <span className="min-w-0 flex-1"><span className="block text-sm font-black text-[#1F2937]">{town.name}</span><span className="mt-0.5 block text-xs text-[#6B7280]">{town.locationLabel}</span></span>
+                                                        <ChevronLeft size={16} className="rotate-180 text-[#9CA3AF]" />
+                                                    </button>
+                                                );
+                                            })}
+                                            {pickerStep === "town" && townsInCounty.length === 0 && (
+                                                <p className="p-4 text-center text-sm text-[#6B7280]">No towns are set up in this county yet.</p>
+                                            )}
+
+                                            {pickerStep === "zone" && zonesInTown.map((zoneOption) => {
+                                                const selected = zoneOption.id === activeTownRegionId;
+                                                const isGeneral = zoneOption.name === "General Area";
+                                                return (
+                                                    <button type="button" key={zoneOption.id} onClick={() => handleZoneChange(pickerTownId, zoneOption.id, zoneOption.name)}
+                                                        className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${selected ? "border-[#114B36] bg-[#EBF5F0]" : "border-transparent bg-white hover:border-[#D1E4D8] hover:bg-[#F7FBF8]"}`}>
+                                                        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${selected ? "bg-[#114B36] text-white" : "bg-[#F1EAE1] text-[#114B36]"}`}><MapPin size={18} /></span>
+                                                        <span className="min-w-0 flex-1">
+                                                            <span className="block text-sm font-black text-[#1F2937]">{zoneOption.name}</span>
+                                                            {isGeneral && <span className="mt-0.5 block text-xs text-[#6B7280]">Not sure of your exact area? Start here.</span>}
+                                                        </span>
+                                                        {selected && <Check size={19} className="text-[#114B36]" />}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+
+                                        <div className="border-t border-[#E8DED2] px-5 py-4">
+                                            <p className="text-[0.7rem] leading-relaxed text-[#6B7280]">You can change this anytime. Delivery fees are configured by each hotel for your selected town.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
 
                         <section className="relative z-20 -mt-16">
                             <Search size={19} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#114B36]" />

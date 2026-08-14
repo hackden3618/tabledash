@@ -43,7 +43,15 @@ const buildHomeDiscovery = async (zoneId?: string, customerId?: string) => {
   const [hotels, products, paidItems, heroSetting, ratingRows, mealRatingRows, recentOrders] = await Promise.all([
     prisma.hotel.findMany({ where: { deletedAt: null, isListed: true, ...(zoneId ? { zoneId } : {}) }, select: { id: true, name: true, slug: true, imageUrl: true, isOpen: true, zone: { select: { id: true, name: true, type: true, megaRegion: { select: { id: true, name: true, type: true } } } } }, orderBy: { name: "asc" } }),
     prisma.product.findMany({
-      where: { deleted: false, available: true, stockQty: { gt: 0 }, ...(zoneId ? { hotel: { zoneId } } : {}) },
+      where: {
+        deleted: false, available: true, stockQty: { gt: 0 },
+        // A hidden or deleted hotel must be invisible everywhere, not just
+        // in the restaurant list — otherwise its items keep surfacing in
+        // Popular/Trending/Recently Ordered, which defeats the point of
+        // hiding it and confuses a customer who taps through to a listing
+        // that then can't be found in the marketplace at all.
+        hotel: { isListed: true, deletedAt: null, ...(zoneId ? { zoneId } : {}) },
+      },
       include: { hotel: { select: { id: true, name: true, imageUrl: true, isOpen: true, zone: { select: { id: true, name: true, type: true, megaRegion: { select: { id: true, name: true, type: true } } } } } } },
       orderBy: { createdAt: "asc" },
     }),
@@ -124,7 +132,11 @@ const buildHomeDiscovery = async (zoneId?: string, customerId?: string) => {
 
 export const getActiveZones = async () => prisma.zone.findMany({
   where: { active: true },
-  select: { id: true, name: true, type: true, locationLabel: true, locationPlaceholder: true, megaRegion: { select: { id: true, name: true, type: true } } },
+  select: {
+    id: true, name: true, type: true, locationLabel: true, locationPlaceholder: true,
+    megaRegion: { select: { id: true, name: true, type: true } },
+    deliveryRegions: { where: { active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } },
+  },
   orderBy: [{ megaRegion: { name: "asc" } }, { name: "asc" }],
 });
 

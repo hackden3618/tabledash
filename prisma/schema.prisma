@@ -184,6 +184,7 @@ model TownRegion {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
   town Zone @relation(fields: [townId], references: [id], onDelete: Cascade)
+  customers Customer[]
 
   @@unique([townId, name])
   @@index([townId, active, name])
@@ -292,6 +293,11 @@ model Customer {
   ownPhoneOtpExpires        DateTime? @map("own_phone_otp_expires") @db.Timestamptz()
   phoneConfirmedAt          DateTime? @map("phone_confirmed_at") @db.Timestamptz()
   createdAt                 DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  /// The customer's selected delivery zone (finest tier: County -> Town -> Zone).
+  /// County and Town are derived through this relation (townRegion.town.megaRegion) —
+  /// deliberately not duplicated as separate columns, so there's one source of
+  /// truth and no risk of the three levels drifting out of sync with each other.
+  townRegionId               String?   @map("town_region_id") @db.Uuid
 
   orders           Order[]
   guestIdentities  GuestIdentity[]
@@ -300,6 +306,7 @@ model Customer {
   reviews          RestaurantReview[]
   productReviews   ProductReview[]
   cart             CustomerCart?
+  townRegion       TownRegion?       @relation(fields: [townRegionId], references: [id], onDelete: SetNull)
 
   @@map("customers")
 }

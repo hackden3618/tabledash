@@ -117,5 +117,7 @@ export interface CustomerProfileData {
   marketSection?: string | null;
   locationDescription?: string | null;
   hasPin: boolean;
+  townRegionId?: string | null;
+  townRegion?: { id: string; name: string; town: { id: string; name: string; megaRegion: { id: string; name: string } } } | null;
   recentOrders?: OrderData[];
 }

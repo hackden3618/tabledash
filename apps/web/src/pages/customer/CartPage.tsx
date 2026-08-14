@@ -14,11 +14,10 @@ interface CartPageProps {
   onContinueToDelivery: () => void;
 }
 
-let cachedWhatsAppPhone = "+254757030743";
-
 export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDelivery }) => {
   const { cart, updateQuantity, clearCart, totalAmount, updateItemSnapshot, closedHotelIds, setClosedHotelIds } = useCart();
-  const [whatsappPhone, setWhatsappPhone] = useState(cachedWhatsAppPhone);
+  const [whatsappPhone, setWhatsappPhone] = useState<string | null>(null);
+  const [whatsappStaffName, setWhatsappStaffName] = useState<string | null>(null);
   const [deliveryFee, setDeliveryFee] = useState<number | null>(null);
   const [deliveryFeeLoading, setDeliveryFeeLoading] = useState(false);
 
@@ -53,15 +52,21 @@ export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDe
   }, [cart.length]);
 
   useEffect(() => {
-    apiGet<{ staffPhone?: string }>("/settings").then((res) => {
-      if (res.success && res.data?.staffPhone) {
-        const formatted = res.data.staffPhone.replace(/\D/g, "");
-        const num = formatted.startsWith("254") ? `+${formatted}` : `+254${formatted.replace(/^0/, "")}`;
-        cachedWhatsAppPhone = num;
-        setWhatsappPhone(num);
+    // Hotel-scoped, resolved to that hotel's actual first admin — never a
+    // hardcoded number. A cart with items from more than one hotel talks to
+    // the first hotel present; each hotel's items still show that hotel's
+    // name in the cart list so it's clear which conversation this opens.
+    const primaryHotelId = cartHotelIds[0];
+    if (!primaryHotelId) { setWhatsappPhone(null); return; }
+    apiGet<{ phone: string; name: string | null }>(`/hotels/${primaryHotelId}/whatsapp-contact`).then((res) => {
+      if (res.success && res.data) {
+        setWhatsappPhone(res.data.phone);
+        setWhatsappStaffName(res.data.name);
+      } else {
+        setWhatsappPhone(null);
       }
-    }).catch(() => {});
-  }, []);
+    }).catch(() => setWhatsappPhone(null));
+  }, [cartHotelIds.join(",")]);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -110,6 +115,7 @@ export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDe
     item.available && !(item.stockQty !== undefined && item.stockQty < item.quantity) && !(item.hotelId && closedHotelIds.includes(item.hotelId));
 
   const handleWhatsAppOrder = () => {
+    if (!whatsappPhone) return;
     const availableOnly = cart.filter(isOrderable);
     const text = availableOnly
       .map((item) => `${item.quantity}x ${item.name} (KSh ${item.price * item.quantity})`)
@@ -119,7 +125,7 @@ export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDe
       `Hello! I would like to order:\n\n${text}\n\nTotal: KSh ${totalAmount}`
     );
 
-    window.open(`https://wa.me/${whatsappPhone}?text=${message}`, "_blank");
+    window.open(`https://wa.me/${whatsappPhone.replace(/\D/g, "")}?text=${message}`, "_blank");
   };
 
   const unavailableItems = cart.filter((item) => !isOrderable(item));
@@ -296,14 +302,16 @@ export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDe
                   {anyHotelClosed ? "Hotel Closed" : unavailableItems.length > 0 ? "Resolve Cart Items" : "Continue to Delivery"}
                 </Button>
 
-                <Button
-                  onClick={handleWhatsAppOrder}
-                  fullWidth
-                  size="md"
-                  variant="whatsapp"
-                >
-                  💬 Order via WhatsApp
-                </Button>
+                {whatsappPhone && (
+                  <Button
+                    onClick={handleWhatsAppOrder}
+                    fullWidth
+                    size="md"
+                    variant="whatsapp"
+                  >
+                    💬 Order via WhatsApp{whatsappStaffName ? ` with ${whatsappStaffName}` : ""}
+                  </Button>
+                )}
               </div>
             </div>
           )}

@@ -300,7 +300,7 @@ export const customersRoute = new Elysia({
       set.status = err.code === "P2002" ? 409 : 400;
       return { success: false, error: err.code === "P2002" ? "That phone number is already in use." : err.message || "Unable to update profile" };
     }
-  }, { body: t.Object({ firstName: t.Optional(t.String({ minLength: 1, maxLength: 80 })), lastName: t.Optional(t.String({ maxLength: 80 })), phone: t.Optional(t.String({ minLength: 9, maxLength: 13 })), knownName: t.Optional(t.Union([t.String({ maxLength: 80 }), t.Null()])), pin: t.Optional(t.String({ minLength: 4, maxLength: 4 })) }) })
+  }, { body: t.Object({ firstName: t.Optional(t.String({ minLength: 1, maxLength: 80 })), lastName: t.Optional(t.String({ maxLength: 80 })), phone: t.Optional(t.String({ minLength: 9, maxLength: 13 })), knownName: t.Optional(t.Union([t.String({ maxLength: 80 }), t.Null()])), pin: t.Optional(t.String({ minLength: 4, maxLength: 4 })), townRegionId: t.Optional(t.Union([t.String({ format: "uuid" }), t.Null()])) }) })
 
   // ─── Customer: persistent cart (authenticated customers only) ────────────
   .get("/me/cart", async ({ headers, jwt, set }) => {

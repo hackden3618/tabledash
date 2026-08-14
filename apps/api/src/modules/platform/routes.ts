@@ -149,7 +149,16 @@ export const platformRoute = new Elysia({
     try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
     catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
     try {
-      const zone = await prisma.zone.create({ data: body, include: { megaRegion: true } });
+      // Every town gets a "General Area" zone automatically — this is the
+      // guaranteed fallback a guest lands on if they don't pick a specific
+      // zone within the town, and it's what keeps the delivery-fee promise
+      // ("every hotel charges something for general delivery, never silently
+      // free") true by construction rather than by admins remembering to add it.
+      const zone = await prisma.$transaction(async (tx) => {
+        const created = await tx.zone.create({ data: body, include: { megaRegion: true } });
+        await tx.townRegion.create({ data: { name: "General Area", townId: created.id } });
+        return created;
+      });
       set.status = 201;
       return { success: true, data: zone };
     } catch (err: any) {
@@ -187,6 +196,52 @@ export const platformRoute = new Elysia({
       locationPlaceholder: t.Optional(t.String({ minLength: 2 })),
       active: t.Optional(t.Boolean()),
     }),
+  })
+  .get("/town-regions", async ({ headers, jwt, set, query }) => {
+    const { token, error } = extractToken(headers, jwt);
+    if (error) { set.status = 401; return error; }
+    try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
+    catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+    return {
+      success: true,
+      data: await prisma.townRegion.findMany({
+        where: query.zoneId ? { townId: query.zoneId as string } : undefined,
+        orderBy: [{ active: "desc" }, { name: "asc" }],
+      }),
+    };
+  }, { query: t.Object({ zoneId: t.Optional(t.String({ format: "uuid" })) }) })
+  .post("/town-regions", async ({ body, headers, jwt, set }) => {
+    const { token, error } = extractToken(headers, jwt);
+    if (error) { set.status = 401; return error; }
+    try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
+    catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+    try {
+      const townRegion = await prisma.townRegion.create({ data: { name: body.name, townId: body.zoneId } });
+      set.status = 201;
+      return { success: true, data: townRegion };
+    } catch (err: any) {
+      set.status = err.code === "P2002" ? 409 : 400;
+      return { success: false, error: err.code === "P2002" ? "That zone name already exists in this town." : err.message || "Unable to create zone" };
+    }
+  }, { body: t.Object({ name: t.String({ minLength: 2, maxLength: 120 }), zoneId: t.String({ format: "uuid" }) }) })
+  .patch("/town-regions/:id", async ({ params, body, headers, jwt, set }) => {
+    const { token, error } = extractToken(headers, jwt);
+    if (error) { set.status = 401; return error; }
+    try { await verifyPlatformAdminToken(token!, (t) => jwt.verify(t)); }
+    catch { set.status = 401; return { success: false, error: "Invalid or expired platform session token" }; }
+    try {
+      const data: any = {};
+      if (body.name !== undefined) data.name = body.name;
+      if (body.active !== undefined) data.active = body.active;
+      const townRegion = await prisma.townRegion.update({ where: { id: params.id }, data });
+      return { success: true, data: townRegion };
+    } catch (err: any) {
+      set.status = err.code === "P2002" ? 409 : 400;
+      return { success: false, error: err.code === "P2002" ? "That zone name already exists in this town." : err.message || "Unable to update zone" };
+    }
+  }, {
+    params: t.Object({ id: t.String({ format: "uuid" }) }),
+    body: t.Object({ name: t.Optional(t.String({ minLength: 2, maxLength: 120 })), active: t.Optional(t.Boolean()) }),
   })
   .get(
     "/hotels",
@@ -285,11 +340,20 @@ export const platformRoute = new Elysia({
             },
           });
 
+          // receiveSms starts false, deliberately — this StaffUser row exists so
+          // the admin has a contactable phone on file (used for WhatsApp "talk to
+          // staff" and as their StaffUser identity), but it must NOT auto-enroll
+          // in the SMS order-alert list. Whoever creates the hotel account here is
+          // the platform operator doing onboarding, not necessarily hotel staff —
+          // defaulting this to true silently made every new hotel's order alerts
+          // go to whichever phone number was used to set the account up.
+          // The hotel's own admin opts a real staff phone in later, deliberately,
+          // from their own settings.
           await tx.staffUser.create({
             data: {
               name: body.adminName,
               phone: formattedAdminPhone!,
-              receiveSms: true,
+              receiveSms: false,
               hotelId: hotel.id,
               adminUserId: adminUser.id,
             },

@@ -1,57 +1,71 @@
 # Changes in this drop
 
-Verified before packaging: `tsc -b` and `vite build` both run clean on the
-frontend with zero errors. The backend can't be fully typechecked in this
-sandbox (Prisma's client generator needs a binary download my network
-policy blocks), but the ~216 errors that show under `tsc --noEmit` are
-100% environmental — the same "Cannot find module generated/prisma/client"
-cascade appears identically in files I never touched (e.g. finance/service.ts).
-Run `bunx prisma generate` once locally and that noise disappears; it's not
-something to chase down.
+Verified before packaging: tsc -b and vite build both run clean on the
+frontend, zero errors. Backend tsc shows 226 errors, but confirmed
+environmental (identical "Cannot find module generated/prisma/client"
+cascade in files never touched this session, e.g. finance/service.ts) -
+run `bunx prisma generate` locally and it clears. Schema brace/paren
+balance and migration SQL syntax both checked directly.
 
-## 1. Two "semantic bugs" — hotel context
-- **Account ledger SMS** (credited/payment/refund/adjustment) now say
-  `[Hotel Name] ...` and "Current balance **at {hotel}**" instead of a bare
-  number with no indication of which hotel's tab it belongs to.
-  `apps/api/src/modules/notifications/templates.ts` +
-  `handlers/account-ledger.handler.ts`.
-- **Orders are now hotel-aware end to end**: `getCustomerProfile`,
-  `getOrderById`, `getOrderForCustomer` all now include the hotel relation.
-  `MyOrdersPage` shows the hotel name on every order card; `OrderTrackingPage`
-  shows it in the header subtitle.
+## 1. Critical: /kitchen outage (this was the same-day emergency fix,
+   already deployed and confirmed live before this batch)
+Bun's SPA catch-all route tried to stream a directory as a response body
+for the bare /kitchen URL, because public/kitchen/sw.js (intentional -
+gives the kitchen PWA its own /kitchen/ service-worker scope) makes
+dist/kitchen a real directory. Route now checks isFile() before serving,
+falls through to index.html otherwise. Verified against real build output.
 
-## 2. Real branding — replaces the earlier placeholder icons
-- `ladha_icon_customer.png` / `ladha_icon_kitchen.png` — extracted and
-  composited from your actual brand board (not generated placeholders),
-  512x512, rounded-square, dark green (#0B1E13) / terracotta (#9A3412).
-- `favicon-16.png` / `favicon-32.png` / `apple-touch-icon.png` generated
-  from the same source.
-- Manifests updated to reference the real icons and the correct
-  brand-sampled background_color.
+## 2. Region/zone hierarchy - County -> Town -> Zone
+- Confirmed and documented the existing (confusingly-named) model mapping:
+  MegaRegion=County, Zone=Town, TownRegion=finest zone.
+- Added full TownRegion CRUD (GET/POST/PATCH /platform/town-regions) -
+  previously had zero backend endpoints at all.
+- Creating a Town now auto-creates its "General Area" TownRegion
+  transactionally - the guaranteed fallback exists by construction, not
+  by an admin remembering an extra step.
+- Discovery API now exposes each town's zones (deliveryRegions) to the
+  guest-facing app.
+- Guest picker rewritten as a proper 3-step wizard (County -> Town ->
+  Zone) in MenuListPage.tsx, replacing the old flat single-list picker.
+  Resumes at the right step on reopen; back navigation between steps;
+  "General Area" flagged with a hint for guests unsure of their exact area.
+- Customer.townRegionId added (migration included) - a logged-in
+  customer's precise selected zone now persists to their account, not
+  just localStorage. Not PIN-gated (routine data, not identity-sensitive).
+  Returning customers' saved location takes over from local device state
+  on login.
 
-## 3. Boot splash — matches the frame-by-frame spec you gave
-- Inlined critical CSS + markup in `index.html` so it paints before any JS
-  loads — no blank white screen.
-- Frame 1 (0ms): icon fades up. Frame 2 (500ms): wordmark + tagline. A
-  synchronous inline script themes the whole thing (color, icon, wordmark,
-  tagline, loading text) for /kitchen routes before React even starts.
-- `main.tsx` hands off once mounted: first-time-today visitors get the full
-  "Preparing your menu..." beat (~1.1s) with a three-dot pulse (not a
-  spinner); returning visitors within 24h get a ~150ms fast dismiss.
-- Theme colors unified across index.html, manifestSwitcher.ts, and
-  InstallBanner.tsx — all now match the actual brand green sampled from
-  the icon, instead of three slightly different green guesses.
+## 3. Hotel-onboarding bugs
+- New hotels no longer auto-enroll the creating admin's phone into the
+  SMS order-alert list (receiveSms now defaults false on the StaffUser
+  row created at hotel-creation time). Hotels opt a real staff phone in
+  deliberately from their own settings.
+- "Order via WhatsApp" now resolves the actual first HOTEL_ADMIN of the
+  specific hotel in the cart via a new public endpoint
+  (GET /hotels/:hotelId/whatsapp-contact), instead of a hardcoded number
+  that was silently routing every customer, on every hotel, to one fixed
+  phone. Hides the button gracefully if a hotel genuinely has no contact
+  on file, instead of messaging the wrong person.
 
-## 4. Everything from earlier in this session (unchanged, carried forward)
-Push notifications (VAPID, subscribe routes, hooked into order-created/
-order-status-updated), installable PWAs with per-route manifests, platform
-admin hide/delete-hotel, QR direct hotel links (/:hotelSlug), the upload
-MIME-gate fix, admin login "go home" -> /kitchen, and the missing username
-in the admin welcome SMS.
+## 4. Hidden hotels leaking into Popular/Trending
+discovery/service.ts's product query (feeding Popular Meals, Trending,
+Recently Ordered) had no hotel.isListed/deletedAt filter at all, unlike
+the restaurant list query right next to it. A hidden hotel's items kept
+surfacing in these sections even though the hotel itself was correctly
+invisible elsewhere. Fixed; confirmed search and the direct hotel-slug
+QR-link path were already correctly scoped (search inherits it
+transitively via getAllHotels(); the direct-link path is intentionally
+unaffected, per the earlier open design decision on that).
 
 ## Deploy steps
-1. bun install (root) - picks up web-push if not already present
-2. bunx prisma generate - regenerates the Prisma client
-3. bunx prisma migrate status - should show clean, matching the single
-   20260812094418_added_listable_toggles migration already in this zip
+1. bun install (root) - no new dependencies this batch, but keeps lockfile honest
+2. bunx prisma generate
+3. bunx prisma migrate deploy - applies 20260813190000_add_customer_town_region
 4. Commit, push, deploy as normal
+
+## Still open / not built this batch
+- Platform admin UI for managing TownRegion entries beyond the
+  auto-created "General Area" (e.g. adding "Karagita", "CBD" within
+  Naivasha) - backend CRUD exists, no admin UI screen yet.
+- Whether a hidden hotel's direct QR link should still work is still an
+  open product decision, not yet made either way beyond "currently it does."

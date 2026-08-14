@@ -54,6 +54,33 @@ export const hotelsRoute = new Elysia({
 })
   .use(jwt({ name: "jwt", secret: env.jwtSecret }))
   /**
+   * "Talk to staff on WhatsApp" contact for a hotel. Deliberately public (no
+   * customer auth needed — a guest can be browsing without an account) and
+   * hotel-scoped (a customer's cart can span multiple hotels; each needs its
+   * own contact, never one shared number). Resolves to the earliest-created
+   * HOTEL_ADMIN account for that hotel, via their linked StaffUser phone —
+   * never a hardcoded fallback. Returns null if the hotel genuinely has no
+   * contactable phone on file, so the frontend can hide the button rather
+   * than silently messaging the wrong person.
+   */
+  .get(
+    "/:hotelId/whatsapp-contact",
+    async ({ params, set }) => {
+      const admin = await prisma.adminUser.findFirst({
+        where: { hotelId: params.hotelId, role: "HOTEL_ADMIN" },
+        orderBy: { createdAt: "asc" },
+        select: { name: true, staffProfiles: { select: { phone: true }, take: 1 } },
+      });
+      const phone = admin?.staffProfiles[0]?.phone ?? null;
+      if (!phone) {
+        set.status = 404;
+        return { success: false, error: "No staff contact is configured for this hotel yet" };
+      }
+      return { success: true, data: { phone, name: admin?.name ?? null } };
+    },
+    { params: t.Object({ hotelId: t.String({ format: "uuid" }) }) }
+  )
+  /**
    * Public hotel listing (marketplace) — filters by isListed.
    * Used by the marketplace discovery page.
    */

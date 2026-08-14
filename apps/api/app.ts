@@ -210,8 +210,16 @@ export const app = new Elysia()
   .use(messagingRoute)
   .use(financeRoute)
 
-  // Serve the built frontend SPA for any non-API route
-.get("/*", ({ params }) => {
+  // Serve the built frontend SPA for any non-API route.
+  // Directory-safe: a path that resolves to a folder (not a file) must fall
+  // through to index.html, not attempt to stream the directory itself (Bun
+  // throws "Cannot stream a directory as a response body" if you try). This
+  // matters concretely because /kitchen/sw.js is a real file (intentional —
+  // it gives the kitchen PWA its own /kitchen/ service-worker scope), which
+  // means dist/kitchen is a real directory, which means the bare route
+  // /kitchen (no trailing path) used to resolve to that directory and crash
+  // this whole handler with a 500 instead of serving the SPA shell.
+  .get("/*", ({ params }) => {
     const dist = join(import.meta.dir, "..", "web", "dist");
     const wild = params["*"] as string;
     const filePath = !wild ? "/index.html" : `/${wild}`;
