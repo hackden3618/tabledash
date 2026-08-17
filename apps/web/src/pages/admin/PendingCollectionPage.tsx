@@ -3,7 +3,6 @@ import { motion } from "framer-motion";
 import { apiGet, apiPatch } from "../../lib/api";
 import { ArrowLeft, UtensilsCrossed, CreditCard, CheckCircle2, Phone, MapPin, Undo2 } from "lucide-react";
 import { Button } from "../../components/ui/Button";
-import { formatOrderLocation } from "../../lib/orderLocation";
 
 interface PendingItem {
     id: string;
@@ -28,7 +27,6 @@ interface PendingItem {
     marketSection: string | null;
     locationDescription: string | null;
     stallNumber: string | null;
-    deliveryZoneName: string | null;
 }
 
 interface RefundItem {
@@ -57,7 +55,6 @@ interface RefundItem {
     marketSection: string | null;
     locationDescription: string | null;
     stallNumber: string | null;
-    deliveryZoneName: string | null;
 }
 
 interface PendingCollectionPageProps {
@@ -276,7 +273,7 @@ function CollectionsTab({
 
                             <p className="text-xs text-[#4B5563] mb-2 flex items-center gap-1">
                                 <MapPin size={12} className="shrink-0" />
-                                {formatOrderLocation(item)}
+                                {item.marketSection || "—"}{item.locationDescription ? ` — ${item.locationDescription}` : ""}{item.stallNumber ? ` (Stall ${item.stallNumber})` : ""}
                             </p>
 
                             <div className="flex justify-between items-center flex-wrap gap-2 border-t border-[#F3F4F6] pt-3">

@@ -76,7 +76,6 @@ enum EventName {
   customer_account_payment_recorded
   customer_account_refund_recorded
   customer_account_adjusted
-  review_prompt_ready
   sms_delivery_failed
 }
 
@@ -201,7 +200,6 @@ model TownRegion {
   town         Zone              @relation(fields: [townId], references: [id], onDelete: Cascade)
   customers    Customer[]
   deliveryFees HotelDeliveryFee[]
-  hotels       Hotel[]
 
   @@unique([townId, name])
   @@index([townId, active, name])
@@ -219,12 +217,6 @@ model Hotel {
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz()
   deletedAt   DateTime? @map("deleted_at") @db.Timestamptz()
   zoneId      String    @map("zone_id") @db.Uuid
-  /// The hotel's home delivery sub-area within its town. This is the hotel's
-  /// actual physical location for delivery purposes — not just the town it's
-  /// in. Customers ordering into this same TownRegion are "nearby" and are
-  /// exempt from delivery charges by default; every other sub-area in the
-  /// town is priced per HotelDeliveryFee (or the generic fee as fallback).
-  townRegionId String   @map("town_region_id") @db.Uuid
   vendorGroup VendorGroup @default(FOOD) @map("vendor_group")
   genericDeliveryFee Decimal @default(50) @map("generic_delivery_fee") @db.Decimal(10, 2)
 
@@ -238,10 +230,8 @@ model Hotel {
   reviews          RestaurantReview[]
   productReviews   ProductReview[]
   zone             Zone              @relation(fields: [zoneId], references: [id])
-  townRegion       TownRegion        @relation(fields: [townRegionId], references: [id])
   deliveryFees     HotelDeliveryFee[]
 
-  @@index([townRegionId])
   @@map("hotels")
 }
 
@@ -486,11 +476,6 @@ model Order {
   utensilsRequired              Boolean?      @map("utensils_required")
   utensilsReturnedAt            DateTime?     @map("utensils_returned_at") @db.Timestamptz()
   utensilsReturnedByAdminUserId String?       @map("utensils_returned_by_admin_user_id") @db.Uuid
-  /// Set exactly once, when the order first becomes both DELIVERED and PAID —
-  /// the trigger for the "rate your meal" SMS. Acts as an atomic claim so the
-  /// prompt fires exactly once even though delivery and full payment can land
-  /// in either order (two independent code paths can both reach this state).
-  reviewPromptSentAt            DateTime?     @map("review_prompt_sent_at") @db.Timestamptz()
 
   customer      Customer       @relation(fields: [customerId], references: [id])
   hotel         Hotel          @relation(fields: [hotelId], references: [id])

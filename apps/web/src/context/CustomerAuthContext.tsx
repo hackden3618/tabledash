@@ -8,6 +8,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { apiGet, apiPost, apiPatch, apiDelete } from "../lib/api";
+import { safeSetItem } from "../lib/storage";
 import type { CustomerProfileData } from "../../../../shared/types";
 
 const STORAGE_KEY = "ladha_customer_token";
@@ -77,7 +78,7 @@ export const CustomerAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
     );
     if (res.success && res.data) {
       const { token: newToken, customer: profile } = res.data;
-      localStorage.setItem(STORAGE_KEY, newToken);
+      safeSetItem(STORAGE_KEY, newToken);
       setToken(newToken);
       setCustomer(profile);
       return { success: true };
@@ -98,7 +99,7 @@ export const CustomerAuthProvider: React.FC<{ children: React.ReactNode }> = ({ 
     );
     if (res.success && res.data) {
       const { token: newToken, customer: profile } = res.data;
-      localStorage.setItem(STORAGE_KEY, newToken);
+      safeSetItem(STORAGE_KEY, newToken);
       setToken(newToken);
       setCustomer(profile);
       return { success: true };

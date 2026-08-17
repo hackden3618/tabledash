@@ -26,7 +26,6 @@ interface Hotel {
     _count?: { orders: number };
     events?: any[]; staffUsers?: { id: string; name: string; phone: string }[];
     zone?: DeliveryRegion;
-    townRegion?: { id: string; name: string } | null;
 }
 interface AdminUser { id: string; name: string; username: string; createdAt: string; }
 interface DeliveryRegion { id: string; name: string; type: string; locationLabel: string; locationPlaceholder: string; active?: boolean; megaRegionId: string; megaRegion?: MegaRegion; }
@@ -71,7 +70,6 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
     const [auditRows, setAuditRows] = useState<any[]>([]);
     const [outboxRows, setOutboxRows] = useState<any[]>([]);
     const [regions, setRegions] = useState<DeliveryRegion[]>([]);
-    const [townAreas, setTownAreas] = useState<Record<string, GeoAreaNode[]>>({});
     const [megaRegions, setMegaRegions] = useState<MegaRegion[]>([]);
     const [geoAlerts, setGeoAlerts] = useState<{ townsMissingActiveArea: { id: string; name: string; county: string }[]; hotelsInInactiveTowns: { id: string; name: string; count: number }[]; inactiveAreasWithCustomers: { id: string; name: string; townId: string; townName: string; count: number }[] }>({ townsMissingActiveArea: [], hotelsInInactiveTowns: [], inactiveAreasWithCustomers: [] });
     const [focusTownId, setFocusTownId] = useState<string | null>(null);
@@ -100,7 +98,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
 
     // ── Create Hotel ──
     const [hotelForm, setHotelForm] = useState({
-        name: "", slug: "", adminUsername: "", adminName: "", adminPhone: "", zoneId: "", townRegionId: "", isOpen: true, autoCloseAt: "",
+        name: "", slug: "", adminUsername: "", adminName: "", adminPhone: "", zoneId: "", isOpen: true, autoCloseAt: "",
     });
     const [createResult, setCreateResult] = useState<any>(null);
     const [submitting, setSubmitting] = useState(false);
@@ -149,12 +147,9 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                 active: t.active, megaRegionId: c.id, megaRegion: { id: c.id, name: c.name, type: c.type, active: c.active },
             })));
             const countyOptions = counties.map((c) => ({ id: c.id, name: c.name, type: c.type, active: c.active }));
-            const areasByTown: Record<string, GeoAreaNode[]> = {};
-            for (const c of counties) for (const t of c.towns) areasByTown[t.id] = t.areas;
             setRegions(flatTowns);
-            setTownAreas(areasByTown);
             setMegaRegions(countyOptions);
-            setHotelForm((form) => form.zoneId ? form : { ...form, zoneId: flatTowns[0]?.id ?? "", townRegionId: areasByTown[flatTowns[0]?.id ?? ""]?.find((a) => a.active)?.id ?? "" });
+            setHotelForm((form) => form.zoneId ? form : { ...form, zoneId: flatTowns[0]?.id ?? "" });
             setRegionForm((form) => form.megaRegionId ? form : { ...form, megaRegionId: countyOptions[0]?.id ?? "" });
             const townsMissingActiveArea: { id: string; name: string; county: string }[] = [];
             const hotelsInInactiveTowns: { id: string; name: string; count: number }[] = [];
@@ -685,7 +680,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                         )}
                     </>
                 ) : view === "hotel_detail" && selectedHotel ? (
-                    <HotelDetail hotelId={selectedHotel.id} onBack={() => setView("hotels")} onToggle={handleToggleHotel} onToggleListing={handleToggleListing} onDelete={handleDeleteHotel} token={token} regions={regions} townAreas={townAreas} />
+                    <HotelDetail hotelId={selectedHotel.id} onBack={() => setView("hotels")} onToggle={handleToggleHotel} onToggleListing={handleToggleListing} onDelete={handleDeleteHotel} token={token} regions={regions} />
                 ) : view === "geography" ? (
                     <GeographyWorkspace token={token} user={{ id: user?.id ?? "", username: user?.username ?? "", name: user?.name ?? "", role: user?.role ?? "" }} focusTownId={focusTownId} onOpenHotel={(id) => { const h = hotels.find((x) => x.id === id); if (h) { setSelectedHotel(h); setView("hotel_detail"); } }} />
                 ) : view === "create_hotel" ? (
@@ -700,7 +695,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                 <div style={{ color: T.textMuted, wordBreak: "break-all" }}><strong>{createResult.setupLink}</strong></div>
                                 <div style={{ fontSize: "0.8rem", color: T.textMuted, marginTop: s(1) }}>The link is also sent via SMS and expires in 24h.</div>
                             </div>
-                            <button onClick={() => { setCreateResult(null); setHotelForm({ name: "", slug: "", adminUsername: "", adminName: "", adminPhone: "", zoneId: regions[0]?.id ?? "", townRegionId: townAreas[regions[0]?.id ?? ""]?.find((a) => a.active)?.id ?? "", isOpen: true, autoCloseAt: "" }); setView("hotels"); }}
+                            <button onClick={() => { setCreateResult(null); setHotelForm({ name: "", slug: "", adminUsername: "", adminName: "", adminPhone: "", zoneId: regions[0]?.id ?? "", isOpen: true, autoCloseAt: "" }); setView("hotels"); }}
                                 style={{ background: T.primary, color: "white", border: "none", padding: `${s(3)} ${s(6)}`, borderRadius: T.radius, fontWeight: 700, cursor: "pointer", marginTop: s(4) }}>Done</button>
                         </div>
                     ) : (
@@ -723,7 +718,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                         </div>
                                         <div>
                                             <label htmlFor="hotelRegion" style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: T.textMuted, marginBottom: s(1) }}>Hotel town</label>
-                                            <select id="hotelRegion" value={hotelForm.zoneId} onChange={(e) => setHotelForm({ ...hotelForm, zoneId: e.target.value, townRegionId: townAreas[e.target.value]?.find((a) => a.active)?.id ?? "" })} className="input-field" style={{ fontFamily: T.font }}>
+                                            <select id="hotelRegion" value={hotelForm.zoneId} onChange={(e) => setHotelForm({ ...hotelForm, zoneId: e.target.value })} className="input-field" style={{ fontFamily: T.font }}>
                                                 <option value="">Select a town</option>
                                                 {regions.map((region) => <option key={region.id} value={region.id}>{region.name}{region.megaRegion ? ` · ${region.megaRegion.name}` : ""}</option>)}
                                             </select>
@@ -736,15 +731,6 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                                 <input value={regionForm.locationPlaceholder} onChange={(e) => setRegionForm({ ...regionForm, locationPlaceholder: e.target.value })} className="input-field" style={{ fontFamily: T.font }} placeholder="Customer location example" />
                                                 <button type="button" onClick={() => void handleCreateRegion()} disabled={regionSaving || !regionForm.name.trim() || !regionForm.megaRegionId} style={{ background: T.primary, color: "white", border: "none", padding: s(2), borderRadius: T.radius, fontWeight: 700, cursor: "pointer", opacity: regionSaving || !regionForm.name.trim() || !regionForm.megaRegionId ? 0.6 : 1 }}>{regionSaving ? "Saving…" : "Save town"}</button>
                                             </div>}
-                                        </div>
-                                        <div>
-                                            <label htmlFor="hotelTownRegion" style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: T.textMuted, marginBottom: s(1) }}>Delivery zone within town</label>
-                                            <select id="hotelTownRegion" value={hotelForm.townRegionId} onChange={(e) => setHotelForm({ ...hotelForm, townRegionId: e.target.value })} disabled={!hotelForm.zoneId} className="input-field" style={{ fontFamily: T.font }}>
-                                                <option value="">{hotelForm.zoneId ? "Select the hotel's zone" : "Select a town first"}</option>
-                                                {(townAreas[hotelForm.zoneId] ?? []).filter((area) => area.active).map((area) => <option key={area.id} value={area.id}>{area.name}{area.isFallback ? " (general area)" : ""}</option>)}
-                                            </select>
-                                            <p style={{ color: T.textMuted, fontSize: "0.75rem", marginTop: s(1) }}>This is the hotel's actual physical zone — customers ordering into it are treated as "nearby" and skip the delivery fee by default.</p>
-                                            {hotelForm.zoneId && (townAreas[hotelForm.zoneId] ?? []).filter((a) => a.active).length === 0 && <p style={{ color: T.warning, fontSize: "0.75rem", marginTop: s(1) }}>This town has no active delivery zones yet — add one in the Geography workspace first.</p>}
                                         </div>
                                     </div>
                                 </div>
@@ -773,8 +759,8 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                         </div>
                                     </div>
                                 </div>
-                                <button onClick={handleCreateHotel} disabled={submitting || !hotelForm.name || !hotelForm.slug || !hotelForm.zoneId || !hotelForm.townRegionId || !hotelForm.adminUsername || !hotelForm.adminName || !hotelForm.adminPhone}
-                                    style={{ background: T.primary, color: "white", border: "none", padding: s(4), borderRadius: T.radius, fontWeight: 700, fontSize: "0.95rem", cursor: submitting ? "not-allowed" : "pointer", opacity: submitting || !hotelForm.name || !hotelForm.slug || !hotelForm.zoneId || !hotelForm.townRegionId || !hotelForm.adminUsername || !hotelForm.adminName || !hotelForm.adminPhone ? 0.6 : 1, alignSelf: "flex-start", minWidth: "200px" }}>
+                                <button onClick={handleCreateHotel} disabled={submitting || !hotelForm.name || !hotelForm.slug || !hotelForm.zoneId || !hotelForm.adminUsername || !hotelForm.adminName || !hotelForm.adminPhone}
+                                    style={{ background: T.primary, color: "white", border: "none", padding: s(4), borderRadius: T.radius, fontWeight: 700, fontSize: "0.95rem", cursor: submitting ? "not-allowed" : "pointer", opacity: submitting || !hotelForm.name || !hotelForm.slug || !hotelForm.zoneId || !hotelForm.adminUsername || !hotelForm.adminName || !hotelForm.adminPhone ? 0.6 : 1, alignSelf: "flex-start", minWidth: "200px" }}>
                                     {submitting ? "Creating…" : "Create Hotel & Seed Admin"}
                                 </button>
                             </div>
@@ -947,13 +933,11 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
 };
 
 // ── Hotel Detail sub-view ──
-function HotelDetail({ hotelId, onBack, onToggle, onToggleListing, onDelete, token: tok, regions: townOptions, townAreas }: { hotelId: string; onBack: () => void; onToggle: (id: string, action: "open" | "close") => void; onToggleListing: (id: string, currentlyListed: boolean) => void; onDelete: (id: string) => void; token: string; regions: { id: string; name: string }[]; townAreas: Record<string, GeoAreaNode[]> }) {
+function HotelDetail({ hotelId, onBack, onToggle, onToggleListing, onDelete, token: tok, regions: townOptions }: { hotelId: string; onBack: () => void; onToggle: (id: string, action: "open" | "close") => void; onToggleListing: (id: string, currentlyListed: boolean) => void; onDelete: (id: string) => void; token: string; regions: { id: string; name: string }[] }) {
     const [hotel, setHotel] = useState<Hotel | null>(null);
     const [detailLoading, setDetailLoading] = useState(true);
     const [zoneId, setZoneId] = useState("");
-    const [townRegionId, setTownRegionId] = useState("");
     const [zoneSaving, setZoneSaving] = useState(false);
-    const [zoneError, setZoneError] = useState("");
     const [editForm, setEditForm] = useState({ name: "", slug: "", imageUrl: "", isOpen: true, autoCloseAt: "" });
     const [editSaving, setEditSaving] = useState(false);
     const [editError, setEditError] = useState("");
@@ -965,7 +949,6 @@ function HotelDetail({ hotelId, onBack, onToggle, onToggleListing, onDelete, tok
             if (res.success && res.data) {
                 setHotel(res.data);
                 setZoneId(res.data.zone?.id ?? "");
-                setTownRegionId(res.data.townRegion?.id ?? "");
                 setEditForm({
                     name: res.data.name,
                     slug: res.data.slug,
@@ -978,21 +961,12 @@ function HotelDetail({ hotelId, onBack, onToggle, onToggleListing, onDelete, tok
         })();
     }, [hotelId, tok]);
 
-    // Changing the town resets the zone-within-town pick — a hotel's zone
-    // from its old town has no meaning in the new one.
-    const handleZoneTownChange = (newZoneId: string) => {
-        setZoneId(newZoneId);
-        setTownRegionId(newZoneId === hotel?.zone?.id ? (hotel?.townRegion?.id ?? "") : (townAreas[newZoneId]?.find((a) => a.active)?.id ?? ""));
-    };
-
     const saveRegion = async () => {
-        if (!hotel || !zoneId || !townRegionId || zoneSaving) return;
+        if (!hotel || !zoneId || zoneSaving) return;
         setZoneSaving(true);
-        setZoneError("");
-        const res = await apiPatch<Hotel>(`/platform/hotels/${hotel.id}`, { zoneId, townRegionId }, tok);
+        const res = await apiPatch<Hotel>(`/platform/hotels/${hotel.id}`, { zoneId }, tok);
         setZoneSaving(false);
         if (res.success && res.data) setHotel(res.data);
-        else setZoneError(res.error ?? "Could not relocate the hotel.");
     };
 
     const saveDetails = async () => {
@@ -1092,20 +1066,14 @@ function HotelDetail({ hotelId, onBack, onToggle, onToggleListing, onDelete, tok
             </div>
 
             <div style={{ marginBottom: s(6), padding: s(4), background: T2.surface, border: `1px solid ${T2.border}`, borderRadius: T2.radius, maxWidth: "520px" }}>
-                <h3 style={{ fontSize: "0.9rem", fontWeight: 700, color: T2.text, marginBottom: s(2) }}>Hotel Relocation & Delivery Zone</h3>
-                <p style={{ color: T2.textMuted, fontSize: "0.8rem", marginBottom: s(2) }}>Relocate this hotel to a different town and/or delivery zone. A specific zone within the town — not just the town — is always required; that zone is what customers "nearby" it skip delivery fees for.</p>
-                {hotel.townRegion && <p style={{ color: T2.textDim, fontSize: "0.75rem", marginBottom: s(2) }}>Currently in <strong>{hotel.townRegion.name}</strong>, {hotel.zone?.name}.</p>}
-                <div style={{ display: "flex", flexDirection: "column", gap: s(2) }}>
-                    <select value={zoneId} onChange={(event) => handleZoneTownChange(event.target.value)} className="input-field" style={{ fontFamily: T2.font }}>
+                <h3 style={{ fontSize: "0.9rem", fontWeight: 700, color: T2.text, marginBottom: s(2) }}>Hotel Relocation & Delivery Town</h3>
+                <p style={{ color: T2.textMuted, fontSize: "0.8rem", marginBottom: s(2) }}>Relocate this hotel to a different town or delivery area. Customers browsing in the chosen town will discover this hotel.</p>
+                <div style={{ display: "flex", gap: s(2) }}>
+                    <select value={zoneId} onChange={(event) => setZoneId(event.target.value)} className="input-field" style={{ fontFamily: T2.font, flex: 1 }}>
                         <option value="">Select target town</option>
                         {townOptions.map((region) => <option key={region.id} value={region.id}>{region.name}</option>)}
                     </select>
-                    <select value={townRegionId} onChange={(event) => setTownRegionId(event.target.value)} disabled={!zoneId} className="input-field" style={{ fontFamily: T2.font }}>
-                        <option value="">{zoneId ? "Select the delivery zone" : "Select a town first"}</option>
-                        {(townAreas[zoneId] ?? []).filter((area) => area.active).map((area) => <option key={area.id} value={area.id}>{area.name}{area.isFallback ? " (general area)" : ""}</option>)}
-                    </select>
-                    {zoneError && <p style={{ color: T2.danger, fontSize: "0.8rem" }}>{zoneError}</p>}
-                    <button type="button" onClick={() => void saveRegion()} disabled={zoneSaving || !zoneId || !townRegionId || (zoneId === hotel.zone?.id && townRegionId === hotel.townRegion?.id)} style={{ background: T2.primary, color: "white", border: "none", borderRadius: T2.radius, padding: `${s(2)} ${s(4)}`, fontWeight: 700, alignSelf: "flex-start", opacity: zoneSaving || !zoneId || !townRegionId || (zoneId === hotel.zone?.id && townRegionId === hotel.townRegion?.id) ? 0.6 : 1, cursor: zoneSaving || !zoneId || !townRegionId || (zoneId === hotel.zone?.id && townRegionId === hotel.townRegion?.id) ? "not-allowed" : "pointer" }}>{zoneSaving ? "Relocating…" : "Relocate Hotel"}</button>
+                    <button type="button" onClick={() => void saveRegion()} disabled={zoneSaving || !zoneId || zoneId === hotel.zone?.id} style={{ background: T2.primary, color: "white", border: "none", borderRadius: T2.radius, padding: `${s(2)} ${s(4)}`, fontWeight: 700, opacity: zoneSaving || !zoneId || zoneId === hotel.zone?.id ? 0.6 : 1, cursor: zoneSaving || !zoneId || zoneId === hotel.zone?.id ? "not-allowed" : "pointer" }}>{zoneSaving ? "Relocating…" : "Relocate Hotel"}</button>
                 </div>
             </div>
 

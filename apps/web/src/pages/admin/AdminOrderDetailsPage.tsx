@@ -3,7 +3,6 @@ import { apiGet, apiPatch, apiPost } from "../../lib/api";
 import { CheckCircle, Circle, Lock, AlertTriangle, ChevronLeft, Phone, MapPin, CreditCard, Undo2, UtensilsCrossed, User, Wallet, Send } from "lucide-react";
 import { Modal } from "../../components/ui/Modal";
 import { Button } from "../../components/ui/Button";
-import { formatOrderLocation } from "../../lib/orderLocation";
 
 interface ChatMessage { id: string; body: string; createdAt: string; senderParticipantId: string; }
 
@@ -12,6 +11,7 @@ interface AdminOrderDetailsPageProps {
     token: string;
     canRefund: boolean;
     onBack: () => void;
+    onOpenMap: (order: any) => void;
     onOrderUpdated: (updatedOrder: any) => void;
 }
 
@@ -48,6 +48,7 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
     token,
     canRefund,
     onBack,
+    onOpenMap,
     onOrderUpdated,
 }) => {
     const [currentStatus, setCurrentStatus] = useState<string>(order.status);
@@ -511,8 +512,11 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
                     <p className="font-bold text-xs text-[#6B7280] uppercase tracking-wider mb-1">Delivery Location</p>
                     <p className="text-sm font-semibold text-[#1F2937] mb-3">
                         <MapPin size={14} className="inline mr-1 text-[#EF4444]" />
-                        {formatOrderLocation(order)}
+                        {order.marketSection} — {order.locationDescription}
                     </p>
+                    <Button variant="secondary" size="sm" disabled={true} onClick={() => onOpenMap(order)}>
+                        <MapPin size={14} /> Open Map Inspector
+                    </Button>
                 </div>
 
                 {/* Client communication — kitchen staff can initiate a message to the

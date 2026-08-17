@@ -7,10 +7,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 
     <!-- ── Favicons & App Icons ──────────────────────────────────────────────── -->
-    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <!-- Apple: static icon so "Add to Home Screen" gets the real icon, not a screenshot -->
     <link rel="apple-touch-icon" href="/ladha_icon_customer.png" />
 
@@ -30,16 +28,16 @@
     <meta name="theme-color" content="#0B1E13" />
 
     <!-- ── Primary SEO ───────────────────────────────────────────────────────── -->
-    <title>Ladha — Free Food Delivery in Kenya | Local Hotel &amp; Kitchen Food</title>
-    <meta name="description" content="Order fresh local food from trusted hotels and kitchens near you in Kenya. Free food delivery in your area — market stalls, offices and homes. Track your order live." />
-    <meta name="keywords" content="food delivery Kenya, free food delivery Kenya, local food near me, order food online Kenya, hotel food delivery, local hotels Naivasha, restaurant delivery Kenya, kitchen delivery Kiambu, market stall food, fresh meals Kenya, Ladha food delivery" />
+    <title>Ladha — Order Fresh Food Online | Kenya's Local Kitchen Marketplace</title>
+    <meta name="description" content="Order fresh, local meals from trusted kitchens near you. Fast delivery to market stalls, offices and homes across Kenya. Browse menus, track your order live on Ladha." />
+    <meta name="keywords" content="food delivery Kenya, order food online Kenya, local restaurant delivery, fresh meals Kenya, Ladha food delivery, kitchen delivery, market stall food, online food order Naivasha, Kiambu food delivery" />
     <link rel="canonical" href="https://ladha.co.ke" id="ladha-canonical" />
 
     <!-- ── Open Graph (Facebook, WhatsApp link previews) ───────────────────── -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Ladha" />
-    <meta property="og:title" content="Ladha — Free Food Delivery in Kenya | Local Hotel &amp; Kitchen Food" />
-    <meta property="og:description" content="Order fresh local food from trusted hotels and kitchens near you. Free food delivery in your area across Kenya — track your order live." />
+    <meta property="og:title" content="Ladha — Fresh Food Delivered Fast | Kenya's Local Kitchen Marketplace" />
+    <meta property="og:description" content="Order from trusted local kitchens. Fresh meals delivered to market stalls, offices and homes across Kenya. Track your order live." />
     <meta property="og:image" content="https://ladha.co.ke/ladha_icon_customer.png" />
     <meta property="og:image:width" content="512" />
     <meta property="og:image:height" content="512" />
@@ -49,8 +47,8 @@
 
     <!-- ── Twitter Card ──────────────────────────────────────────────────────── -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Ladha — Free Food Delivery in Kenya" />
-    <meta name="twitter:description" content="Order from trusted local hotels and kitchens near you. Free food delivery across Kenya." />
+    <meta name="twitter:title" content="Ladha — Fresh Food Delivered Fast" />
+    <meta name="twitter:description" content="Order from trusted local kitchens near you. Fast delivery across Kenya." />
     <meta name="twitter:image" content="https://ladha.co.ke/ladha_icon_customer.png" />
 
     <!-- ── Geo / Language targeting ─────────────────────────────────────────── -->
@@ -61,12 +59,9 @@
     <!-- ── Robots ────────────────────────────────────────────────────────────── -->
     <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
 
-    <!-- ── JSON-LD Structured Data — Food service marketplace ────────────────
-         Helps Google understand Ladha is a food delivery marketplace connecting
-         customers with local hotels/kitchens, and surface it in "food delivery
-         near me" rich results. Free delivery is real: a hotel's own delivery
-         area is free by default (resolveDeliveryFee returns 0 for the hotel's
-         own town region).
+    <!-- ── JSON-LD Structured Data — FoodService ─────────────────────────────
+         Helps Google understand Ladha is a food delivery marketplace and
+         surface it in "food delivery near me" rich results.
     ─────────────────────────────────────────────────────────────────────────── -->
     <script type="application/ld+json">
     {
@@ -75,7 +70,7 @@
       "@id": "https://ladha.co.ke/#organization",
       "name": "Ladha",
       "alternateName": "Ladha Deliveries",
-      "description": "Kenya's local food delivery marketplace — fresh meals from trusted hotels and kitchens delivered to market stalls, offices and homes, with free delivery in the hotel's area.",
+      "description": "Kenya's local food delivery marketplace — fresh meals from trusted kitchens delivered to market stalls, offices and homes.",
       "url": "https://ladha.co.ke",
       "logo": "https://ladha.co.ke/ladha_icon_customer.png",
       "image": "https://ladha.co.ke/ladha_icon_customer.png",
@@ -83,32 +78,9 @@
         "@type": "Country",
         "name": "Kenya"
       },
-      "servesCuisine": ["Local Kenyan", "African", "Fast Food", "Grilled", "Swahili"],
+      "servesCuisine": ["Local Kenyan", "African", "Fast Food", "Grilled"],
       "priceRange": "KSh 100 - KSh 2000",
-      "hasOfferCatalog": {
-        "@type": "OfferCatalog",
-        "name": "Food delivery services",
-        "itemListElement": [
-          {
-            "@type": "Offer",
-            "itemOffered": {
-              "@type": "Service",
-              "name": "Free food delivery in your area",
-              "description": "Free delivery within a hotel's own delivery area — market stalls, offices and homes.",
-              "areaServed": { "@type": "Country", "name": "Kenya" }
-            }
-          },
-          {
-            "@type": "Offer",
-            "itemOffered": {
-              "@type": "Service",
-              "name": "Local hotel & kitchen meals",
-              "description": "Fresh meals ordered online from trusted local hotels and kitchens.",
-              "areaServed": { "@type": "Country", "name": "Kenya" }
-            }
-          }
-        ]
-      },
+      "hasMap": "https://ladha.co.ke",
       "sameAs": []
     }
     </script>

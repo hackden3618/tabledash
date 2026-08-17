@@ -7,7 +7,7 @@ import { Header } from "../../components/ui/Header";
 import { Button } from "../../components/ui/Button";
 import { Input, Textarea } from "../../components/ui/Input";
 import { PageTransition } from "../../components/ui/PageTransition";
-import { Lock, CheckCircle2, Phone, Wallet, CreditCard, Users, UserRound, Info, ShieldCheck } from "lucide-react";
+import { Lock, CheckCircle2, Phone, Wallet, CreditCard, Zap, Users, UserRound, Info, ShieldCheck } from "lucide-react";
 import { SecureCodeInput } from "../../components/ui/SecureCodeInput";
 
 // TODO - the location data should be auto saved upon first entering since I saw that a user was complaining too much about re-entering the data everytime... I thought that was fixed...
@@ -692,7 +692,26 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
              </div>
            )}
 
-           <h2 className="text-lg font-bold text-[#1F2937] mb-4">Delivery Details</h2>
+           <h2 className="text-lg font-bold text-[#1F2937] mb-4">How would you like to set your location?</h2>
+
+          <div onClick={() => setOrderError("Market mapping is coming soon! For now, please enter your stall number and location description below.")}
+            className="border-2 border-dashed border-[#D1D5DB] rounded-2xl p-4 bg-[#F9FAFB] cursor-pointer opacity-70 hover:opacity-100 transition-opacity flex items-center justify-between"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">📍</span>
+              <div>
+                <p className="font-bold text-sm text-[#6B7280]">Market Map <span className="font-normal text-xs">(Coming Soon)</span></p>
+                <p className="text-xs text-[#9CA3AF]">Tap to learn more</p>
+              </div>
+            </div>
+            <span className="text-[#9CA3AF] text-lg">›</span>
+          </div>
+
+          <div className="flex items-center gap-3 my-5">
+            <div className="flex-1 h-px bg-[#E5E7EB]" />
+            <span className="text-xs font-semibold text-[#9CA3AF]">OR</span>
+            <div className="flex-1 h-px bg-[#E5E7EB]" />
+          </div>
 
           <div className="space-y-4">
             <div>
@@ -761,6 +780,17 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
               <div className="bg-white rounded-2xl border border-[#E5E7EB] p-4">
                 <p className="text-xs font-bold uppercase tracking-wider text-[#6B7280] mb-3">Payment Method</p>
                 <div className="space-y-2.5">
+                  <button
+                    type="button"
+                    disabled
+                    className="w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 border-dashed border-[#D1D5DB] bg-[#F9FAFB] opacity-70 cursor-not-allowed"
+                  >
+                    <span className="flex items-center gap-2 text-sm font-semibold text-[#6B7280]">
+                      <Zap size={18} className="text-[#2563EB]" /> Instant Payment
+                    </span>
+                    <span className="text-[0.6rem] font-bold px-2 py-0.5 rounded-full bg-[#DBEAFE] text-[#1D4ED8]">COMING IN VERSION 2.0</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => { setPaymentMethod("PAY_ON_DELIVERY"); setShowVerifyPrompt(false); }}

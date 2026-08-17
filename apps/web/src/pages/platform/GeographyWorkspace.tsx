@@ -145,12 +145,11 @@ export const GeographyWorkspace: React.FC<{ token: string; user: GeoActor; focus
 
   const [impact, setImpact] = useState<ImpactView | null>(null);
   const [impactConfirming, setImpactConfirming] = useState(false);
-  const [townHotels, setTownHotels] = useState<{ id: string; name: string; slug: string; isOpen: boolean; townRegion?: { id: string; name: string } }[]>([]);
+  const [townHotels, setTownHotels] = useState<{ id: string; name: string; slug: string; isOpen: boolean }[]>([]);
 
   // ── Hotel Relocation state ──
-  const [relocateHotel, setRelocateHotel] = useState<{ id: string; name: string; currentTownId: string; currentTownRegionId: string; currentTownRegionName: string } | null>(null);
+  const [relocateHotel, setRelocateHotel] = useState<{ id: string; name: string; currentTownId: string } | null>(null);
   const [relocateTargetTownId, setRelocateTargetTownId] = useState("");
-  const [relocateTargetRegionId, setRelocateTargetRegionId] = useState("");
   const [relocating, setRelocating] = useState(false);
 
   // ── Cleanup (legacy reclassification) state ──
@@ -166,32 +165,17 @@ export const GeographyWorkspace: React.FC<{ token: string; user: GeoActor; focus
     window.setTimeout(() => setNotice(null), 6000);
   }, []);
 
-  const townAreasOf = (townId: string): GeoArea[] => counties.flatMap((c) => c.towns).find((t) => t.id === townId)?.areas ?? [];
-
-  const openHotelRelocation = (h: { id: string; name: string; townRegion?: { id: string; name: string } }) => {
-    if (!selectedTownId) return;
-    setRelocateHotel({ id: h.id, name: h.name, currentTownId: selectedTownId, currentTownRegionId: h.townRegion?.id ?? "", currentTownRegionName: h.townRegion?.name ?? "" });
-    setRelocateTargetTownId(selectedTownId);
-    setRelocateTargetRegionId(h.townRegion?.id ?? "");
-  };
-
   const submitRelocateHotel = async () => {
-    if (!relocateHotel || !relocateTargetTownId || !relocateTargetRegionId || relocating) return;
-    const unchanged = relocateTargetTownId === relocateHotel.currentTownId && relocateTargetRegionId === relocateHotel.currentTownRegionId;
-    if (unchanged) return;
+    if (!relocateHotel || !relocateTargetTownId || relocating) return;
     setRelocating(true);
-    const res = await apiPatch(`/platform/hotels/${relocateHotel.id}`, { zoneId: relocateTargetTownId, townRegionId: relocateTargetRegionId }, token);
+    const res = await apiPatch(`/platform/hotels/${relocateHotel.id}`, { zoneId: relocateTargetTownId }, token);
     setRelocating(false);
     if (res.success) {
       const targetTownName = counties.flatMap((c) => c.towns).find((t) => t.id === relocateTargetTownId)?.name ?? "new town";
-      const targetRegionName = townAreasOf(relocateTargetTownId).find((a) => a.id === relocateTargetRegionId)?.name ?? "zone";
-      const changeKind = relocateTargetTownId !== relocateHotel.currentTownId ? "town" : "delivery zone";
-      showNotice("success", `Relocated "${relocateHotel.name}" to ${targetTownName} / ${targetRegionName} (${changeKind}).`);
+      showNotice("success", `Relocated "${relocateHotel.name}" to ${targetTownName}.`);
       setRelocateHotel(null);
       setRelocateTargetTownId("");
-      setRelocateTargetRegionId("");
       await load();
-      await loadTownHotels();
     } else {
       showNotice("danger", res.error || "Could not relocate hotel");
     }
@@ -232,17 +216,15 @@ export const GeographyWorkspace: React.FC<{ token: string; user: GeoActor; focus
     }
   }, [focusTownId, hierarchy]);
 
-  const townHotelsReqRef = useRef(0);
-  const loadTownHotels = useCallback(async () => {
-    if (!selectedTownId) { setTownHotels([]); return; }
-    const req = ++townHotelsReqRef.current;
-    const res = await apiGet<{ hotels: { id: string; name: string; slug: string; isOpen: boolean; townRegion?: { id: string; name: string } }[] }>(`/platform/towns/${selectedTownId}`, token);
-    if (req === townHotelsReqRef.current && res.success && res.data) setTownHotels(res.data.hotels);
-  }, [selectedTownId, token]);
-
   useEffect(() => {
-    void loadTownHotels();
-  }, [loadTownHotels]);
+    if (!selectedTownId) { setTownHotels([]); return; }
+    let stale = false;
+    void (async () => {
+      const res = await apiGet<{ hotels: { id: string; name: string; slug: string; isOpen: boolean }[] }>(`/platform/towns/${selectedTownId}`, token);
+      if (!stale && res.success && res.data) setTownHotels(res.data.hotels);
+    })();
+    return () => { stale = true; };
+  }, [selectedTownId, token]);
 
   const counties = hierarchy?.counties ?? [];
   const selectedCounty = counties.find((c) => c.id === selectedCountyId) ?? null;
@@ -483,9 +465,7 @@ export const GeographyWorkspace: React.FC<{ token: string; user: GeoActor; focus
           </div>}
           <div style={{ display: "flex", gap: px(1), marginTop: px(1), flexWrap: "wrap" }}>
             <button type="button" onClick={(e) => { e.stopPropagation(); setEditCountyId(c.id); setCountyForm({ name: c.name, type: c.type }); setOpenModal("editCounty"); }} style={linkStyle}>Edit</button>
-            {c.active
-              ? <button type="button" onClick={(e) => { e.stopPropagation(); void requestDeactivate("county", c.id); }} style={linkStyleDanger}>Deactivate</button>
-              : <button type="button" onClick={(e) => { e.stopPropagation(); void (async () => { const res = await apiPatch<{ active: boolean }>(`/platform/mega-regions/${c.id}`, { active: true }, token); if (res.success) { showNotice("success", `"${c.name}" is active again.`); await load(); } else showNotice("danger", res.error || "Could not reactivate county/city"); })(); }} style={linkStyle}>Reactivate</button>}
+            <button type="button" onClick={(e) => { e.stopPropagation(); void requestDeactivate("county", c.id); }} style={linkStyleDanger}>Deactivate</button>
           </div>
         </div>
       ))}
@@ -510,9 +490,7 @@ export const GeographyWorkspace: React.FC<{ token: string; user: GeoActor; focus
         <button type="button" onClick={(e) => { e.stopPropagation(); setSelectedTownId(town.id); }} style={linkStyle}>View zones ({town.areaCount})</button>
         <button type="button" onClick={(e) => { e.stopPropagation(); setSelectedTownId(town.id); setAreaForm({ name: "", active: true, note: "", displayOrder: 0 }); setOpenModal("addArea"); }} style={linkStyle}>+ Add zone</button>
         <button type="button" onClick={(e) => { e.stopPropagation(); setEditTownId(town.id); setTownForm({ name: town.name, type: town.type, locationLabel: town.locationLabel, locationPlaceholder: town.locationPlaceholder }); setOpenModal("editTown"); }} style={linkStyle}>Edit</button>
-        {town.active
-          ? <button type="button" onClick={(e) => { e.stopPropagation(); void requestDeactivate("town", town.id); }} style={linkStyleDanger}>Deactivate</button>
-          : <button type="button" onClick={(e) => { e.stopPropagation(); void (async () => { const res = await apiPatch<{ active: boolean }>(`/platform/towns/${town.id}`, { active: true }, token); if (res.success) { showNotice("success", `"${town.name}" is active again.`); await load(); } else showNotice("danger", res.error || "Could not reactivate town"); })(); }} style={linkStyle}>Reactivate</button>}
+        <button type="button" onClick={(e) => { e.stopPropagation(); void requestDeactivate("town", town.id); }} style={linkStyleDanger}>Deactivate</button>
       </div>
     </div>
   );
@@ -735,11 +713,11 @@ export const GeographyWorkspace: React.FC<{ token: string; user: GeoActor; focus
                                   style={{ background: G.surface, border: `1px solid ${G.border}`, borderRadius: G.radius, padding: `${px(3)} ${px(4)}`, display: "flex", justifyContent: "space-between", alignItems: "center", gap: px(2) }}>
                                   <div role="button" tabIndex={0} onClick={() => onOpenHotel?.(h.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenHotel?.(h.id); } }} style={{ cursor: onOpenHotel ? "pointer" : "default", flex: 1 }}>
                                     <div style={{ fontWeight: 700, color: G.text, fontSize: "0.9rem" }}>{h.name}</div>
-                                    <div style={{ fontSize: "0.78rem", color: G.textMuted }}>/{h.slug}{h.townRegion ? ` · ${h.townRegion.name}` : ""}</div>
+                                    <div style={{ fontSize: "0.78rem", color: G.textMuted }}>/{h.slug}</div>
                                   </div>
                                   <div style={{ display: "flex", alignItems: "center", gap: px(3) }}>
                                     <span style={{ fontSize: "0.72rem", fontWeight: 800, color: h.isOpen ? G.success : G.textDim }}>{h.isOpen ? "OPEN" : "CLOSED"}</span>
-                                    <button type="button" onClick={(e) => { e.stopPropagation(); openHotelRelocation(h); }} style={linkStyle}>Relocate Hotel</button>
+                                    <button type="button" onClick={(e) => { e.stopPropagation(); setRelocateHotel({ id: h.id, name: h.name, currentTownId: selectedTownId! }); setRelocateTargetTownId(""); }} style={linkStyle}>Relocate Hotel</button>
                                   </div>
                                 </div>
                               ))}
@@ -894,37 +872,28 @@ export const GeographyWorkspace: React.FC<{ token: string; user: GeoActor; focus
         </Modal>
 
         {/* Relocate Hotel Modal */}
-        <Modal isOpen={Boolean(relocateHotel)} onClose={() => { setRelocateHotel(null); setRelocateTargetTownId(""); setRelocateTargetRegionId(""); }} title={`Relocate ${relocateHotel?.name ?? "Hotel"}`} type="info">
+        <Modal isOpen={Boolean(relocateHotel)} onClose={() => setRelocateHotel(null)} title={`Relocate ${relocateHotel?.name ?? "Hotel"}`} type="info">
           <div style={{ display: "flex", flexDirection: "column", gap: px(3) }}>
-            <p style={{ color: G.textMuted, fontSize: "0.85rem", margin: 0 }}>A hotel's location is always a town <em>and</em> a specific delivery zone — never just a town. Pick a destination of the same shape to relocate <strong>{relocateHotel?.name}</strong>.</p>
+            <p style={{ color: G.textMuted, fontSize: "0.85rem", margin: 0 }}>Select the target town / delivery region to relocate <strong>{relocateHotel?.name}</strong> to.</p>
             <div>
-              <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: G.textMuted, marginBottom: px(1) }}>Target town</label>
-              <select value={relocateTargetTownId} onChange={(e) => { const next = e.target.value; setRelocateTargetTownId(next); setRelocateTargetRegionId(townAreasOf(next).find((a) => a.active !== false)?.id ?? ""); }} className="input-field" style={{ fontFamily: "inherit" }}>
+              <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: G.textMuted, marginBottom: px(1) }}>Target Town / Delivery Region</label>
+              <select value={relocateTargetTownId} onChange={(e) => setRelocateTargetTownId(e.target.value)} className="input-field" style={{ fontFamily: "inherit" }}>
                 <option value="">Select target town…</option>
                 {counties.filter((c) => c.active !== false).map((c) => (
                   <optgroup key={c.id} label={c.name}>
                     {c.towns.filter((t) => t.active !== false).map((t) => (
-                      <option key={t.id} value={t.id}>{t.name}{t.id === relocateHotel?.currentTownId ? " (current)" : ""}</option>
+                      <option key={t.id} value={t.id} disabled={t.id === relocateHotel?.currentTownId}>
+                        {t.name} {t.id === relocateHotel?.currentTownId ? " (current)" : ""}
+                      </option>
                     ))}
                   </optgroup>
                 ))}
               </select>
             </div>
-            <div>
-              <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: G.textMuted, marginBottom: px(1) }}>Delivery zone</label>
-              <select value={relocateTargetRegionId} onChange={(e) => setRelocateTargetRegionId(e.target.value)} className="input-field" style={{ fontFamily: "inherit" }} disabled={!relocateTargetTownId}>
-                <option value="">{relocateTargetTownId ? "Select the delivery zone" : "Select a town first"}</option>
-                {townAreasOf(relocateTargetTownId).filter((a) => a.active !== false).map((a) => (
-                  <option key={a.id} value={a.id}>{a.name}{a.isFallback ? " (General Area)" : ""}{a.id === relocateHotel?.currentTownRegionId ? " (current)" : ""}</option>
-                ))}
-              </select>
-              <div style={{ fontSize: "0.72rem", color: G.textMuted, marginTop: px(1) }}
-                >{relocateHotel?.currentTownRegionName ? `Currently in ${relocateHotel.currentTownRegionName}.` : ""}</div>
-            </div>
           </div>
           <div style={{ display: "flex", gap: px(3), marginTop: px(5) }}>
-            <Button variant="secondary" fullWidth onClick={() => { setRelocateHotel(null); setRelocateTargetTownId(""); setRelocateTargetRegionId(""); }}>Cancel</Button>
-            <Button variant="primary" fullWidth onClick={() => void submitRelocateHotel()} loading={relocating} disabled={!relocateTargetTownId || !relocateTargetRegionId || (relocateHotel ? relocateTargetTownId === relocateHotel.currentTownId && relocateTargetRegionId === relocateHotel.currentTownRegionId : true)}>
+            <Button variant="secondary" fullWidth onClick={() => setRelocateHotel(null)}>Cancel</Button>
+            <Button variant="primary" fullWidth onClick={() => void submitRelocateHotel()} loading={relocating} disabled={!relocateTargetTownId || relocateTargetTownId === relocateHotel?.currentTownId}>
               Confirm Relocation
             </Button>
           </div>

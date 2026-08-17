@@ -150,7 +150,6 @@ export async function getHotelDeliverySettings(hotelId: string) {
     where: { id: hotelId },
     select: {
       zoneId: true,
-      townRegionId: true,
       genericDeliveryFee: true,
       deliveryFees: { select: { townRegionId: true, amount: true } },
       zone: { select: { id: true, name: true } },
@@ -169,10 +168,9 @@ export async function getHotelDeliverySettings(hotelId: string) {
 
   const list = townRegions.map((tr) => ({
     id: tr.id,
-    name: tr.id === hotel.townRegionId ? `${tr.name} (your zone — free unless set below)` : tr.isFallback ? `${tr.name} (default)` : tr.name,
+    name: tr.isFallback ? `${tr.name} (default)` : tr.name,
     type: "ZONE",
     isFallback: tr.isFallback,
-    isHomeZone: tr.id === hotel.townRegionId,
     amount: fees.get(tr.id) ?? null,
   }));
 

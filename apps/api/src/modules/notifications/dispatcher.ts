@@ -19,7 +19,6 @@ import { handleHotelStatusUpdated } from "./handlers/hotel-status-updated.handle
 import { handlePlatformAdminCreated } from "./handlers/platform-admin-created.handler";
 import { handleAccountLedgerEvent } from "./handlers/account-ledger.handler";
 import { handleSmsDeliveryFailed } from "./handlers/sms-delivery-failed.handler";
-import { handleReviewPrompt } from "./handlers/review-prompt.handler";
 
 const POLL_INTERVAL_MS = 3000;
 const GRACE_PERIOD_MS = 5000;
@@ -45,7 +44,6 @@ const HANDLER_MAP: Record<string, HandlerFn> = {
   customer_account_payment_recorded: (payload) => handleAccountLedgerEvent("payment", payload),
   customer_account_refund_recorded: (payload) => handleAccountLedgerEvent("refund", payload),
   customer_account_adjusted: (payload) => handleAccountLedgerEvent("adjustment", payload),
-  review_prompt_ready: handleReviewPrompt,
   sms_delivery_failed: handleSmsDeliveryFailed,
 };
 

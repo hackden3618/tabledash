@@ -24,7 +24,6 @@ export interface OrderAlertToHotelParams {
   locationDescription: string;
   itemsSummary: string;
   totalAmount: number;
-  kitchenLink: string;
 }
 
 export const orderAlertToHotel = (p: OrderAlertToHotelParams): string =>
@@ -33,8 +32,7 @@ export const orderAlertToHotel = (p: OrderAlertToHotelParams): string =>
   `Location: ${p.locationDescription}\n\n` +
   `Items:\n` +
   `${p.itemsSummary}\n\n` +
-  `Total: KSh ${p.totalAmount}\n\n` +
-  `Process this order: ${p.kitchenLink}`;
+  `Total: KSh ${p.totalAmount}`;
 
 export interface OrderAcceptedToCustomerParams {
   firstName: string;
@@ -100,7 +98,7 @@ export interface OrderCancelledToHotelParams {
   reason: string;
 }
 export const orderCancelledToHotel = (p: OrderCancelledToHotelParams): string => {
-  const stallTag = p.stallNumber ? ` | ${p.stallNumber}` : "";
+  const stallTag = p.stallNumber ? ` | Stall: ${p.stallNumber}` : "";
   return (
     `[${p.hotelName}] ORDER #${p.orderNumber} CANCELLED${stallTag}\n` +
     `Reason: ${p.reason}\n` +
@@ -234,21 +232,3 @@ export const hotelStatusChanged = (p: HotelStatusChangedParams): string =>
   `${p.hotelName} has been ${p.action}.\n` +
   `Changed by: ${p.changedBy}\n` +
   `Check your dashboard for details.`;
-
-export interface ReviewPromptToCustomerParams {
-  firstName: string;
-  orderNumber: number;
-  hotelName: string;
-  itemNames: string[];
-  link: string;
-}
-export const reviewPromptToCustomer = (p: ReviewPromptToCustomerParams): string => {
-  const highlight = p.itemNames.length
-    ? p.itemNames.slice(0, 2).join(" & ") + (p.itemNames.length > 2 ? " and more" : "")
-    : "your meal";
-  return (
-    `${BRAND}\n` +
-    `Thanks, ${p.firstName}! Order #${p.orderNumber} from ${p.hotelName} is complete and fully paid.\n` +
-    `How was ${highlight}? Rate it here: ${p.link}`
-  );
-};

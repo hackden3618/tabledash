@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   Static base sitemap for Ladha. Hotel pages (/h/:slug) are dynamically
-  listed at GET /api/v1/hotels/sitemap.xml — robots.txt already points
-  Google at BOTH files:
+  listed at GET /api/v1/sitemap — submit BOTH to Google Search Console:
     https://ladha.co.ke/sitemap.xml
-    https://ladha.co.ke/api/v1/hotels/sitemap.xml
+    https://ladha.co.ke/api/v1/sitemap
 -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -15,7 +14,6 @@
   <url>
     <loc>https://ladha.co.ke/</loc>
     <changefreq>hourly</changefreq>
-    <lastmod>2026-08-17</lastmod>
     <priority>1.0</priority>
   </url>
 
@@ -23,7 +21,6 @@
   <url>
     <loc>https://ladha.co.ke/search</loc>
     <changefreq>daily</changefreq>
-    <lastmod>2026-08-17</lastmod>
     <priority>0.7</priority>
   </url>
 

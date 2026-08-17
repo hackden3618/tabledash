@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { isJwtExpired, getJwtExpiry } from "../lib/jwt";
 import { apiGet, apiPost } from "../lib/api";
+import { safeSetItem } from "../lib/storage";
 
 const STORAGE_KEY = "ladha_token";
 
@@ -60,7 +61,7 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, []);
 
   const login = useCallback((newToken: string, userData?: AdminUser, hotelList?: AdminHotelSummary[]) => {
-    localStorage.setItem(STORAGE_KEY, newToken);
+    safeSetItem(STORAGE_KEY, newToken);
     setToken(newToken);
     if (hotelList) {
       setHotels(hotelList);
@@ -82,7 +83,7 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     if (!res.success || !res.data) {
       throw new Error(res.error || "Unable to switch hotel");
     }
-    localStorage.setItem(STORAGE_KEY, res.data.token);
+    safeSetItem(STORAGE_KEY, res.data.token);
     setToken(res.data.token);
     setUser(res.data.user);
     // The backend now returns the full hotel list on switch, matching loginAdmin.

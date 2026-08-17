@@ -35,7 +35,7 @@ export const PersistentNotificationCard: React.FC<PersistentNotificationCardProp
   const [soundEnabled, setSoundEnabled] = useState(() => localStorage.getItem("ladha_sound_enabled") !== "false");
   const [bannerDismissed, setBannerDismissed] = useState(() => {
     if (typeof window === "undefined") return false;
-    if (Notification.permission === "granted") {
+    if (getNotificationPermissionState() === "granted") {
       return localStorage.getItem("ladha_notification_banner_dismissed") === "true";
     }
     return sessionStorage.getItem("ladha_notification_banner_session_dismissed") === "true";

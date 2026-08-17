@@ -7,6 +7,7 @@
 
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { apiGet, apiPut } from "../lib/api";
+import { safeSetItem } from "../lib/storage";
 import { useCustomerAuth } from "./CustomerAuthContext";
 
 export interface CartItem {
@@ -55,7 +56,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
 
   useEffect(() => {
-    localStorage.setItem("ladha_cart", JSON.stringify(cart));
+    safeSetItem("ladha_cart", JSON.stringify(cart));
   }, [cart]);
 
   // On sign-in, merge the device cart into the customer's durable cart. This

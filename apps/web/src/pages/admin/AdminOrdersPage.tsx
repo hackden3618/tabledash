@@ -5,7 +5,6 @@ import { useNotifications } from "../../context/NotificationsContext";
 import { AdminNotificationBell, AdminNotificationPanel } from "../../components/AdminNotificationPanel";
 import { LogOut, ShoppingBag, MapPin, Phone, ChevronRight, UtensilsCrossed } from "lucide-react";
 import { StatusBadge } from "../../components/ui/Badge";
-import { formatOrderLocation } from "../../lib/orderLocation";
 
 interface AdminOrdersPageProps {
   token: string;
@@ -232,7 +231,7 @@ export const AdminOrdersPage: React.FC<AdminOrdersPageProps> = ({
 
                 <div className="flex items-start gap-1.5 text-xs text-[#6B7280] mb-3">
                   <MapPin size={12} className="mt-0.5 shrink-0" />
-                  <span>{formatOrderLocation(ord)}</span>
+                  <span>{ord.marketSection}{ord.locationDescription ? ` — ${ord.locationDescription}` : ""}</span>
                 </div>
 
                 <div className="flex items-center justify-between pt-3 border-t border-[#F3F4F6]">

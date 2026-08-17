@@ -11,7 +11,7 @@ import { getDefaultHotel } from "../hotels/service";
 import { wsHub } from "../websocket/hub";
 import { formatPhone } from "../../../../../shared/phone";
 import { calculateDashboardMetrics, normalizeOrderItems, PENDING_STATUSES } from "./logic";
-import { applyOrderChargeTx, recordCancellationChargeTx, maybeQueueReviewPromptTx } from "../finance/service";
+import { applyOrderChargeTx, recordCancellationChargeTx } from "../finance/service";
 import { generateAccountId } from "../customers/account-id";
 import { getCustomerProfile } from "../customers/auth.service";
 
@@ -55,43 +55,22 @@ export interface DeliveryFeeQuote {
     deliveryFee: number;
 }
 
-type FeeableHotel = {
-    townRegionId: string;
-    genericDeliveryFee: unknown;
-    deliveryFees: { townRegionId: string; amount: unknown }[];
-};
-
-/** THE single source of truth for what a hotel charges to deliver into a given
- * TownRegion (delivery sub-area). Every surface that quotes or charges a
- * delivery fee — cart preview, checkout, order placement — MUST call this
- * instead of recomputing it, so the number a customer sees is always the
- * number they're charged.
- *
- * Precedence:
- *  1. An explicit HotelDeliveryFee row for that TownRegion always wins,
- *     however the hotel's admin configured it (including KSh 0).
- *  2. Otherwise, if the customer is delivering into the hotel's OWN
- *     TownRegion (its home zone — "nearby"), the fee is free by default.
- *  3. Otherwise, the hotel's generic delivery fee applies (KSh 50 default). */
-export function resolveDeliveryFee(hotel: FeeableHotel, deliveryZoneId?: string): number {
-    const configured = deliveryZoneId ? hotel.deliveryFees.find((fee) => fee.townRegionId === deliveryZoneId) : undefined;
-    if (configured) return Number(configured.amount);
-    if (deliveryZoneId && deliveryZoneId === hotel.townRegionId) return 0;
-    return Number(hotel.genericDeliveryFee);
-}
-
-/** Server-side delivery pricing, backed exclusively by resolveDeliveryFee
- * above — kitchen-configured HotelDeliveryFee rows are the source of truth,
- * with the hotel's own zone free by default and its generic fee elsewhere. */
+/** Server-side delivery pricing. Every hotel charges its configured price for
+ * the selected delivery sub-area (TownRegion), falling back to its generic fee
+ * (KSh 50 by default). Hotels in the customer's exact sub-area typically get a
+ * lower or zero fee; ones elsewhere in the town use their generic rate. */
 export async function getDeliveryFeeQuote(hotelIds: string[], deliveryZoneId?: string): Promise<DeliveryFeeQuote[]> {
     const uniqueHotelIds = [...new Set(hotelIds)];
     if (!uniqueHotelIds.length) return [];
     const hotels = await prisma.hotel.findMany({
         where: { id: { in: uniqueHotelIds }, deletedAt: null },
-        select: { id: true, townRegionId: true, genericDeliveryFee: true, deliveryFees: { select: { townRegionId: true, amount: true } } },
+        select: { id: true, zoneId: true, genericDeliveryFee: true, deliveryFees: { select: { townRegionId: true, amount: true } } },
     });
     if (hotels.length !== uniqueHotelIds.length) throw new Error("One or more hotels are unavailable");
-    return hotels.map((hotel) => ({ hotelId: hotel.id, deliveryFee: resolveDeliveryFee(hotel, deliveryZoneId) }));
+    return hotels.map((hotel) => {
+        const configured = deliveryZoneId ? hotel.deliveryFees.find((fee) => fee.townRegionId === deliveryZoneId) : undefined;
+        return { hotelId: hotel.id, deliveryFee: Number(configured?.amount ?? hotel.genericDeliveryFee) };
+    });
 }
 
 // On-behalf orders require the recipient's number to be OTP-verified, and the
@@ -406,7 +385,7 @@ export const placeOrder = async (input: CreateOrderInput) => {
         return { orders, updatedProducts, outboxIds };
     });
 
-    const formattedOrders = (await attachDeliveryZoneNames(result.orders)).map(formatOrderResponse);
+    const formattedOrders = result.orders.map(formatOrderResponse);
 
     // Attach the updated customer profile (incl. recentOrders) so the client can
     // sync its context from the order response without a second /customers/me call.
@@ -461,7 +440,7 @@ export const getOrders = async (statusFilter?: OrderStatus, hotelId?: string) =>
         orderBy: { orderedAt: "desc" },
     });
 
-    return (await attachDeliveryZoneNames(orders)).map(formatOrderResponse);
+    return orders.map(formatOrderResponse);
 };
 
 /**
@@ -481,8 +460,7 @@ export const getOrderById = async (id: string, hotelId?: string) => {
         throw new Error("Order not found");
     }
 
-    const [withZoneName] = await attachDeliveryZoneNames([order]);
-    return formatOrderResponse(withZoneName);
+    return formatOrderResponse(order);
 };
 
 /** Customer/guest tracking must be scoped to the order owner, never only to a UUID. */
@@ -611,12 +589,8 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus, canc
 
         const updatedOrder = await tx.order.findUniqueOrThrow({
             where: { id },
-            include: { customer: true, orderItems: true, hotel: { select: { name: true } } },
+            include: { customer: true, orderItems: true },
         });
-
-        if (newStatus === "DELIVERED") {
-            await maybeQueueReviewPromptTx(tx, updatedOrder);
-        }
 
         const outbox = await tx.eventOutbox.create({
             data: {
@@ -757,7 +731,7 @@ export const getDailyOrders = async (dateStr: string, hotelId?: string) => {
         orderBy: { orderedAt: "desc" },
     });
 
-    return (await attachDeliveryZoneNames(orders)).map(formatOrderResponse);
+    return orders.map(formatOrderResponse);
 };
 
 /**
@@ -768,12 +742,11 @@ export const getDailyOrders = async (dateStr: string, hotelId?: string) => {
 export const markUtensilsIssued = async (id: string, hotelId: string, issued: boolean) => {
     const order = await prisma.order.findFirst({ where: { id, hotelId } });
     if (!order) throw new Error("Order not found");
-    const updatedOrder = await prisma.order.update({
+    return formatOrderResponse(await prisma.order.update({
         where: { id },
         data: { utensilsIssued: issued, utensilsRequired: issued ? true : false },
         include: { customer: true, orderItems: true },
-    });
-    return formatOrderResponse((await attachDeliveryZoneNames([updatedOrder]))[0]!);
+    }));
 };
 
 /**
@@ -783,12 +756,11 @@ export const markUtensilsIssued = async (id: string, hotelId: string, issued: bo
 export const markUtensilsReturned = async (id: string, hotelId: string, adminUserId: string) => {
     const order = await prisma.order.findFirst({ where: { id, hotelId } });
     if (!order) throw new Error("Order not found");
-    const updatedOrder = await prisma.order.update({
+    return formatOrderResponse(await prisma.order.update({
         where: { id },
         data: { utensilsReturnedAt: new Date(), utensilsReturnedByAdminUserId: adminUserId },
         include: { customer: true, orderItems: true },
-    });
-    return formatOrderResponse((await attachDeliveryZoneNames([updatedOrder]))[0]!);
+    }));
 };
 
 /**
@@ -809,8 +781,6 @@ export const getPendingCollection = async (hotelId: string) => {
         include: { customer: true, orderItems: true },
         orderBy: { orderedAt: "desc" },
     });
-
-    const deliveryZoneNameById = await buildDeliveryZoneNameMap(orders.map((order) => order.deliveryZoneId));
 
     return orders.map((order) => {
         const amountPaid = Number(order.amountPaid);
@@ -843,7 +813,6 @@ export const getPendingCollection = async (hotelId: string) => {
             marketSection: order.marketSection,
             locationDescription: order.locationDescription,
             stallNumber: order.stallNumber,
-            deliveryZoneName: order.deliveryZoneId ? deliveryZoneNameById.get(order.deliveryZoneId) ?? null : null,
         };
     });
 };
@@ -866,8 +835,6 @@ export const getRefundsOwed = async (hotelId: string) => {
         },
         orderBy: { orderedAt: "desc" },
     });
-
-    const deliveryZoneNameById = await buildDeliveryZoneNameMap(orders.map((order) => order.deliveryZoneId));
 
     return orders
         .map((order) => {
@@ -916,7 +883,6 @@ export const getRefundsOwed = async (hotelId: string) => {
             marketSection: order.marketSection,
             locationDescription: order.locationDescription,
             stallNumber: order.stallNumber,
-            deliveryZoneName: order.deliveryZoneId ? deliveryZoneNameById.get(order.deliveryZoneId) ?? null : null,
         }));
 };
 
@@ -994,32 +960,4 @@ function formatOrderResponse(order: any) {
             subtotal: Number(item.subtotal),
         })),
     };
-}
-
-/**
- * Resolves a batch of delivery-zone (TownRegion) UUIDs to their display names.
- * The Order model stores the zone as a plain UUID with no Prisma relation to
- * TownRegion, so names are resolved explicitly instead of via a relation join.
- */
-async function buildDeliveryZoneNameMap(ids: Array<string | null | undefined>) {
-    const uniqueIds = [...new Set(ids.filter((id): id is string => Boolean(id)))];
-    if (!uniqueIds.length) return new Map<string, string>();
-    const zones = await prisma.townRegion.findMany({
-        where: { id: { in: uniqueIds } },
-        select: { id: true, name: true },
-    });
-    return new Map(zones.map((zone) => [zone.id, zone.name]));
-}
-
-/**
- * Attaches `deliveryZoneName` to order rows so every admin-facing order response
- * carries the human-readable delivery area (e.g. "Sokoni Modern Market"), not
- * just the raw UUID. Staff use this name to locate the customer.
- */
-async function attachDeliveryZoneNames<T extends { deliveryZoneId?: string | null }>(rows: T[]) {
-    const nameById = await buildDeliveryZoneNameMap(rows.map((row) => row.deliveryZoneId));
-    return rows.map((row) => ({
-        ...row,
-        deliveryZoneName: row.deliveryZoneId ? nameById.get(row.deliveryZoneId) ?? null : null,
-    }));
 }

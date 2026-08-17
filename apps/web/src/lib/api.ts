@@ -17,12 +17,30 @@ const GUEST_STORAGE_KEYS = [
   "ladha_cart",
 ];
 
+/**
+ * crypto.randomUUID() requires a secure context and a fairly modern engine
+ * (Safari <15.4, Chrome <92, and several stripped-down in-app/webview
+ * browsers don't have it). It's not guarded elsewhere, and this runs on
+ * effectively every page load, so fall back to a non-crypto UUID-shaped id
+ * rather than letting it throw.
+ */
+function generateGuestId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    try {
+      return crypto.randomUUID();
+    } catch {
+      // fall through
+    }
+  }
+  return "guest-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+}
+
 /** Device-local identity for guest conversations; never treated as auth. */
 export function getGuestId(): string {
   if (typeof window === "undefined") return "";
   const existing = window.localStorage.getItem(GUEST_ID_KEY);
   if (existing) return existing;
-  const created = crypto.randomUUID();
+  const created = generateGuestId();
   window.localStorage.setItem(GUEST_ID_KEY, created);
   for (const key of GUEST_STORAGE_KEYS) {
     if (key !== GUEST_ID_KEY) window.localStorage.removeItem(key);

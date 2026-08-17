@@ -114,7 +114,6 @@ export const platformRoute = new Elysia({
         include: {
           adminUsers: { select: { id: true, name: true, username: true, role: true } },
           zone: { include: { megaRegion: true } },
-          townRegion: true,
         },
       });
 
@@ -144,7 +143,6 @@ export const platformRoute = new Elysia({
           adminUsers: { select: { id: true, name: true, username: true, role: true, createdAt: true } },
           staffUsers: { select: { id: true, name: true, phone: true, createdAt: true } },
           zone: true,
-          townRegion: true,
           _count: { select: { orders: true } },
         },
       });
@@ -169,16 +167,10 @@ export const platformRoute = new Elysia({
 
       try {
         // No inactive town may be used for hotel onboarding — geography rules
-        // are enforced server-side, never by hiding UI options. A hotel's
-        // townRegion must be a real, active sub-area that actually belongs
-        // to the chosen town — never trust the client's pairing of the two.
+        // are enforced server-side, never by hiding UI options.
         const town = await prisma.zone.findUnique({ where: { id: body.zoneId } });
         if (!town) { set.status = 400; return { success: false, error: "The selected town no longer exists." }; }
         if (!town.active) { set.status = 400; return { success: false, error: `Town "${town.name}" is inactive. Activate it before onboarding hotels.` }; }
-
-        const townRegion = await prisma.townRegion.findUnique({ where: { id: body.townRegionId } });
-        if (!townRegion || townRegion.townId !== body.zoneId) { set.status = 400; return { success: false, error: "The selected delivery zone does not belong to that town." }; }
-        if (!townRegion.active) { set.status = 400; return { success: false, error: `Zone "${townRegion.name}" is inactive. Activate it before onboarding hotels there.` }; }
 
         // No password is ever generated or stored in plaintext for new accounts.
         // The account starts locked (unknowable random hash); the SMS sent by the
@@ -194,7 +186,6 @@ export const platformRoute = new Elysia({
               isOpen: body.isOpen ?? true,
               autoCloseAt: body.autoCloseAt ? new Date(body.autoCloseAt) : null,
               zone: { connect: { id: body.zoneId } },
-              townRegion: { connect: { id: body.townRegionId } },
             },
           });
 
@@ -270,7 +261,6 @@ export const platformRoute = new Elysia({
         isOpen: t.Optional(t.Boolean()),
         autoCloseAt: t.Optional(t.String()),
         zoneId: t.String({ format: "uuid" }),
-        townRegionId: t.String({ format: "uuid" }),
       }),
     }
   )
@@ -397,34 +387,18 @@ export const platformRoute = new Elysia({
       try { admin = await requirePlatformActor(headers, jwt, "hotels:write"); }
       catch (err: any) { set.status = err.status ?? 401; return { success: false, error: err.message }; }
 
-      const hotel = await prisma.hotel.findUnique({ where: { id: params.id }, include: { zone: true, townRegion: { select: { id: true, name: true } } } });
+      const hotel = await prisma.hotel.findUnique({ where: { id: params.id }, include: { zone: true } });
       if (!hotel) { set.status = 404; return { success: false, error: "Hotel not found" }; }
 
-      // Reassigning a hotel's geography is a sensitive change: audit it
-      // explicitly (who, from where, to where), never allow moving into an
-      // inactive town/zone, and never let a town change land without a zone —
-      // a hotel must always have a specific delivery sub-area, never just
-      // "somewhere in this town".
-      const moves: string[] = [];
-      const changingTown = body.zoneId && body.zoneId !== hotel.zoneId;
-      if (changingTown && !body.townRegionId) {
-        set.status = 400;
-        return { success: false, error: "Moving a hotel to a different town also requires picking its delivery zone within that town." };
-      }
-      const targetZoneId = body.zoneId ?? hotel.zoneId;
-      if (changingTown) {
+      // Reassigning a hotel to another town is a sensitive geography change:
+      // audit it explicitly and never allow moving into an inactive town.
+      let moved = "";
+      if (body.zoneId && body.zoneId !== hotel.zoneId) {
         const targetTown = await prisma.zone.findUnique({ where: { id: body.zoneId } });
         if (!targetTown) { set.status = 400; return { success: false, error: "The selected town no longer exists." }; }
         if (!targetTown.active) { set.status = 400; return { success: false, error: `Town "${targetTown.name}" is inactive. Activate it before moving the hotel.` }; }
-        moves.push(`town "${hotel.zone.name}" → "${targetTown.name}"`);
+        moved = `; moved to town "${targetTown.name}"`;
       }
-      if (body.townRegionId) {
-        const targetRegion = await prisma.townRegion.findUnique({ where: { id: body.townRegionId } });
-        if (!targetRegion || targetRegion.townId !== targetZoneId) { set.status = 400; return { success: false, error: "The selected delivery zone does not belong to that town." }; }
-        if (!targetRegion.active) { set.status = 400; return { success: false, error: `Zone "${targetRegion.name}" is inactive. Activate it before moving the hotel there.` }; }
-        moves.push(`zone "${hotel.townRegion?.name ?? ""}" → "${targetRegion.name}"`);
-      }
-      const moved = moves.length > 0 ? ` relocated (${moves.join("; ")})` : "";
 
       const updated = await prisma.$transaction(async (tx) => {
         const result = await tx.hotel.update({
@@ -436,9 +410,8 @@ export const platformRoute = new Elysia({
             imageUrl: body.imageUrl !== undefined ? body.imageUrl : hotel.imageUrl,
             autoCloseAt: body.autoCloseAt !== undefined ? (body.autoCloseAt ? new Date(body.autoCloseAt) : null) : hotel.autoCloseAt,
             ...(body.zoneId ? { zoneId: body.zoneId } : {}),
-            ...(body.townRegionId ? { townRegionId: body.townRegionId } : {}),
           },
-          include: { zone: { include: { megaRegion: true } }, townRegion: true },
+          include: { zone: { include: { megaRegion: true } } },
         });
         if (moved) await writeAudit(tx, admin, "hotel", hotel.id, "reassign_hotel", `Updated "${hotel.name}"${moved}`);
         return result;
@@ -455,7 +428,6 @@ export const platformRoute = new Elysia({
         imageUrl: t.Optional(t.String()),
         autoCloseAt: t.Optional(t.String()),
         zoneId: t.Optional(t.String({ format: "uuid" })),
-        townRegionId: t.Optional(t.String({ format: "uuid" })),
       }),
     }
   )

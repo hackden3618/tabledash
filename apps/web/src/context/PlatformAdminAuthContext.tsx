@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { isJwtExpired, getJwtExpiry } from "../lib/jwt";
+import { safeSetItem } from "../lib/storage";
 
 const STORAGE_KEY = "ladha_platform_token";
 
@@ -45,7 +46,7 @@ export const PlatformAdminAuthProvider: React.FC<{ children: React.ReactNode }> 
   }, []);
 
   const login = useCallback((newToken: string, me: PlatformMe) => {
-    localStorage.setItem(STORAGE_KEY, newToken);
+    safeSetItem(STORAGE_KEY, newToken);
     setToken(newToken);
     setUser(me);
   }, []);

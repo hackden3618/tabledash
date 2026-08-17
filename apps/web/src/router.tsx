@@ -18,6 +18,7 @@ import { useAdminAuth } from "./context/AdminAuthContext";
 import { usePlatformAdminAuth } from "./context/PlatformAdminAuthContext";
 import { useNotifications } from "./context/NotificationsContext";
 import { NotificationToastContainer } from "./components/NotificationToast";
+import { RouteErrorBoundary } from "./components/ui/RouteErrorBoundary";
 import { BottomNav, type CustomerTab } from "./components/ui/BottomNav";
 import { AdminBottomNavBar, type AdminTab } from "./components/AdminBottomNavBar";
 import { apiGet } from "./lib/api";
@@ -28,7 +29,6 @@ import { registerServiceWorker } from "./pwa/push";
 import { InstallBanner } from "./components/InstallBanner";
 import { PersistentNotificationCard } from "./components/PersistentNotificationCard";
 import { Modal } from "./components/ui/Modal";
-import { applySeo, SEO_NOINDEX } from "./lib/seo";
 
 import { CartPage } from "./pages/customer/CartPage";
 import { ConfirmationPage } from "./pages/customer/ConfirmationPage";
@@ -47,8 +47,9 @@ import { WalletActivityPage } from "./pages/customer/WalletActivityPage";
 
 import { AdminDashboardPage } from "./pages/admin/AdminDashboardPage";
 import { AdminLoginPage } from "./pages/admin/AdminLoginPage";
-import { AdminOrderDetailsPage } from "./pages/admin/AdminOrderDetailsPage";
+import { AdminMapViewPage } from "./pages/admin/AdminMapViewPage";
 import { AdminMenuManagePage } from "./pages/admin/AdminMenuManagePage";
+import { AdminOrderDetailsPage } from "./pages/admin/AdminOrderDetailsPage";
 import { AdminOrderHistoryPage } from "./pages/admin/AdminOrderHistoryPage";
 import { AdminOrdersPage } from "./pages/admin/AdminOrdersPage";
 import { AdminSettingsPage } from "./pages/admin/AdminSettingsPage";
@@ -109,17 +110,6 @@ function AppContent() {
     const isCustomerView = !isAdminPath;
     const notificationScope = isPlatformPath ? "platform" : isKitchenPath ? "admin" : "customer";
 
-    // Route changes don't reset scroll on their own — without this, navigating
-    // away from a spot you'd scrolled down to (e.g. a long pending-collection
-    // list) lands you at that same pixel offset on the new page, which on a
-    // long page like order details can be at or near the bottom. Skip it when
-    // the destination carries its own hash target (e.g. #review) — that page
-    // owns scrolling itself once its content has rendered.
-    useEffect(() => {
-        if (location.hash) return;
-        window.scrollTo(0, 0);
-    }, [location.pathname, location.hash]);
-
     // Sync notification scope with the active route.
     useEffect(() => {
         if (isCustomerView) {
@@ -141,38 +131,6 @@ function AppContent() {
     const realtimeToken = isKitchenPath ? adminToken : isPlatformPath ? platformToken : customerToken;
 
     useManifestSwitcher(isKitchenPath);
-
-    // ── Route-level SEO: keep <head> honest for every URL. Public marketing
-    // pages (marketplace, /h/:slug) are managed by MenuListPage with full
-    // per-hotel structured data; here we cover the rest — search gets indexed,
-    // and every private/operational route is explicitly noindex.
-    useEffect(() => {
-        const p = location.pathname;
-        if (isKitchenPath || isPlatformPath) {
-            applySeo({
-                title: isKitchenPath ? "Ladha Kitchen — Order Console" : "Ladha Platform Admin",
-                description: "Ladha operations console. Staff and administration only.",
-                robots: SEO_NOINDEX,
-            });
-            return;
-        }
-        if (p === "/search") {
-            applySeo({
-                title: "Search Local Food & Hotels Near You | Ladha",
-                description: "Search menus across Kenya's local hotels and kitchens. Find fresh local food delivered to market stalls, offices and homes.",
-                canonical: "https://ladha.co.ke/search",
-            });
-            return;
-        }
-        if (/(^\/account(\/|$)|^\/orders(\/|$)|^\/auth$|^\/inbox(\/|$)|^\/cart$|^\/checkout$|^\/set-password$)/.test(p)) {
-            applySeo({
-                title: "Ladha — Your Account & Orders",
-                description: "Your Ladha account, orders and delivery details.",
-                robots: SEO_NOINDEX,
-            });
-            return;
-        }
-    }, [isKitchenPath, isPlatformPath, location.pathname]);
 
     useEffect(() => {
         void registerServiceWorker(isKitchenPath);
@@ -625,7 +583,38 @@ function AdminOrderDetailsRoute() {
             token={token}
             canRefund={user?.role === "HOTEL_ADMIN"}
             onBack={() => navigate("/kitchen/orders")}
+            onOpenMap={(o) => navigate(`/kitchen/map/${o.id}`, { state: { order: o } })}
             onOrderUpdated={setOrder}
+        />
+    );
+}
+
+function AdminMapRoute() {
+    const navigate = useNavigate();
+    const location = useLocation();
+    const { orderId } = useParams();
+    const { token } = useAdminAuth();
+    const state = location.state as { order?: any } | null;
+    const [order, setOrder] = useState<any | null>(null);
+
+    useEffect(() => {
+        if (!orderId) return;
+        if (state?.order?.id === orderId) {
+            setOrder(state.order);
+            return;
+        }
+        let active = true;
+        apiGet<any>(`/orders/${orderId}`, token).then((result) => {
+            if (active && result.success && result.data) setOrder(result.data);
+        }).catch(() => {});
+        return () => { active = false; };
+    }, [orderId, token, state?.order]);
+
+    if (!order || !orderId) return <FullScreenLoader />;
+    return (
+        <AdminMapViewPage
+            order={order}
+            onBack={() => navigate(`/kitchen/orders/${orderId}`, { state: { order } })}
         />
     );
 }
@@ -726,9 +715,15 @@ function PlatformRoute() {
 export const router = createBrowserRouter([
     {
         element: <AppContent />,
+        // Root-level safety net: catches anything that isn't caught by a more
+        // specific errorElement below (e.g. AppContent/AppShell itself throwing).
+        errorElement: <RouteErrorBoundary />,
         children: [
             {
                 element: <CustomerShell />,
+                // Isolates customer-side render crashes so a bug in, say, checkout
+                // can't take down /kitchen for restaurant staff mid-shift, and vice versa.
+                errorElement: <RouteErrorBoundary />,
                 children: [
                     { index: true, element: <MenuRoute /> },
                     { path: "h/:hotelSlug", element: <HotelDirectRoute /> },
@@ -751,11 +746,13 @@ export const router = createBrowserRouter([
             {
                 path: "kitchen",
                 element: <KitchenShell />,
+                errorElement: <RouteErrorBoundary />,
                 children: [
                     { index: true, element: <AdminLoginRoute /> },
                     { path: "login", element: <AdminLoginRoute /> },
                     { path: "orders", element: <AdminOrdersRoute /> },
                     { path: "orders/:orderId", element: <AdminOrderDetailsRoute /> },
+                    { path: "map/:orderId", element: <AdminMapRoute /> },
                     { path: "dashboard", element: <AdminDashboardRoute /> },
                     { path: "menu", element: <AdminMenuRoute /> },
                     { path: "settings", element: <AdminSettingsRoute /> },
