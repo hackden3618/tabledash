@@ -406,7 +406,7 @@ export const placeOrder = async (input: CreateOrderInput) => {
         return { orders, updatedProducts, outboxIds };
     });
 
-    const formattedOrders = result.orders.map(formatOrderResponse);
+    const formattedOrders = (await attachDeliveryZoneNames(result.orders)).map(formatOrderResponse);
 
     // Attach the updated customer profile (incl. recentOrders) so the client can
     // sync its context from the order response without a second /customers/me call.
@@ -461,7 +461,7 @@ export const getOrders = async (statusFilter?: OrderStatus, hotelId?: string) =>
         orderBy: { orderedAt: "desc" },
     });
 
-    return orders.map(formatOrderResponse);
+    return (await attachDeliveryZoneNames(orders)).map(formatOrderResponse);
 };
 
 /**
@@ -481,7 +481,8 @@ export const getOrderById = async (id: string, hotelId?: string) => {
         throw new Error("Order not found");
     }
 
-    return formatOrderResponse(order);
+    const [withZoneName] = await attachDeliveryZoneNames([order]);
+    return formatOrderResponse(withZoneName);
 };
 
 /** Customer/guest tracking must be scoped to the order owner, never only to a UUID. */
@@ -756,7 +757,7 @@ export const getDailyOrders = async (dateStr: string, hotelId?: string) => {
         orderBy: { orderedAt: "desc" },
     });
 
-    return orders.map(formatOrderResponse);
+    return (await attachDeliveryZoneNames(orders)).map(formatOrderResponse);
 };
 
 /**
@@ -767,11 +768,12 @@ export const getDailyOrders = async (dateStr: string, hotelId?: string) => {
 export const markUtensilsIssued = async (id: string, hotelId: string, issued: boolean) => {
     const order = await prisma.order.findFirst({ where: { id, hotelId } });
     if (!order) throw new Error("Order not found");
-    return formatOrderResponse(await prisma.order.update({
+    const updatedOrder = await prisma.order.update({
         where: { id },
         data: { utensilsIssued: issued, utensilsRequired: issued ? true : false },
         include: { customer: true, orderItems: true },
-    }));
+    });
+    return formatOrderResponse((await attachDeliveryZoneNames([updatedOrder]))[0]!);
 };
 
 /**
@@ -781,11 +783,12 @@ export const markUtensilsIssued = async (id: string, hotelId: string, issued: bo
 export const markUtensilsReturned = async (id: string, hotelId: string, adminUserId: string) => {
     const order = await prisma.order.findFirst({ where: { id, hotelId } });
     if (!order) throw new Error("Order not found");
-    return formatOrderResponse(await prisma.order.update({
+    const updatedOrder = await prisma.order.update({
         where: { id },
         data: { utensilsReturnedAt: new Date(), utensilsReturnedByAdminUserId: adminUserId },
         include: { customer: true, orderItems: true },
-    }));
+    });
+    return formatOrderResponse((await attachDeliveryZoneNames([updatedOrder]))[0]!);
 };
 
 /**
@@ -806,6 +809,8 @@ export const getPendingCollection = async (hotelId: string) => {
         include: { customer: true, orderItems: true },
         orderBy: { orderedAt: "desc" },
     });
+
+    const deliveryZoneNameById = await buildDeliveryZoneNameMap(orders.map((order) => order.deliveryZoneId));
 
     return orders.map((order) => {
         const amountPaid = Number(order.amountPaid);
@@ -838,6 +843,7 @@ export const getPendingCollection = async (hotelId: string) => {
             marketSection: order.marketSection,
             locationDescription: order.locationDescription,
             stallNumber: order.stallNumber,
+            deliveryZoneName: order.deliveryZoneId ? deliveryZoneNameById.get(order.deliveryZoneId) ?? null : null,
         };
     });
 };
@@ -860,6 +866,8 @@ export const getRefundsOwed = async (hotelId: string) => {
         },
         orderBy: { orderedAt: "desc" },
     });
+
+    const deliveryZoneNameById = await buildDeliveryZoneNameMap(orders.map((order) => order.deliveryZoneId));
 
     return orders
         .map((order) => {
@@ -908,6 +916,7 @@ export const getRefundsOwed = async (hotelId: string) => {
             marketSection: order.marketSection,
             locationDescription: order.locationDescription,
             stallNumber: order.stallNumber,
+            deliveryZoneName: order.deliveryZoneId ? deliveryZoneNameById.get(order.deliveryZoneId) ?? null : null,
         }));
 };
 
@@ -985,4 +994,32 @@ function formatOrderResponse(order: any) {
             subtotal: Number(item.subtotal),
         })),
     };
+}
+
+/**
+ * Resolves a batch of delivery-zone (TownRegion) UUIDs to their display names.
+ * The Order model stores the zone as a plain UUID with no Prisma relation to
+ * TownRegion, so names are resolved explicitly instead of via a relation join.
+ */
+async function buildDeliveryZoneNameMap(ids: Array<string | null | undefined>) {
+    const uniqueIds = [...new Set(ids.filter((id): id is string => Boolean(id)))];
+    if (!uniqueIds.length) return new Map<string, string>();
+    const zones = await prisma.townRegion.findMany({
+        where: { id: { in: uniqueIds } },
+        select: { id: true, name: true },
+    });
+    return new Map(zones.map((zone) => [zone.id, zone.name]));
+}
+
+/**
+ * Attaches `deliveryZoneName` to order rows so every admin-facing order response
+ * carries the human-readable delivery area (e.g. "Sokoni Modern Market"), not
+ * just the raw UUID. Staff use this name to locate the customer.
+ */
+async function attachDeliveryZoneNames<T extends { deliveryZoneId?: string | null }>(rows: T[]) {
+    const nameById = await buildDeliveryZoneNameMap(rows.map((row) => row.deliveryZoneId));
+    return rows.map((row) => ({
+        ...row,
+        deliveryZoneName: row.deliveryZoneId ? nameById.get(row.deliveryZoneId) ?? null : null,
+    }));
 }
