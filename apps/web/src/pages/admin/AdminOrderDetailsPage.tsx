@@ -94,6 +94,16 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
         setCancelReason(order.cancelReason ?? null);
     }, [order.id, order.status, order.cancelReason]);
 
+    useEffect(() => {
+        // Route-level scroll reset is skipped whenever the URL carries a hash
+        // (see ScrollToTop in router.tsx) — this page is the one that owns
+        // landing on #payment, right on the Payment card and its Record
+        // Payment / Refund buttons, instead of wherever the list you came
+        // from happened to be scrolled.
+        if (window.location.hash !== "#payment") return;
+        requestAnimationFrame(() => document.getElementById("payment")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    }, [order.id]);
+
     const totalAmount = Number(order.totalAmount);
     const amountPaid = Number(order.amountPaid ?? 0);
     const outstanding = Math.max(0, totalAmount - amountPaid);
@@ -351,7 +361,7 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
                 </div>
 
                 {/* Payment status — read-through of the ledger; recording goes through finance */}
-                <div className="bg-white rounded-2xl p-4 shadow-[0_2px_8px_rgba(17,75,54,0.06)]">
+                <div id="payment" className="bg-white rounded-2xl p-4 shadow-[0_2px_8px_rgba(17,75,54,0.06)]">
                     {isTerminal && currentStatus === "CANCELLED" ? (
                         <>
                             <div className="flex items-center justify-between mb-3">

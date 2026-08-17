@@ -109,6 +109,17 @@ function AppContent() {
     const isCustomerView = !isAdminPath;
     const notificationScope = isPlatformPath ? "platform" : isKitchenPath ? "admin" : "customer";
 
+    // Route changes don't reset scroll on their own — without this, navigating
+    // away from a spot you'd scrolled down to (e.g. a long pending-collection
+    // list) lands you at that same pixel offset on the new page, which on a
+    // long page like order details can be at or near the bottom. Skip it when
+    // the destination carries its own hash target (e.g. #payment, #review) —
+    // that page owns scrolling itself once its content has rendered.
+    useEffect(() => {
+        if (location.hash) return;
+        window.scrollTo(0, 0);
+    }, [location.pathname, location.hash]);
+
     // Sync notification scope with the active route.
     useEffect(() => {
         if (isCustomerView) {
@@ -693,7 +704,7 @@ function AdminPendingCollectionRoute() {
         <PendingCollectionPage
             token={token}
             onBack={() => navigate("/kitchen/finance")}
-            onOpenOrder={(order) => navigate(`/kitchen/orders/${order.id}`, { state: { order } })}
+            onOpenOrder={(order) => navigate(`/kitchen/orders/${order.id}#payment`, { state: { order } })}
         />
     );
 }

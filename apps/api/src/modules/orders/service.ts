@@ -11,7 +11,7 @@ import { getDefaultHotel } from "../hotels/service";
 import { wsHub } from "../websocket/hub";
 import { formatPhone } from "../../../../../shared/phone";
 import { calculateDashboardMetrics, normalizeOrderItems, PENDING_STATUSES } from "./logic";
-import { applyOrderChargeTx, recordCancellationChargeTx } from "../finance/service";
+import { applyOrderChargeTx, recordCancellationChargeTx, maybeQueueReviewPromptTx } from "../finance/service";
 import { generateAccountId } from "../customers/account-id";
 import { getCustomerProfile } from "../customers/auth.service";
 
@@ -55,22 +55,43 @@ export interface DeliveryFeeQuote {
     deliveryFee: number;
 }
 
-/** Server-side delivery pricing. Every hotel charges its configured price for
- * the selected delivery sub-area (TownRegion), falling back to its generic fee
- * (KSh 50 by default). Hotels in the customer's exact sub-area typically get a
- * lower or zero fee; ones elsewhere in the town use their generic rate. */
+type FeeableHotel = {
+    townRegionId: string;
+    genericDeliveryFee: unknown;
+    deliveryFees: { townRegionId: string; amount: unknown }[];
+};
+
+/** THE single source of truth for what a hotel charges to deliver into a given
+ * TownRegion (delivery sub-area). Every surface that quotes or charges a
+ * delivery fee — cart preview, checkout, order placement — MUST call this
+ * instead of recomputing it, so the number a customer sees is always the
+ * number they're charged.
+ *
+ * Precedence:
+ *  1. An explicit HotelDeliveryFee row for that TownRegion always wins,
+ *     however the hotel's admin configured it (including KSh 0).
+ *  2. Otherwise, if the customer is delivering into the hotel's OWN
+ *     TownRegion (its home zone — "nearby"), the fee is free by default.
+ *  3. Otherwise, the hotel's generic delivery fee applies (KSh 50 default). */
+export function resolveDeliveryFee(hotel: FeeableHotel, deliveryZoneId?: string): number {
+    const configured = deliveryZoneId ? hotel.deliveryFees.find((fee) => fee.townRegionId === deliveryZoneId) : undefined;
+    if (configured) return Number(configured.amount);
+    if (deliveryZoneId && deliveryZoneId === hotel.townRegionId) return 0;
+    return Number(hotel.genericDeliveryFee);
+}
+
+/** Server-side delivery pricing, backed exclusively by resolveDeliveryFee
+ * above — kitchen-configured HotelDeliveryFee rows are the source of truth,
+ * with the hotel's own zone free by default and its generic fee elsewhere. */
 export async function getDeliveryFeeQuote(hotelIds: string[], deliveryZoneId?: string): Promise<DeliveryFeeQuote[]> {
     const uniqueHotelIds = [...new Set(hotelIds)];
     if (!uniqueHotelIds.length) return [];
     const hotels = await prisma.hotel.findMany({
         where: { id: { in: uniqueHotelIds }, deletedAt: null },
-        select: { id: true, zoneId: true, genericDeliveryFee: true, deliveryFees: { select: { townRegionId: true, amount: true } } },
+        select: { id: true, townRegionId: true, genericDeliveryFee: true, deliveryFees: { select: { townRegionId: true, amount: true } } },
     });
     if (hotels.length !== uniqueHotelIds.length) throw new Error("One or more hotels are unavailable");
-    return hotels.map((hotel) => {
-        const configured = deliveryZoneId ? hotel.deliveryFees.find((fee) => fee.townRegionId === deliveryZoneId) : undefined;
-        return { hotelId: hotel.id, deliveryFee: Number(configured?.amount ?? hotel.genericDeliveryFee) };
-    });
+    return hotels.map((hotel) => ({ hotelId: hotel.id, deliveryFee: resolveDeliveryFee(hotel, deliveryZoneId) }));
 }
 
 // On-behalf orders require the recipient's number to be OTP-verified, and the
@@ -589,8 +610,12 @@ export const updateOrderStatus = async (id: string, newStatus: OrderStatus, canc
 
         const updatedOrder = await tx.order.findUniqueOrThrow({
             where: { id },
-            include: { customer: true, orderItems: true },
+            include: { customer: true, orderItems: true, hotel: { select: { name: true } } },
         });
+
+        if (newStatus === "DELIVERED") {
+            await maybeQueueReviewPromptTx(tx, updatedOrder);
+        }
 
         const outbox = await tx.eventOutbox.create({
             data: {

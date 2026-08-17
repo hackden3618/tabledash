@@ -230,7 +230,10 @@ export const getTownDetail = async (townId: string) => {
     include: {
       megaRegion: true,
       deliveryRegions: { orderBy: [{ displayOrder: "asc" }, { active: "desc" }, { name: "asc" }] },
-      hotels: { where: { deletedAt: null }, select: { id: true, name: true, slug: true, isOpen: true } },
+      hotels: {
+        where: { deletedAt: null },
+        select: { id: true, name: true, slug: true, isOpen: true, townRegion: { select: { id: true, name: true } } },
+      },
     },
   });
   if (!town) throw new Error("Town not found");
@@ -280,9 +283,18 @@ export const updateMegaRegion = async (id: string, input: { name?: string; type?
   return prisma.$transaction(async (tx) => {
     const updated = await tx.megaRegion.update({
       where: { id },
-      data: { ...(input.name !== undefined ? { name: input.name.trim() } : {}), ...(input.type !== undefined ? { type: input.type } : {}) },
+      data: {
+        ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+        ...(input.type !== undefined ? { type: input.type } : {}),
+        // Deactivation is guarded above; reactivation is always allowed so an
+        // administrator can bring a retired county/city back without poking
+        // the DB directly.
+        ...(input.active !== undefined ? { active: input.active } : {}),
+      },
     });
-    await writeAudit(tx, actor, "county", id, "update_geography", `Updated ${existing.name}${input.name ? ` → "${input.name.trim()}"` : ""}`);
+    const action = input.active === false ? "deactivate_geography" : input.active === true ? "activate_geography" : "update_geography";
+    const detail = input.active === false ? `Deactivated county/city "${existing.name}"` : input.active === true ? `Activated county/city "${existing.name}"` : `Updated ${existing.name}${input.name ? ` → "${input.name.trim()}"` : ""}`;
+    await writeAudit(tx, actor, "county", id, action, detail);
     return updated;
   });
 };
@@ -642,8 +654,15 @@ export const applyReclassification = async (reclassificationId: string, actor: P
     }
 
     // 3) Reassign hotels only for the flagged intent — a misnamed town, not a
-    //    wholesale geography merge.
-    const reassignedHotels = await tx.hotel.updateMany({ where: { zoneId: source.id, deletedAt: null }, data: { zoneId: queued.proposedTownId } });
+    //    wholesale geography merge. A hotel's location is never "just a town":
+    //    zoneId AND townRegionId move together into the target area, so the
+    //    invariant TownRegion.townId === Hotel.zoneId never breaks (a stale
+    //    townRegionId pointing into the retired legacy town would silently
+    //    split a hotel's location across two towns).
+    const reassignedHotels = await tx.hotel.updateMany({
+      where: { zoneId: source.id, deletedAt: null },
+      data: { zoneId: queued.proposedTownId, townRegionId: area.id },
+    });
 
     // 4) Retire the legacy Zone — never delete. If something still depends on
     //    it (e.g. an order snapshot), the row persists for audit traceability.

@@ -2,6 +2,7 @@ import { smsService } from "../sms.service";
 import { getSmsRecipients } from "../../settings/service";
 import { orderAlertToHotel } from "../templates";
 import { sendPushToHotelAdmins } from "../../push/service";
+import { env } from "../../../../../../shared/config";
 
 interface OrderCreatedPayload {
   orderId: string;
@@ -55,6 +56,7 @@ export async function handleOrderCreated(payload: Record<string, unknown>): Prom
     locationDescription: location,
     itemsSummary: items,
     totalAmount: data.totalAmount,
+    kitchenLink: `${env.publicUrl.replace(/\/$/, "")}/kitchen/orders`,
   });
 
   const results = await Promise.allSettled(

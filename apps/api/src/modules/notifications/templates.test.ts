@@ -18,6 +18,7 @@ import {
   staffWelcome,
   platformAdminWelcome,
   hotelStatusChanged,
+  reviewPromptToCustomer,
 } from "./templates";
 
 const sample = {
@@ -42,6 +43,8 @@ const sample = {
   createdBy: "Platform Ops",
   action: "suspended",
   changedBy: "system",
+  kitchenLink: "https://ladha.up.railway.app/kitchen/orders",
+  itemNames: ["Chapati", "Tea"],
 };
 
 const all: Record<string, string> = {
@@ -63,6 +66,7 @@ const all: Record<string, string> = {
   staffWelcomeNoSetup: staffWelcome({ staffName: sample.staffName, role: sample.role, hotelName: sample.hotelName }),
   platformAdminWelcome: platformAdminWelcome(sample),
   hotelStatusChanged: hotelStatusChanged(sample),
+  reviewPromptToCustomer: reviewPromptToCustomer(sample),
 };
 
 // Templates prefixed with the customer-facing brand.
@@ -83,6 +87,7 @@ const branded = [
   "staffWelcome",
   "staffWelcomeNoSetup",
   "hotelStatusChanged",
+  "reviewPromptToCustomer",
 ];
 
 describe("SMS templates", () => {

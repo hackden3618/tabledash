@@ -128,6 +128,7 @@ export const hotelsRoute = new Elysia({
           imageUrl: true,
           isListed: true,
           zone: { select: { id: true, name: true, type: true } },
+          townRegion: { select: { id: true, name: true } },
         },
       });
       if (!hotel) {
@@ -160,6 +161,7 @@ export const hotelsRoute = new Elysia({
             imageUrl: hotel.imageUrl ? (toPublicMediaUrl(hotel.imageUrl) ?? hotel.imageUrl) : null,
             locationName: hotel.zone.name,
             locationType: hotel.zone.type,
+            townRegionName: hotel.townRegion?.name ?? null,
           },
           products: products.map((p) => ({
             id: p.id,

@@ -26,7 +26,11 @@ export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDe
     if (!cartHotelIds.length) { setDeliveryFee(0); return; }
     setDeliveryFeeLoading(true);
     const query = new URLSearchParams({ hotelIds: cartHotelIds.join(",") });
-    const zoneId = localStorage.getItem("ladha_zone_id");
+    // Delivery fees are quoted per delivery ZONE (TownRegion), not per town —
+    // this must match the same key checkout (LocationPage) sends, or the fee
+    // shown here silently falls back to each hotel's generic fee instead of
+    // the kitchen-configured amount for the customer's actual zone.
+    const zoneId = localStorage.getItem("ladha_town_region_id");
     if (zoneId) query.set("zoneId", zoneId);
     void apiGet<Array<{ deliveryFee: number }>>(`/orders/delivery-fees?${query}`)
       .then((res) => setDeliveryFee(res.success && res.data ? res.data.reduce((sum, row) => sum + Number(row.deliveryFee), 0) : null))

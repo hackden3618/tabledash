@@ -67,10 +67,46 @@ async function recomputeOrderCacheTx(tx: any, orderId: string) {
   const amountPaid = Math.max(0, paid - refunded);
   const order = await tx.order.findUniqueOrThrow({ where: { id: orderId } });
   const paymentStatus = computePaymentStatus(netCharge, amountPaid);
-  return tx.order.update({
+  const updated = await tx.order.update({
     where: { id: orderId },
     data: { amountPaid, paymentStatus },
-    include: { customer: true, orderItems: true },
+    include: { customer: true, orderItems: true, hotel: { select: { name: true } } },
+  });
+  await maybeQueueReviewPromptTx(tx, updated);
+  return updated;
+}
+
+/**
+ * The "rate your meal" SMS fires exactly once per order, the moment it is
+ * BOTH DELIVERED and PAID. The two conditions are set by independent code
+ * paths (order status here in finance via a payment; status transitions in
+ * orders/service.ts) that can complete in either order, so this is called
+ * from both places. `reviewPromptSentAt` is the atomic claim: only the call
+ * that successfully flips it from null wins the right to enqueue the SMS,
+ * so a payment recorded seconds after delivery (or vice versa) never causes
+ * a duplicate.
+ */
+export async function maybeQueueReviewPromptTx(tx: any, order: any) {
+  if (order.status !== "DELIVERED" || order.paymentStatus !== "PAID") return;
+  const claim = await tx.order.updateMany({
+    where: { id: order.id, reviewPromptSentAt: null },
+    data: { reviewPromptSentAt: new Date() },
+  });
+  if (claim.count !== 1) return;
+  await tx.eventOutbox.create({
+    data: {
+      eventName: "review_prompt_ready",
+      hotelId: order.hotelId,
+      payload: JSON.stringify({
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        customerPhone: order.customer.phone,
+        firstName: order.customer.firstName || order.customer.knownName || "there",
+        hotelName: order.hotel?.name ?? "the hotel",
+        itemNames: (order.orderItems ?? []).map((item: any) => item.name),
+      }),
+      status: "initialized",
+    },
   });
 }
 

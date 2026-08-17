@@ -26,10 +26,10 @@ export const discoveryRoute = new Elysia({
   try {
     const guestId = headers["x-guest-id"];
     const identity = isGuestId(guestId) ? await ensureGuestIdentity(guestId) : null;
-    return { success: true, data: await getHomeDiscovery(query.zoneId, query.includeAll === "true", identity?.customerId ?? undefined) };
+    return { success: true, data: await getHomeDiscovery(query.zoneId, query.includeAll === "true", identity?.customerId ?? undefined, query.townRegionId) };
   } catch {
     set.status = 500;
     return { success: false, error: "Discovery is temporarily unavailable" };
   }
-}, { query: t.Object({ zoneId: t.Optional(t.String({ format: "uuid" })), includeAll: t.Optional(t.String()) })
+}, { query: t.Object({ zoneId: t.Optional(t.String({ format: "uuid" })), includeAll: t.Optional(t.String()), townRegionId: t.Optional(t.String({ format: "uuid" })) })
 });
