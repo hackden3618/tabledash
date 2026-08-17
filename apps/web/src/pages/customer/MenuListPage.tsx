@@ -17,6 +17,7 @@ import { Modal } from "../../components/ui/Modal";
 
 import { PageTransition } from "../../components/ui/PageTransition";
 import { PersistentNotificationCard } from "../../components/PersistentNotificationCard";
+import { applySeo, SEO_NOINDEX } from "../../lib/seo";
 
 export interface ProductItem {
     id: string;
@@ -100,6 +101,57 @@ interface MenuListPageProps {
     onBackToMarketplace?: () => void;
 }
 
+/* ── SEO: per-route head metadata + structured data ──────────────────────────
+ * The static index.html tags cover the marketplace homepage. These builders
+ * fill in the hotel in view so shared links, social crawlers and Google see a
+ * real Restaurant entity (name, area, rating) instead of a generic SPA shell.
+ * "Free food delivery" is honest: a hotel's own delivery zone is free by
+ * default (resolveDeliveryFee returns 0 for deliveryZoneId === townRegionId).
+ * ────────────────────────────────────────────────────────────────────────── */
+const LADHA_SITE = "https://ladha.co.ke";
+
+const marketplaceSeo = {
+    title: "Ladha — Order Fresh Food Online | Kenya's Local Kitchen Marketplace",
+    description:
+        "Order fresh, local meals from trusted kitchens near you. Free food delivery in the hotel's area — market stalls, offices and homes across Kenya. Browse menus and track your order live on Ladha.",
+    canonical: `${LADHA_SITE}/`,
+};
+
+function hotelSeo(hotel: HotelItem) {
+    const url = `${LADHA_SITE}/h/${hotel.slug}`;
+    const locality = hotel.townRegionName;
+    return {
+        title: `${hotel.name} — Order Fresh Food Online | Ladha`,
+        description: `Order ${hotel.name} — local food delivery${locality ? ` in ${locality}` : " near you"}. Fresh meals from a trusted kitchen, delivered fast with free delivery in the hotel's area.`,
+        canonical: url,
+        image: hotel.imageUrl ?? undefined,
+        jsonLd: {
+            "@context": "https://schema.org",
+            "@type": "Restaurant",
+            name: hotel.name,
+            url,
+            image: hotel.imageUrl ?? `${LADHA_SITE}/ladha_icon_customer.png`,
+            servesCuisine: "Local Kenyan",
+            priceRange: "KSh 100 - KSh 2000",
+            ...(locality
+                ? {
+                    address: { "@type": "PostalAddress", addressLocality: locality, addressCountry: "KE" },
+                    areaServed: { "@type": "City", name: locality },
+                }
+                : { areaServed: { "@type": "Country", name: "Kenya" } }),
+            ...(hotel.rating && (hotel.ratingCount ?? 0) >= 3
+                ? {
+                    aggregateRating: {
+                        "@type": "AggregateRating",
+                        ratingValue: hotel.rating,
+                        reviewCount: hotel.ratingCount ?? 0,
+                    },
+                }
+                : {}),
+        },
+    };
+}
+
 export const MenuListPage: React.FC<MenuListPageProps> = ({
     onNavigateToCart,
     onNavigateToAccount,
@@ -138,6 +190,25 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
     const [zonesLoading, setZonesLoading] = useState(true);
     const [zoneError, setZoneError] = useState(false);
     const [locationPickerOpen, setLocationPickerOpen] = useState(false);
+
+    // ── SEO: keep <head> in sync with whatever is in view. Marketplace shows
+    // the platform entity (static JSON-LD in index.html stays untouched);
+    // a selected hotel injects a Restaurant entity; a missing hotel is noindex.
+    useEffect(() => {
+        if (hotelNotFound) {
+            applySeo({
+                title: "Hotel Not Found | Ladha",
+                description: "This hotel could not be found on Ladha.",
+                robots: SEO_NOINDEX,
+            });
+            return;
+        }
+        if (selectedHotel) {
+            applySeo(hotelSeo(selectedHotel));
+            return;
+        }
+        applySeo(marketplaceSeo);
+    }, [selectedHotel, hotelNotFound]);
     const [activeZoneId, setActiveZoneId] = useState(() => localStorage.getItem("ladha_zone_id") || "");
     const [activeTownRegionId, setActiveTownRegionId] = useState(() => localStorage.getItem("ladha_town_region_id") || "");
     const [activeTownRegionName, setActiveTownRegionName] = useState(() => localStorage.getItem("ladha_town_region_name") || "");
@@ -176,13 +247,6 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
         setSelectedHotel(hotel);
         setMenuLoading(true);
         setSearchQuery("");
-        // Dynamic SEO: update page title and OG tags so shared links (and Google)
-        // see the specific hotel name rather than the generic marketplace title.
-        document.title = `${hotel.name} — Order Fresh Food Online | Ladha`;
-        const canonical = document.getElementById("ladha-canonical") as HTMLLinkElement | null;
-        if (canonical) canonical.href = `https://ladha.co.ke/h/${hotel.slug}`;
-        const ogTitle = document.querySelector<HTMLMetaElement>('meta[property="og:title"]');
-        if (ogTitle) ogTitle.content = `${hotel.name} — Order Fresh Food Online | Ladha`;
         const res = await apiGet<ProductItem[]>(`/menu?hotelId=${hotel.id}`);
         if (res.success && res.data) {
             setProducts(res.data);
@@ -200,12 +264,6 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
         // In-page transition: reset state to show the marketplace view.
         setSelectedHotel(null);
         setProducts([]);
-        // Restore default page title and canonical when returning to marketplace.
-        document.title = "Ladha — Order Fresh Food Online | Kenya's Local Kitchen Marketplace";
-        const canonical = document.getElementById("ladha-canonical") as HTMLLinkElement | null;
-        if (canonical) canonical.href = "https://ladha.co.ke";
-        const ogTitle = document.querySelector<HTMLMetaElement>('meta[property="og:title"]');
-        if (ogTitle) ogTitle.content = "Ladha — Fresh Food Delivered Fast | Kenya's Local Kitchen Marketplace";
         if (closingTimerRef.current) {
             clearInterval(closingTimerRef.current);
             closingTimerRef.current = null;
@@ -238,12 +296,6 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
                     setClosedHotelIds(hotelItem.isOpen ? [] : [hotelItem.id]);
                     setSelectedHotel(hotelItem);
                     setProducts(products);
-                    // Dynamic page title for SEO / social sharing.
-                    document.title = `${hotel.name} — Order Fresh Food Online | Ladha`;
-                    const canonical = document.getElementById("ladha-canonical") as HTMLLinkElement | null;
-                    if (canonical) canonical.href = `https://ladha.co.ke/h/${hotel.slug}`;
-                    const ogTitle = document.querySelector<HTMLMetaElement>('meta[property="og:title"]');
-                    if (ogTitle) ogTitle.content = `${hotel.name} — Order Fresh Food Online | Ladha`;
                 } else {
                     setHotelNotFound(true);
                 }

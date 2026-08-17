@@ -6,8 +6,16 @@ Disallow: /kitchen/
 Disallow: /platform/
 Disallow: /api/
 Disallow: /ws
+Disallow: /cart
+Disallow: /checkout
+Disallow: /auth
+Disallow: /inbox
+Disallow: /orders/
+Disallow: /account/
+Disallow: /set-password
 
-# Crawl-delay for polite bots
+# Polite crawl for JS-rendered pages
 Crawl-delay: 2
 
 Sitemap: https://ladha.co.ke/sitemap.xml
+Sitemap: https://ladha.co.ke/api/v1/hotels/sitemap.xml

@@ -28,6 +28,7 @@ import { registerServiceWorker } from "./pwa/push";
 import { InstallBanner } from "./components/InstallBanner";
 import { PersistentNotificationCard } from "./components/PersistentNotificationCard";
 import { Modal } from "./components/ui/Modal";
+import { applySeo, SEO_NOINDEX } from "./lib/seo";
 
 import { CartPage } from "./pages/customer/CartPage";
 import { ConfirmationPage } from "./pages/customer/ConfirmationPage";
@@ -112,8 +113,8 @@ function AppContent() {
     // away from a spot you'd scrolled down to (e.g. a long pending-collection
     // list) lands you at that same pixel offset on the new page, which on a
     // long page like order details can be at or near the bottom. Skip it when
-    // the destination carries its own hash target (e.g. #payment, #review) —
-    // that page owns scrolling itself once its content has rendered.
+    // the destination carries its own hash target (e.g. #review) — that page
+    // owns scrolling itself once its content has rendered.
     useEffect(() => {
         if (location.hash) return;
         window.scrollTo(0, 0);
@@ -140,6 +141,38 @@ function AppContent() {
     const realtimeToken = isKitchenPath ? adminToken : isPlatformPath ? platformToken : customerToken;
 
     useManifestSwitcher(isKitchenPath);
+
+    // ── Route-level SEO: keep <head> honest for every URL. Public marketing
+    // pages (marketplace, /h/:slug) are managed by MenuListPage with full
+    // per-hotel structured data; here we cover the rest — search gets indexed,
+    // and every private/operational route is explicitly noindex.
+    useEffect(() => {
+        const p = location.pathname;
+        if (isKitchenPath || isPlatformPath) {
+            applySeo({
+                title: isKitchenPath ? "Ladha Kitchen — Order Console" : "Ladha Platform Admin",
+                description: "Ladha operations console. Staff and administration only.",
+                robots: SEO_NOINDEX,
+            });
+            return;
+        }
+        if (p === "/search") {
+            applySeo({
+                title: "Search Local Food & Hotels Near You | Ladha",
+                description: "Search menus across Kenya's local hotels and kitchens. Find fresh local food delivered to market stalls, offices and homes.",
+                canonical: "https://ladha.co.ke/search",
+            });
+            return;
+        }
+        if (/(^\/account(\/|$)|^\/orders(\/|$)|^\/auth$|^\/inbox(\/|$)|^\/cart$|^\/checkout$|^\/set-password$)/.test(p)) {
+            applySeo({
+                title: "Ladha — Your Account & Orders",
+                description: "Your Ladha account, orders and delivery details.",
+                robots: SEO_NOINDEX,
+            });
+            return;
+        }
+    }, [isKitchenPath, isPlatformPath, location.pathname]);
 
     useEffect(() => {
         void registerServiceWorker(isKitchenPath);
@@ -672,7 +705,7 @@ function AdminPendingCollectionRoute() {
         <PendingCollectionPage
             token={token}
             onBack={() => navigate("/kitchen/finance")}
-            onOpenOrder={(order) => navigate(`/kitchen/orders/${order.id}#payment`, { state: { order } })}
+            onOpenOrder={(order) => navigate(`/kitchen/orders/${order.id}`, { state: { order } })}
         />
     );
 }
