@@ -46,9 +46,8 @@ import { WalletActivityPage } from "./pages/customer/WalletActivityPage";
 
 import { AdminDashboardPage } from "./pages/admin/AdminDashboardPage";
 import { AdminLoginPage } from "./pages/admin/AdminLoginPage";
-import { AdminMapViewPage } from "./pages/admin/AdminMapViewPage";
-import { AdminMenuManagePage } from "./pages/admin/AdminMenuManagePage";
 import { AdminOrderDetailsPage } from "./pages/admin/AdminOrderDetailsPage";
+import { AdminMenuManagePage } from "./pages/admin/AdminMenuManagePage";
 import { AdminOrderHistoryPage } from "./pages/admin/AdminOrderHistoryPage";
 import { AdminOrdersPage } from "./pages/admin/AdminOrdersPage";
 import { AdminSettingsPage } from "./pages/admin/AdminSettingsPage";
@@ -593,38 +592,7 @@ function AdminOrderDetailsRoute() {
             token={token}
             canRefund={user?.role === "HOTEL_ADMIN"}
             onBack={() => navigate("/kitchen/orders")}
-            onOpenMap={(o) => navigate(`/kitchen/map/${o.id}`, { state: { order: o } })}
             onOrderUpdated={setOrder}
-        />
-    );
-}
-
-function AdminMapRoute() {
-    const navigate = useNavigate();
-    const location = useLocation();
-    const { orderId } = useParams();
-    const { token } = useAdminAuth();
-    const state = location.state as { order?: any } | null;
-    const [order, setOrder] = useState<any | null>(null);
-
-    useEffect(() => {
-        if (!orderId) return;
-        if (state?.order?.id === orderId) {
-            setOrder(state.order);
-            return;
-        }
-        let active = true;
-        apiGet<any>(`/orders/${orderId}`, token).then((result) => {
-            if (active && result.success && result.data) setOrder(result.data);
-        }).catch(() => {});
-        return () => { active = false; };
-    }, [orderId, token, state?.order]);
-
-    if (!order || !orderId) return <FullScreenLoader />;
-    return (
-        <AdminMapViewPage
-            order={order}
-            onBack={() => navigate(`/kitchen/orders/${orderId}`, { state: { order } })}
         />
     );
 }
@@ -755,7 +723,6 @@ export const router = createBrowserRouter([
                     { path: "login", element: <AdminLoginRoute /> },
                     { path: "orders", element: <AdminOrdersRoute /> },
                     { path: "orders/:orderId", element: <AdminOrderDetailsRoute /> },
-                    { path: "map/:orderId", element: <AdminMapRoute /> },
                     { path: "dashboard", element: <AdminDashboardRoute /> },
                     { path: "menu", element: <AdminMenuRoute /> },
                     { path: "settings", element: <AdminSettingsRoute /> },

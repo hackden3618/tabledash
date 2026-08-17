@@ -11,7 +11,6 @@ interface AdminOrderDetailsPageProps {
     token: string;
     canRefund: boolean;
     onBack: () => void;
-    onOpenMap: (order: any) => void;
     onOrderUpdated: (updatedOrder: any) => void;
 }
 
@@ -48,7 +47,6 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
     token,
     canRefund,
     onBack,
-    onOpenMap,
     onOrderUpdated,
 }) => {
     const [currentStatus, setCurrentStatus] = useState<string>(order.status);
@@ -524,9 +522,6 @@ export const AdminOrderDetailsPage: React.FC<AdminOrderDetailsPageProps> = ({
                         <MapPin size={14} className="inline mr-1 text-[#EF4444]" />
                         {order.marketSection} — {order.locationDescription}
                     </p>
-                    <Button variant="secondary" size="sm" disabled={true} onClick={() => onOpenMap(order)}>
-                        <MapPin size={14} /> Open Map Inspector
-                    </Button>
                 </div>
 
                 {/* Client communication — kitchen staff can initiate a message to the
