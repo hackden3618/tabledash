@@ -274,14 +274,17 @@ export const OrderTrackingPage: React.FC<OrderTrackingPageProps> = ({ orderId, o
                 <span className="text-xs font-bold text-[#114B36]">KSh {order.totalAmount}</span>
               </div>
               <div className="divide-y divide-[#F9FAFB] mt-2">
-                {(order.orderItems ?? []).map((item: any) => (
-                  <div key={item.productId || item.id} className="py-2.5 flex items-center justify-between text-xs">
-                    <span className="font-semibold text-[#1F2937]">
-                      {item.quantity}× {item.name}
-                    </span>
-                    <span className="font-bold text-[#6B7280]">KSh {item.price * item.quantity}</span>
-                  </div>
-                ))}
+                {(order.orderItems ?? []).map((item: any) => {
+                  const lineTotal = Number(item.subtotal ?? (Number(item.unitPrice ?? item.price ?? 0) * (item.quantity ?? 1)));
+                  return (
+                    <div key={item.productId || item.id} className="py-2.5 flex items-center justify-between text-xs">
+                      <span className="font-semibold text-[#1F2937]">
+                        {item.quantity}× {item.name}
+                      </span>
+                      <span className="font-bold text-[#6B7280]">KSh {Number.isFinite(lineTotal) ? lineTotal.toFixed(0) : "0"}</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
