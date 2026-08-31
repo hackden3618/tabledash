@@ -448,6 +448,7 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
     };
 
     const discoveryMeals = mealRanking === "trending" ? (discovery?.trendingMeals ?? []) : (discovery?.popularMeals ?? []);
+    const hasRankingMeals = (discovery?.popularMeals?.length ?? 0) > 0 || (discovery?.trendingMeals?.length ?? 0) > 0;
     const heroImage = platformHeroImage || discovery?.hero.imageUrl || discovery?.restaurants.find((hotel) => hotel.imageUrl)?.imageUrl || discovery?.popularMeals[0]?.imageUrl || discovery?.trendingMeals[0]?.imageUrl;
     const openKitchenCount = hotels.filter((hotel) => hotel.isOpen).length;
     const readyMealCount = discovery ? [...discovery.popularMeals, ...discovery.trendingMeals].filter((meal, index, meals) => meals.findIndex((candidate) => candidate.id === meal.id) === index).length : 0;
@@ -615,7 +616,79 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
                             {loading ? <div className="grid grid-cols-2 gap-3">{[1, 2, 3, 4].map((i) => <div key={i} className="h-48 animate-pulse rounded-2xl bg-[#E9E5DE]" />)}</div> : hotels.length === 0 ? <DiscoverEmptyState /> : <div className="grid grid-cols-2 gap-3">{hotels.map((hotel) => <button key={hotel.id} onClick={() => onNavigateToHotel ? onNavigateToHotel(hotel.slug) : selectHotel(hotel)} className="group overflow-hidden rounded-2xl border border-[#E8DED2] bg-white text-left shadow-sm transition hover:-translate-y-1 hover:shadow-lg"><div className="relative h-28 bg-[#EBF5F0]">{hotel.imageUrl ? <img src={hotel.imageUrl} alt={hotel.name} loading="lazy" decoding="async" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" /> : <Building2 size={30} className="absolute inset-0 m-auto text-[#114B36]" />}<span className={`absolute left-2 top-2 rounded-full px-2 py-1 text-[0.58rem] font-bold ${hotel.isOpen ? "bg-[#E7F5EA] text-[#18733C]" : "bg-[#FFF3D6] text-[#9A6500]"}`}>{hotel.isOpen ? "OPEN" : "CLOSED"}</span></div><div className="p-3"><h3 className="truncate text-sm font-black text-[#1F2937]">{hotel.name}</h3><div className="mt-1 flex flex-wrap gap-1"><span className="inline-flex max-w-full items-center rounded-full bg-[#EBF5F0] px-2 py-1 text-[0.58rem] font-bold leading-tight text-[#114B36]"><MapPin size={10} className="mr-1 shrink-0" />{hotel.locationName ?? "Serving area"}</span>{isInFallbackArea && <span className="rounded-full bg-[#FFF7ED] px-2 py-1 text-[0.58rem] font-bold text-[#92400E]">Delivery charges may apply</span>}</div><p className="mt-1 text-[0.68rem] text-[#6B7280]">{hotel.productCount} available items</p><RatingStars rating={hotel.rating} count={hotel.ratingCount} className="mt-2" /></div></button>)}</div>}
                         </section>
 
-                        {discoveryMeals.length > 0 && <section><div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-[#789083]">Based on completed paid orders</p><h2 className="mt-1 text-xl font-black text-[#1F2937]">{mealRanking === "trending" ? "Trending meals" : "Popular meals"}</h2></div><div className="flex gap-1.5" aria-label="Meal ranking"><button onClick={() => setMealRanking("popular")} className={`rounded-full px-3 py-1.5 text-[0.65rem] font-bold transition ${mealRanking === "popular" ? "bg-[#114B36] text-white" : "border border-[#DCE5DE] bg-white text-[#6B7280]"}`}>Popular</button><button onClick={() => setMealRanking("trending")} className={`rounded-full px-3 py-1.5 text-[0.65rem] font-bold transition ${mealRanking === "trending" ? "bg-[#114B36] text-white" : "border border-[#DCE5DE] bg-white text-[#6B7280]"}`}>Trending</button><Sparkles size={17} className="ml-1 self-center text-[#C58A1A]" /></div></div><div className="flex gap-3 overflow-x-auto scrollbar-hide">{discoveryMeals.slice(0, 6).map((meal) => <button key={meal.id} onClick={() => { const hotel = hotels.find((entry) => entry.id === meal.hotelId); if (hotel) selectHotel(hotel); }} className="min-w-[152px] overflow-hidden rounded-2xl border border-[#E8DED2] bg-white text-left shadow-sm transition hover:shadow-md"><div className="h-28 bg-[#F3F0E9]">{meal.imageUrl ? <img src={meal.imageUrl} alt={meal.name} loading="lazy" className="h-full w-full object-cover" /> : <Utensils size={24} className="mx-auto pt-10 text-[#9CA3AF]" />}</div><div className="p-3"><h3 className="truncate text-sm font-black text-[#1F2937]">{meal.name}</h3><p className="mt-1 truncate text-[0.65rem] text-[#6B7280]">{meal.hotelName}</p>{meal.rating ? <p className="mt-1 text-[0.65rem] font-bold text-[#A16207]">★ {meal.rating.toFixed(1)} ({meal.ratingCount})</p> : <p className="mt-1 text-[0.62rem] text-[#9CA3AF]">No ratings yet</p>}<p className="mt-2 text-sm font-black text-[#114B36]">KSh {meal.price}</p></div></button>)}</div></section>}
+                        {hasRankingMeals && <section>
+                            <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+                                <div>
+                                    <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#789083]">
+                                        {mealRanking === "trending" ? "Based on orders over the last 3 days" : "Based on completed paid orders"}
+                                    </p>
+                                    <h2 className="mt-1 text-xl font-black text-[#1F2937]">
+                                        {mealRanking === "trending" ? "Trending meals" : "Popular meals"}
+                                    </h2>
+                                </div>
+                                <div className="flex gap-1.5" aria-label="Meal ranking">
+                                    <button
+                                        onClick={() => setMealRanking("popular")}
+                                        className={`rounded-full px-3 py-1.5 text-[0.65rem] font-bold transition ${mealRanking === "popular" ? "bg-[#114B36] text-white" : "border border-[#DCE5DE] bg-white text-[#6B7280]"}`}
+                                    >
+                                        Popular
+                                    </button>
+                                    <button
+                                        onClick={() => setMealRanking("trending")}
+                                        className={`rounded-full px-3 py-1.5 text-[0.65rem] font-bold transition ${mealRanking === "trending" ? "bg-[#114B36] text-white" : "border border-[#DCE5DE] bg-white text-[#6B7280]"}`}
+                                    >
+                                        Trending
+                                    </button>
+                                    <Sparkles size={17} className="ml-1 self-center text-[#C58A1A]" />
+                                </div>
+                            </div>
+                            {discoveryMeals.length > 0 ? (
+                                <div className="flex gap-3 overflow-x-auto scrollbar-hide">
+                                    {discoveryMeals.slice(0, 6).map((meal) => (
+                                        <button
+                                            key={meal.id}
+                                            onClick={() => {
+                                                const hotel = hotels.find((entry) => entry.id === meal.hotelId);
+                                                if (hotel) selectHotel(hotel);
+                                            }}
+                                            className="min-w-[152px] overflow-hidden rounded-2xl border border-[#E8DED2] bg-white text-left shadow-sm transition hover:shadow-md"
+                                        >
+                                            <div className="h-28 bg-[#F3F0E9]">
+                                                {meal.imageUrl ? (
+                                                    <img src={meal.imageUrl} alt={meal.name} loading="lazy" className="h-full w-full object-cover" />
+                                                ) : (
+                                                    <Utensils size={24} className="mx-auto pt-10 text-[#9CA3AF]" />
+                                                )}
+                                            </div>
+                                            <div className="p-3">
+                                                <h3 className="truncate text-sm font-black text-[#1F2937]">{meal.name}</h3>
+                                                <p className="mt-1 truncate text-[0.65rem] text-[#6B7280]">{meal.hotelName}</p>
+                                                {meal.rating ? (
+                                                    <p className="mt-1 text-[0.65rem] font-bold text-[#A16207]">★ {meal.rating.toFixed(1)} ({meal.ratingCount})</p>
+                                                ) : (
+                                                    <p className="mt-1 text-[0.62rem] text-[#9CA3AF]">No ratings yet</p>
+                                                )}
+                                                <p className="mt-2 text-sm font-black text-[#114B36]">KSh {meal.price}</p>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="rounded-2xl border border-dashed border-[#DCE5DE] bg-[#F9FAF9] p-5 text-center">
+                                    <Sparkles size={20} className="mx-auto text-[#C58A1A] mb-1.5" />
+                                    <p className="text-xs font-bold text-[#1F2937]">No trending meals right now</p>
+                                    <p className="mt-0.5 text-[0.68rem] text-[#6B7280]">
+                                        Meals will appear here as new orders come in over the next few days.
+                                    </p>
+                                    <button
+                                        onClick={() => setMealRanking("popular")}
+                                        className="mt-2.5 inline-flex items-center rounded-full bg-[#114B36] px-3 py-1 text-[0.65rem] font-bold text-white transition hover:bg-[#0D3B2A]"
+                                    >
+                                        View popular meals
+                                    </button>
+                                </div>
+                            )}
+                        </section>}
 
                         <section className="rounded-2xl bg-[#114B36] p-5 text-white"><p className="text-xs font-bold uppercase tracking-[0.16em] text-[#BDE0CB]">How ordering works</p><h2 className="mt-2 text-xl font-black">Simple from choice to doorstep.</h2><div className="mt-5 grid grid-cols-4 gap-2 text-center">{["Choose food", "Kitchen confirms", "Prepared fresh", "Track delivery"].map((step, index) => <div key={step}><span className="mx-auto flex h-8 w-8 items-center justify-center rounded-full bg-white/15 text-xs font-black">{index + 1}</span><span className="mt-2 block text-[0.62rem] font-semibold leading-tight text-white/80">{step}</span></div>)}</div><p className="mt-5 border-t border-white/15 pt-4 text-xs leading-relaxed text-white/70">You’ll see clear order updates after checkout. Payment on delivery is available where supported.</p></section>
                     </div>
