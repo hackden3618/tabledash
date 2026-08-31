@@ -498,6 +498,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                 display: "flex", flexDirection: "column",
                 position: "fixed", top: 0, left: 0, bottom: 0, zIndex: 50,
                 padding: s(6), gap: s(1),
+                overflowY: "auto", WebkitOverflowScrolling: "touch",
                 transform: sidebarOpen ? "translateX(0)" : "translateX(-100%)",
                 transition: "transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
                 boxShadow: sidebarOpen ? "4px 0 24px rgba(0,0,0,0.08)" : "none",
