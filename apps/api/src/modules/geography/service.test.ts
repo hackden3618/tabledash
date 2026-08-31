@@ -19,7 +19,7 @@ const seedTown = {
 };
 const seedFallback = { id: "area-fb-1", townId: "town-1", name: "General Area", active: true, isFallback: true, note: null, displayOrder: 0 };
 const seedArea = { id: "area-1", townId: "town-1", name: "Karagita", active: true, isFallback: false, note: null, displayOrder: 1 };
-const seedHotel = { id: "hotel-1", name: "Wambu's Corner", slug: "wambu", zoneId: "town-1", deletedAt: null };
+const seedHotel = { id: "hotel-1", name: "Wambu's Corner", slug: "wambu", zoneId: "town-1", townRegionId: "area-fb-1", deletedAt: null };
 const seedCustomer = { id: "cust-1", firstName: "D", phone: "2547", townRegionId: "area-1" };
 
 interface DBSchema {
@@ -349,7 +349,7 @@ describe("Geography service — fallback protection", () => {
     const { areaDependencies, deactivateArea } = await import("./service");
     const deps = await areaDependencies("area-1");
     expect(deps.customers).toBe(1);
-    expect(deps.hotels).toBe(1);
+    expect(deps.hotels).toBe(0);
     const result: any = await deactivateArea("area-1", ACTOR);
     expect(result.active).toBe(false);
     expect(result.movedCustomers).toBe(1);

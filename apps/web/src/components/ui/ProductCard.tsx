@@ -64,11 +64,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       layout
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      onClick={() => { if (item.imageUrl && !imgError) onPreview?.(); }}
+      whileHover={{ y: -2 }}
+      onClick={() => { if (!isOutOfStock) onPreview?.(); }}
       className={`
         glass-surface relative grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-3 p-3.5 rounded-2xl cursor-pointer sm:grid-cols-[96px_minmax(0,1fr)_auto] sm:gap-x-4 sm:p-4
-        transition-shadow duration-200
-        ${isOutOfStock ? "opacity-55 bg-[#FAFAFA]" : "shadow-[0_2px_8px_rgba(17,75,54,0.06)] hover:shadow-[0_8px_24px_rgba(17,75,54,0.1)]"}
+        transition-all duration-200 border border-[#E8DED2]/80 bg-white
+        ${isOutOfStock ? "opacity-55 bg-[#FAFAFA]" : "shadow-[0_2px_10px_rgba(17,75,54,0.05)] hover:shadow-[0_8px_24px_rgba(17,75,54,0.12)] hover:border-[#B9DCCB]"}
       `}
     >
       <button

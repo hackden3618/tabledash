@@ -49,7 +49,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   }, [activeTab, refreshUnread, customer?.id]);
 
   return (
-    <nav className="glass-nav fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md border-t z-40 safe-area-bottom">
+    <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md z-40 safe-area-bottom border-t border-[#E8DED2]/80 bg-white/92 backdrop-blur-xl shadow-[0_-4px_24px_rgba(17,75,54,0.06)]">
       <div className="flex items-center justify-around py-1.5">
         {tabs.map(({ key, label, icon: Icon }) => {
           const isActive = activeTab === key;

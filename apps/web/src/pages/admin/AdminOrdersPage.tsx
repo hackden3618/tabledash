@@ -204,11 +204,21 @@ export const AdminOrdersPage: React.FC<AdminOrdersPageProps> = ({
                 className="bg-white rounded-2xl p-4 shadow-[0_2px_8px_rgba(17,75,54,0.06)] hover:shadow-[0_8px_24px_rgba(17,75,54,0.1)] cursor-pointer transition-all duration-200"
               >
                 <div className="flex items-start justify-between mb-2.5">
-                  <div>
+                  <div className="flex items-center gap-2">
                     <span className="font-extrabold text-lg text-[#114B36]">#{ord.orderNumber}</span>
-                    <span className="text-xs text-[#6B7280] ml-2">
-                      {new Date(ord.orderedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                    </span>
+                    {(() => {
+                      const diffMinutes = Math.floor((Date.now() - new Date(ord.orderedAt).getTime()) / (1000 * 60));
+                      if (ord.status === "DELIVERED" || ord.status === "CANCELLED") {
+                        return <span className="text-[0.65rem] font-bold text-[#6B7280]">{new Date(ord.orderedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>;
+                      }
+                      if (diffMinutes < 10) {
+                        return <span className="text-[0.65rem] font-bold px-2 py-0.5 rounded-md bg-[#EBF5F0] text-[#114B36]">{diffMinutes}m ago</span>;
+                      }
+                      if (diffMinutes < 20) {
+                        return <span className="text-[0.65rem] font-bold px-2 py-0.5 rounded-md bg-[#FEF3C7] text-[#D97706]">{diffMinutes}m ago</span>;
+                      }
+                      return <span className="text-[0.65rem] font-bold px-2 py-0.5 rounded-md bg-[#FEE2E2] text-[#DC2626] animate-pulse">⚠️ {diffMinutes}m ago</span>;
+                    })()}
                   </div>
                   <StatusBadge status={ord.status} />
                 </div>

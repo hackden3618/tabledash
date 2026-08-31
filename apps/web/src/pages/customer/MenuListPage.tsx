@@ -68,6 +68,7 @@ interface DiscoveryHome {
     restaurants: HotelItem[];
     popularMeals: DiscoveryProduct[];
     trendingMeals: DiscoveryProduct[];
+    recentlyOrdered?: DiscoveryProduct[];
     trustIndicators: { label: string; icon: string }[];
 }
 
@@ -606,6 +607,69 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
                         <section className="flex gap-2.5 overflow-x-auto scrollbar-hide -mx-1 px-1" aria-label="Meal categories">
                             <MealCategoryChips onSelect={(label) => setSearchQuery(label === "All" ? "" : label)} />
                         </section>
+
+                        {(discovery?.recentlyOrdered?.length ?? 0) > 0 && (
+                            <section>
+                                <div className="mb-3 flex items-end justify-between">
+                                    <div>
+                                        <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#789083]">From your past orders</p>
+                                        <h2 className="mt-1 text-xl font-black text-[#1F2937]">Order again</h2>
+                                    </div>
+                                    <span className="text-[0.68rem] font-bold text-[#114B36] bg-[#EBF5F0] px-2.5 py-1 rounded-full">1-tap reorder</span>
+                                </div>
+                                <div className="flex gap-3 overflow-x-auto scrollbar-hide -mx-1 px-1">
+                                    {discovery!.recentlyOrdered!.map((meal) => (
+                                        <div
+                                            key={meal.id}
+                                            className="group min-w-[155px] max-w-[155px] flex flex-col justify-between overflow-hidden rounded-2xl border border-[#E8DED2] bg-white text-left shadow-sm transition hover:shadow-md"
+                                        >
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const hotel = hotels.find((entry) => entry.id === meal.hotelId);
+                                                    if (hotel) selectHotel(hotel);
+                                                }}
+                                                className="w-full text-left bg-transparent border-none p-0 cursor-pointer"
+                                            >
+                                                <div className="relative h-28 bg-[#F3F0E9]">
+                                                    {meal.imageUrl ? (
+                                                        <img src={meal.imageUrl} alt={meal.name} loading="lazy" className="h-full w-full object-cover transition duration-300 group-hover:scale-105" />
+                                                    ) : (
+                                                        <Utensils size={24} className="mx-auto pt-10 text-[#9CA3AF]" />
+                                                    )}
+                                                    <span className="absolute bottom-2 left-2 rounded-full bg-black/60 px-2 py-0.5 text-[0.58rem] font-bold text-white backdrop-blur-xs">
+                                                        KSh {meal.price}
+                                                    </span>
+                                                </div>
+                                                <div className="p-2.5">
+                                                    <h3 className="truncate text-xs font-black text-[#1F2937]">{meal.name}</h3>
+                                                    <p className="mt-0.5 truncate text-[0.62rem] text-[#6B7280]">{meal.hotelName}</p>
+                                                </div>
+                                            </button>
+                                            <div className="px-2.5 pb-2.5">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        addToCart({
+                                                            id: meal.id,
+                                                            name: meal.name,
+                                                            price: meal.price,
+                                                            imageUrl: meal.imageUrl,
+                                                            hotelId: meal.hotelId,
+                                                            hotelName: meal.hotelName,
+                                                            stockQty: meal.stockQty,
+                                                        });
+                                                    }}
+                                                    className="w-full rounded-xl bg-[#EBF5F0] py-1.5 text-center text-xs font-bold text-[#114B36] transition hover:bg-[#114B36] hover:text-white cursor-pointer border-none"
+                                                >
+                                                    + Reorder
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </section>
+                        )}
 
                         {(discovery?.trustIndicators?.length ?? 0) > 0 && <section aria-label="Ladha trust indicators"><p className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-[#789083]">Why customers choose Ladha</p><div className="grid grid-cols-2 gap-2 rounded-[1.35rem] border border-[#E2ECE5] bg-[#F5F8F4] p-3.5 sm:grid-cols-4">
                             {discovery!.trustIndicators.map((item) => { const Icon = item.icon === "shield" ? ShieldCheck : item.icon === "leaf" ? Leaf : item.icon === "route" ? Route : LockKeyhole; return <div key={item.label} className="flex items-center gap-2 text-[0.65rem] font-semibold leading-tight text-[#3B4A42]"><Icon size={15} className="shrink-0 text-[#114B36]" />{item.label}</div>; })}
