@@ -57,11 +57,21 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           const isTracker = key === "tracking";
           const isAccount = key === "account";
 
+          const href = key === "menu" ? "/" : key === "cart" ? "/cart" : key === "tracking" ? "/orders" : key === "conversations" ? "/inbox" : "/account";
+
+          const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+            // Allow default browser behavior for modifier/new-tab clicks
+            if (e.metaKey || e.ctrlKey || e.shiftKey || (e.nativeEvent && (e.nativeEvent as any).button === 1)) return;
+            e.preventDefault();
+            onSelectTab(key);
+          };
+
           return (
-            <motion.button
+            <motion.a
               key={key}
               whileTap={{ scale: 0.9 }}
-              onClick={() => onSelectTab(key)}
+              href={href}
+              onClick={handleClick}
               className={`
                 relative flex flex-col items-center justify-center gap-0.5 px-4 py-1.5
                 rounded-xl transition-colors bg-none border-none cursor-pointer
@@ -104,7 +114,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                   transition={{ type: "spring", damping: 25, stiffness: 300 }}
                 />
               )}
-            </motion.button>
+            </motion.a>
           );
         })}
       </div>

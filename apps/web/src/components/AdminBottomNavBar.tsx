@@ -148,10 +148,20 @@ export const AdminBottomNavBar: React.FC<AdminBottomNavBarProps> = ({
           const isActive = activeTab === key;
           const isOrders = key === "orders";
 
+          const href = key === "dashboard" ? "/kitchen/dashboard" : key === "menu" ? "/kitchen/menu" : key === "finance" ? "/kitchen/finance" : key === "orders" ? "/kitchen/orders" : key === "settings" ? "/kitchen/settings" : key === "history" ? "/kitchen/history" : "/kitchen/conversations";
+
+          const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+            if (e.metaKey || e.ctrlKey || e.shiftKey || (e.nativeEvent && (e.nativeEvent as any).button === 1)) return;
+            e.preventDefault();
+            setHotelMenuOpen(false);
+            onSelectTab(key);
+          };
+
           return (
-            <button
+            <a
               key={key}
-              onClick={() => { setHotelMenuOpen(false); onSelectTab(key); }}
+              href={href}
+              onClick={handleClick}
               className={`
                 relative flex flex-col items-center justify-center gap-0.5 px-2 py-1.5
                 rounded-xl transition-colors bg-none border-none cursor-pointer min-w-[56px]
@@ -186,7 +196,7 @@ export const AdminBottomNavBar: React.FC<AdminBottomNavBarProps> = ({
                   transition={{ type: "spring", damping: 25, stiffness: 300 }}
                 />
               )}
-            </button>
+            </a>
           );
         })}
       </div>

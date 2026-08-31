@@ -200,6 +200,7 @@ model TownRegion {
 
   town         Zone              @relation(fields: [townId], references: [id], onDelete: Cascade)
   customers    Customer[]
+  hotels       Hotel[]           @relation("HotelHomeDeliveryArea")
   deliveryFees HotelDeliveryFee[]
 
   @@unique([townId, name])
@@ -218,6 +219,7 @@ model Hotel {
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz()
   deletedAt   DateTime? @map("deleted_at") @db.Timestamptz()
   zoneId      String    @map("zone_id") @db.Uuid
+  townRegionId String   @map("town_region_id") @db.Uuid
   vendorGroup VendorGroup @default(FOOD) @map("vendor_group")
   genericDeliveryFee Decimal @default(50) @map("generic_delivery_fee") @db.Decimal(10, 2)
 
@@ -231,8 +233,10 @@ model Hotel {
   reviews          RestaurantReview[]
   productReviews   ProductReview[]
   zone             Zone              @relation(fields: [zoneId], references: [id])
+  townRegion       TownRegion        @relation("HotelHomeDeliveryArea", fields: [townRegionId], references: [id], onDelete: Restrict)
   deliveryFees     HotelDeliveryFee[]
 
+  @@index([townRegionId])
   @@map("hotels")
 }
 

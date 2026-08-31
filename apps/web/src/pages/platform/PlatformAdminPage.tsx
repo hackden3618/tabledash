@@ -25,10 +25,11 @@ interface Hotel {
     adminUsers?: { id: string; name: string; username: string; role: string }[];
     _count?: { orders: number };
     events?: any[]; staffUsers?: { id: string; name: string; phone: string }[];
-    zone?: DeliveryRegion;
+    zone?: DeliveryRegion; townRegion?: DeliveryArea;
 }
 interface AdminUser { id: string; name: string; username: string; createdAt: string; }
 interface DeliveryRegion { id: string; name: string; type: string; locationLabel: string; locationPlaceholder: string; active?: boolean; megaRegionId: string; megaRegion?: MegaRegion; }
+interface DeliveryArea { id: string; townId: string; name: string; active: boolean; isFallback: boolean; }
 interface MegaRegion { id: string; name: string; type: string; active?: boolean; }
 interface GeoAreaNode { id: string; townId: string; name: string; active: boolean; isFallback: boolean; note: string | null; displayOrder: number; customerCount: number; }
 interface GeoTownNode { id: string; name: string; active: boolean; type: string; hotelCount: number; areaCount: number; activeAreaCount: number; locationLabel: string; locationPlaceholder: string; areas: GeoAreaNode[]; }
@@ -69,9 +70,15 @@ function formatAuditDate(value: unknown) {
         : "Recently";
 }
 
-export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+export const PlatformAdminPage: React.FC<{
+    onBack: () => void;
+    routeView?: PlatformView;
+    routeHotelId?: string;
+    onNavigate?: (view: PlatformView, hotelId?: string) => void;
+}> = ({ onBack, routeView, routeHotelId, onNavigate }) => {
     const { token, user, login: authLogin, logout: authLogout } = usePlatformAdminAuth();
     const [view, setView] = useState<PlatformView>(() => {
+        if (routeView) return routeView;
         const tok = localStorage.getItem("ladha_platform_token");
         return tok ? "overview" : "login";
     });
@@ -82,6 +89,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
     const [auditRows, setAuditRows] = useState<any[]>([]);
     const [outboxRows, setOutboxRows] = useState<any[]>([]);
     const [regions, setRegions] = useState<DeliveryRegion[]>([]);
+    const [deliveryAreas, setDeliveryAreas] = useState<DeliveryArea[]>([]);
     const [megaRegions, setMegaRegions] = useState<MegaRegion[]>([]);
     const [geoAlerts, setGeoAlerts] = useState<{ townsMissingActiveArea: { id: string; name: string; county: string }[]; hotelsInInactiveTowns: { id: string; name: string; count: number }[]; inactiveAreasWithCustomers: { id: string; name: string; townId: string; townName: string; count: number }[] }>({ townsMissingActiveArea: [], hotelsInInactiveTowns: [], inactiveAreasWithCustomers: [] });
     const [focusTownId, setFocusTownId] = useState<string | null>(null);
@@ -95,6 +103,21 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
     const [profileSaving, setProfileSaving] = useState(false);
     const [panelOpen, setPanelOpen] = useState(false);
     const { unreadCount, pushNotification } = useNotifications();
+
+    const navigateTo = useCallback((nextView: PlatformView, hotelId?: string) => {
+        setView(nextView);
+        onNavigate?.(nextView, hotelId);
+    }, [onNavigate]);
+
+    useEffect(() => {
+        if (routeView && routeView !== view) setView(routeView);
+    }, [routeView, view]);
+
+    useEffect(() => {
+        if (!routeHotelId) return;
+        const hotel = hotels.find((candidate) => candidate.id === routeHotelId);
+        if (hotel) setSelectedHotel(hotel);
+    }, [hotels, routeHotelId]);
 
     useEffect(() => { if (user) setProfileForm((current) => ({ ...current, name: user.name, username: user.username })); }, [user]);
 
@@ -110,7 +133,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
 
     // ── Create Hotel ──
     const [hotelForm, setHotelForm] = useState({
-        name: "", slug: "", adminUsername: "", adminName: "", adminPhone: "", zoneId: "", isOpen: true, autoCloseAt: "",
+        name: "", slug: "", adminUsername: "", adminName: "", adminPhone: "", zoneId: "", townRegionId: "", isOpen: true, autoCloseAt: "",
     });
     const [createResult, setCreateResult] = useState<any>(null);
     const [submitting, setSubmitting] = useState(false);
@@ -143,7 +166,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
         );
         if (authFailed) {
             authLogout();
-            setView("login");
+            navigateTo("login");
             setLoading(false);
             return;
         }
@@ -158,10 +181,16 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                 id: t.id, name: t.name, type: t.type, locationLabel: t.locationLabel, locationPlaceholder: t.locationPlaceholder,
                 active: t.active, megaRegionId: c.id, megaRegion: { id: c.id, name: c.name, type: c.type, active: c.active },
             })));
+            const flatAreas = counties.flatMap((c) => c.towns.flatMap((t) => t.areas.map((area) => ({ id: area.id, townId: t.id, name: area.name, active: area.active, isFallback: area.isFallback }))));
             const countyOptions = counties.map((c) => ({ id: c.id, name: c.name, type: c.type, active: c.active }));
             setRegions(flatTowns);
+            setDeliveryAreas(flatAreas);
             setMegaRegions(countyOptions);
-            setHotelForm((form) => form.zoneId ? form : { ...form, zoneId: flatTowns[0]?.id ?? "" });
+            setHotelForm((form) => {
+                const zoneId = form.zoneId || flatTowns[0]?.id || "";
+                const currentAreaValid = flatAreas.some((area) => area.id === form.townRegionId && area.townId === zoneId && area.active);
+                return { ...form, zoneId, townRegionId: currentAreaValid ? form.townRegionId : flatAreas.find((area) => area.townId === zoneId && area.active)?.id ?? "" };
+            });
             setRegionForm((form) => form.megaRegionId ? form : { ...form, megaRegionId: countyOptions[0]?.id ?? "" });
             const townsMissingActiveArea: { id: string; name: string; county: string }[] = [];
             const hotelsInInactiveTowns: { id: string; name: string; count: number }[] = [];
@@ -179,7 +208,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
         }
         if (heroRes.success && heroRes.data) setHeroImageUrl(heroRes.data.imageUrl);
         setLoading(false);
-    }, [token]);
+    }, [token, navigateTo]);
 
     const saveHeroImage = async () => {
         if (heroSaving) return;
@@ -192,8 +221,8 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
 
     useEffect(() => { fetch(); }, [fetch]);
     useEffect(() => {
-        if (!token && view !== "login") setView("login");
-    }, [token, view]);
+        if (!token && view !== "login") navigateTo("login");
+    }, [token, view, navigateTo]);
 
     // ── Login ──
     const handleLogin = async () => {
@@ -204,7 +233,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
             const res = await apiPost<{ token: string; user: PlatformMe }>("/platform/login", { ...loginForm, username: loginForm.username.trim(), password: loginForm.password.trim() });
             if (res.success && res.data) {
                 authLogin(res.data.token, res.data.user);
-                setView("overview");
+                navigateTo("overview");
             } else {
                 setLoginError(res.error || "Login failed");
             }
@@ -215,7 +244,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
 
     const handleLogout = () => {
         authLogout();
-        setView("login");
+        navigateTo("login");
     };
 
     // ── Create Hotel ──
@@ -312,7 +341,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
         const res = await apiDelete<Hotel>(`/platform/hotels/${id}`, token);
         if (res.success) {
             pushNotification("info", "Hotel deleted", `${res.data?.name || "The hotel"} has been removed`, { scope: "platform" });
-            if (view === "hotel_detail") setView("hotels");
+            if (view === "hotel_detail") navigateTo("hotels");
             await fetch();
         } else {
             pushNotification("danger", "Error", res.error || "Failed to delete hotel", { scope: "platform" });
@@ -384,7 +413,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
 
     const navItem = (v: PlatformView, label: string) => (
         <button
-            onClick={() => { setView(v); setSidebarOpen(false); }}
+            onClick={() => { navigateTo(v); setSidebarOpen(false); }}
             style={{
                 background: view === v ? "rgba(255,255,255,0.15)" : "transparent",
                 color: view === v ? "#FFFFFF" : "rgba(231,244,237,0.64)",
@@ -417,9 +446,9 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                     {loginError && <div style={{ background: T.dangerMuted, color: T.danger, padding: s(3), borderRadius: T.radius, fontSize: "0.85rem", marginBottom: s(4), fontWeight: 600 }}>{loginError}</div>}
                     <div style={{ display: "flex", flexDirection: "column", gap: s(4) }}>
                         <input placeholder="Username" value={loginForm.username} onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })}
-                            className="input-field" style={{ fontFamily: T.font }} autoComplete="username" />
+                            className="input-field px-4" style={{ fontFamily: T.font }} autoComplete="username" />
                         <input type="password" placeholder="Password" value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
-                            className="input-field" style={{ fontFamily: T.font }} autoComplete="current-password" onKeyDown={(e) => e.key === "Enter" && handleLogin()} />
+                            className="input-field px-4" style={{ fontFamily: T.font }} autoComplete="current-password" onKeyDown={(e) => e.key === "Enter" && handleLogin()} />
                         <button className="platform-login-submit" onClick={handleLogin} disabled={loginSubmitting || !loginForm.username.trim() || !loginForm.password}
                             style={{ background: T.primary, color: "white", border: "none", padding: s(4), borderRadius: T.radius, fontWeight: 700, fontSize: "0.95rem", cursor: loginSubmitting ? "wait" : "pointer", opacity: loginSubmitting || !loginForm.username.trim() || !loginForm.password ? 0.6 : 1 }}>
                             {loginSubmitting ? "Signing in…" : "Sign In"}
@@ -578,12 +607,12 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                 <h1>Command center</h1>
                                 <p>Good to see you, {user?.name?.split(" ")[0] || "there"}. Here’s how Ladha is running right now.</p>
                             </div>
-                            <div className="command-actions"><button className="command-secondary" onClick={() => void fetch()}><RefreshCw size={15} /> Refresh</button><button className="command-primary" onClick={() => setView("create_hotel")}><Plus size={16} /> Add hotel</button></div>
+                            <div className="command-actions"><button className="command-secondary" onClick={() => void fetch()}><RefreshCw size={15} /> Refresh</button><button className="command-primary" onClick={() => navigateTo("create_hotel")}><Plus size={16} /> Add hotel</button></div>
                         </header>
 
                         <div className="command-pulse">
                             <div className="pulse-copy"><div className="pulse-label"><span /> Platform health</div><strong>{attentionCount === 0 ? "Everything is running smoothly" : `${attentionCount} item${attentionCount === 1 ? "" : "s"} need attention`}</strong><p>{dashboard?.activeHotelCount ?? 0} of {dashboard?.hotelCount ?? 0} hotels are currently accepting orders.</p></div>
-                            <div className="pulse-actions"><div className="pulse-ring"><ShieldCheck size={24} /><span>{attentionCount === 0 ? "Healthy" : "Review"}</span></div><button onClick={() => attentionCount ? setView(dashboard?.failedOutboxCount ? "outbox" : "geography") : setView("hotels")}>{attentionCount ? "Review now" : "View hotels"} <ArrowUpRight size={15} /></button></div>
+                            <div className="pulse-actions"><div className="pulse-ring"><ShieldCheck size={24} /><span>{attentionCount === 0 ? "Healthy" : "Review"}</span></div><button onClick={() => navigateTo(attentionCount ? (dashboard?.failedOutboxCount ? "outbox" : "geography") : "hotels")}>{attentionCount ? "Review now" : "View hotels"} <ArrowUpRight size={15} /></button></div>
                         </div>
 
                         {dashboard && <div className="command-metrics">
@@ -595,18 +624,18 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
 
                         <div className="command-grid">
                             <section className="command-panel attention-panel"><div className="panel-heading"><div><span className="panel-kicker">Priority queue</span><h2>Needs attention</h2></div><span className={attentionCount ? "count-badge warning" : "count-badge"}>{attentionCount}</span></div>
-                                {dashboard?.failedOutboxCount ? <button className="attention-row danger" onClick={() => setView("outbox")}><span className="attention-icon">!</span><span><strong>Message delivery failures</strong><small>{dashboard.failedOutboxCount} outbox event{dashboard.failedOutboxCount === 1 ? "" : "s"} failed to send</small></span><ChevronRight size={17} /></button> : null}
-                                {geoAlerts.townsMissingActiveArea.slice(0, 2).map((town) => <button key={town.id} className="attention-row" onClick={() => { setFocusTownId(town.id); setView("geography"); }}><span className="attention-icon">⌖</span><span><strong>Coverage gap in {town.name}</strong><small>No active local delivery area</small></span><ChevronRight size={17} /></button>)}
-                                {geoAlerts.hotelsInInactiveTowns.slice(0, 2).map((town) => <button key={town.id} className="attention-row" onClick={() => { setFocusTownId(town.id); setView("geography"); }}><span className="attention-icon">⌖</span><span><strong>Inactive town: {town.name}</strong><small>{town.count} hotel{town.count === 1 ? "" : "s"} affected</small></span><ChevronRight size={17} /></button>)}
+                                {dashboard?.failedOutboxCount ? <button className="attention-row danger" onClick={() => navigateTo("outbox")}><span className="attention-icon">!</span><span><strong>Message delivery failures</strong><small>{dashboard.failedOutboxCount} outbox event{dashboard.failedOutboxCount === 1 ? "" : "s"} failed to send</small></span><ChevronRight size={17} /></button> : null}
+                                {geoAlerts.townsMissingActiveArea.slice(0, 2).map((town) => <button key={town.id} className="attention-row" onClick={() => { setFocusTownId(town.id); navigateTo("geography"); }}><span className="attention-icon">⌖</span><span><strong>Coverage gap in {town.name}</strong><small>No active local delivery area</small></span><ChevronRight size={17} /></button>)}
+                                {geoAlerts.hotelsInInactiveTowns.slice(0, 2).map((town) => <button key={town.id} className="attention-row" onClick={() => { setFocusTownId(town.id); navigateTo("geography"); }}><span className="attention-icon">⌖</span><span><strong>Inactive town: {town.name}</strong><small>{town.count} hotel{town.count === 1 ? "" : "s"} affected</small></span><ChevronRight size={17} /></button>)}
                                 {attentionCount === 0 && <div className="empty-state"><ShieldCheck size={22} /><span><strong>All clear</strong><small>There are no delivery, geography, or messaging issues.</small></span></div>}
                             </section>
-                            <section className="command-panel"><div className="panel-heading"><div><span className="panel-kicker">Network</span><h2>Hotel status</h2></div><button className="text-action" onClick={() => setView("hotels")}>See all <ArrowUpRight size={14} /></button></div>
-                                {(hotelsNeedingAttention.length ? hotelsNeedingAttention : hotels.slice(0, 4)).map((hotel) => <button className="hotel-row" key={hotel.id} onClick={() => { setSelectedHotel(hotel); setView("hotel_detail"); }}><span className={`hotel-avatar ${hotel.isOpen ? "" : "offline"}`}>{hotel.name.slice(0, 1)}</span><span><strong>{hotel.name}</strong><small>{hotel.zone?.name ?? "Location pending"}</small></span><span className={`status-pill ${hotel.isOpen ? "open" : "closed"}`}>{hotel.isOpen ? "Open" : "Closed"}</span><ChevronRight size={16} /></button>)}
+                            <section className="command-panel"><div className="panel-heading"><div><span className="panel-kicker">Network</span><h2>Hotel status</h2></div><button className="text-action" onClick={() => navigateTo("hotels")}>See all <ArrowUpRight size={14} /></button></div>
+                                {(hotelsNeedingAttention.length ? hotelsNeedingAttention : hotels.slice(0, 4)).map((hotel) => <button className="hotel-row" key={hotel.id} onClick={() => { setSelectedHotel(hotel); navigateTo("hotel_detail", hotel.id); }}><span className={`hotel-avatar ${hotel.isOpen ? "" : "offline"}`}>{hotel.name.slice(0, 1)}</span><span><strong>{hotel.name}</strong><small>{hotel.zone?.name ?? "Location pending"}</small></span><span className={`status-pill ${hotel.isOpen ? "open" : "closed"}`}>{hotel.isOpen ? "Open" : "Closed"}</span><ChevronRight size={16} /></button>)}
                                 {hotels.length === 0 && <div className="empty-state"><Building2 size={22} /><span><strong>No hotels yet</strong><small>Start building your marketplace by adding the first hotel.</small></span></div>}
                             </section>
                         </div>
 
-                        <section className="command-panel activity-panel"><div className="panel-heading"><div><span className="panel-kicker">Governance</span><h2>Recent platform activity</h2></div><button className="text-action" onClick={() => setView("audit")}>Audit log <ArrowUpRight size={14} /></button></div>
+                        <section className="command-panel activity-panel"><div className="panel-heading"><div><span className="panel-kicker">Governance</span><h2>Recent platform activity</h2></div><button className="text-action" onClick={() => navigateTo("audit")}>Audit log <ArrowUpRight size={14} /></button></div>
                             {recentActivity.length ? recentActivity.map((event: any, index: number) => <div className="activity-row" key={event?.id ?? `activity-${index}`}><span className="activity-dot" /><span><strong>{formatAuditEventName(event?.eventName)}</strong><small>{event?.payload?.hotelName || event?.payload?.adminName || event?.payload?.createdBy || "Platform event"}</small></span><time>{formatAuditDate(event?.createdAt)}</time></div>) : <div className="empty-state"><Activity size={22} /><span><strong>No recent activity</strong><small>Important platform changes will appear here.</small></span></div>}
                         </section>
                     </section>
@@ -614,7 +643,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                     <section className="platform-workspace">
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: s(6) }}>
                             <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: T.text, margin: 0 }}>Hotels</h1>
-                            <button onClick={() => setView("create_hotel")} style={{ background: T.primary, color: "white", border: "none", padding: `${s(2)} ${s(5)}`, borderRadius: T.radius, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>＋ Add Hotel</button>
+                            <button onClick={() => navigateTo("create_hotel")} style={{ background: T.primary, color: "white", border: "none", padding: `${s(2)} ${s(5)}`, borderRadius: T.radius, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>＋ Add Hotel</button>
                         </div>
                         <input placeholder="Search by name or slug…" value={searchQ} onChange={(e) => setSearchQ(e.target.value)}
                             style={{ width: "100%", padding: s(3), border: `1px solid ${T.border}`, borderRadius: T.radius, fontSize: "0.9rem", marginBottom: s(4), fontFamily: T.font, outline: "none", boxSizing: "border-box" }} />
@@ -626,8 +655,8 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                     <div style={{ marginBottom: s(2), color: T.textMuted, fontSize: "0.75rem", fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase" }}>{group.megaRegion} · {group.town}</div>
                                     <div style={{ display: "flex", flexDirection: "column", gap: s(3) }}>
                                 {group.hotels.map((h) => (
-                                    <button key={h.id} onClick={() => { setSelectedHotel(h); setView("hotel_detail"); }}
-                                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedHotel(h); setView("hotel_detail"); } }}
+                                    <button key={h.id} onClick={() => { setSelectedHotel(h); navigateTo("hotel_detail", h.id); }}
+                                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedHotel(h); navigateTo("hotel_detail", h.id); } }}
                                         style={{ background: T.surface, borderRadius: "12px", border: `1px solid ${T.border}`, borderLeft: `4px solid ${h.isOpen ? T.primary : T.textDim}`, padding: `${s(4)} ${s(5)}`, cursor: "pointer", transition: "box-shadow 0.15s" }}
                                         onMouseEnter={(e) => e.currentTarget.style.boxShadow = `0 2px 8px rgba(0,0,0,0.06)`}
                                         onMouseLeave={(e) => e.currentTarget.style.boxShadow = "none"}>
@@ -652,9 +681,9 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                         )}
                     </section>
                 ) : view === "hotel_detail" && selectedHotel ? (
-                    <HotelDetail hotelId={selectedHotel.id} onBack={() => setView("hotels")} onToggle={handleToggleHotel} onToggleListing={handleToggleListing} onDelete={handleDeleteHotel} token={token} regions={regions} />
+                    <HotelDetail hotelId={selectedHotel.id} onBack={() => navigateTo("hotels")} onToggle={handleToggleHotel} onToggleListing={handleToggleListing} onDelete={handleDeleteHotel} token={token} regions={regions} deliveryAreas={deliveryAreas} />
                 ) : view === "geography" ? (
-                    <GeographyWorkspace token={token} user={{ id: user?.id ?? "", username: user?.username ?? "", name: user?.name ?? "", role: user?.role ?? "" }} focusTownId={focusTownId} onOpenHotel={(id) => { const h = hotels.find((x) => x.id === id); if (h) { setSelectedHotel(h); setView("hotel_detail"); } }} />
+                    <GeographyWorkspace token={token} user={{ id: user?.id ?? "", username: user?.username ?? "", name: user?.name ?? "", role: user?.role ?? "" }} focusTownId={focusTownId} onOpenHotel={(id) => { const h = hotels.find((x) => x.id === id); if (h) { setSelectedHotel(h); navigateTo("hotel_detail", h.id); } }} />
                 ) : view === "create_hotel" ? (
                     createResult ? (
                         <div style={{ textAlign: "center", padding: s(10) }}>
@@ -667,7 +696,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                 <div style={{ color: T.textMuted, wordBreak: "break-all" }}><strong>{createResult.setupLink}</strong></div>
                                 <div style={{ fontSize: "0.8rem", color: T.textMuted, marginTop: s(1) }}>The link is also sent via SMS and expires in 24h.</div>
                             </div>
-                            <button onClick={() => { setCreateResult(null); setHotelForm({ name: "", slug: "", adminUsername: "", adminName: "", adminPhone: "", zoneId: regions[0]?.id ?? "", isOpen: true, autoCloseAt: "" }); setView("hotels"); }}
+                            <button onClick={() => { const zoneId = regions[0]?.id ?? ""; setCreateResult(null); setHotelForm({ name: "", slug: "", adminUsername: "", adminName: "", adminPhone: "", zoneId, townRegionId: deliveryAreas.find((area) => area.townId === zoneId && area.active)?.id ?? "", isOpen: true, autoCloseAt: "" }); navigateTo("hotels"); }}
                                 style={{ background: T.primary, color: "white", border: "none", padding: `${s(3)} ${s(6)}`, borderRadius: T.radius, fontWeight: 700, cursor: "pointer", marginTop: s(4) }}>Done</button>
                         </div>
                     ) : (
@@ -689,12 +718,18 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                                 className="input-field" style={{ fontFamily: "monospace" }} />
                                         </div>
                                         <div>
-                                            <label htmlFor="hotelRegion" style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: T.textMuted, marginBottom: s(1) }}>Hotel town</label>
-                                            <select id="hotelRegion" value={hotelForm.zoneId} onChange={(e) => setHotelForm({ ...hotelForm, zoneId: e.target.value })} className="input-field" style={{ fontFamily: T.font }}>
+                                            <label htmlFor="hotelRegion" style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: T.textMuted, marginBottom: s(1) }}>Town</label>
+                                            <select id="hotelRegion" value={hotelForm.zoneId} onChange={(e) => { const zoneId = e.target.value; setHotelForm({ ...hotelForm, zoneId, townRegionId: deliveryAreas.find((area) => area.townId === zoneId && area.active)?.id ?? "" }); }} className="input-field" style={{ fontFamily: T.font }}>
                                                 <option value="">Select a town</option>
                                                 {regions.map((region) => <option key={region.id} value={region.id}>{region.name}{region.megaRegion ? ` · ${region.megaRegion.name}` : ""}</option>)}
                                             </select>
                                             {regions.length === 0 && <p style={{ color: T.warning, fontSize: "0.75rem", marginTop: s(1) }}>Create a county/city and town before onboarding a hotel.</p>}
+                                            <label htmlFor="hotelDeliveryArea" style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: T.textMuted, margin: `${s(3)} 0 ${s(1)}` }}>Delivery area <span style={{ color: T.danger }}>*</span></label>
+                                            <select id="hotelDeliveryArea" value={hotelForm.townRegionId} onChange={(e) => setHotelForm({ ...hotelForm, townRegionId: e.target.value })} className="input-field" style={{ fontFamily: T.font }} disabled={!hotelForm.zoneId}>
+                                                <option value="">Select the hotel’s delivery area</option>
+                                                {deliveryAreas.filter((area) => area.townId === hotelForm.zoneId && area.active).map((area) => <option key={area.id} value={area.id}>{area.name}{area.isFallback ? " · General area" : ""}</option>)}
+                                            </select>
+                                            {!deliveryAreas.some((area) => area.townId === hotelForm.zoneId && area.active) && hotelForm.zoneId && <p style={{ color: T.warning, fontSize: "0.75rem", marginTop: s(1) }}>This town has no active delivery area. Add one in Geography before onboarding a hotel.</p>}
                                             <button type="button" onClick={() => setShowRegionForm((open) => !open)} style={{ marginTop: s(2), background: "transparent", border: "none", color: T.primary, fontWeight: 700, cursor: "pointer", padding: 0 }}>{showRegionForm ? "Cancel new region" : "+ Add a new region"}</button>
                                             {showRegionForm && <div style={{ marginTop: s(2), padding: s(3), border: `1px solid ${T.border}`, borderRadius: T.radius, display: "flex", flexDirection: "column", gap: s(2) }}>
                                                 <input value={regionForm.name} onChange={(e) => setRegionForm({ ...regionForm, name: e.target.value })} className="input-field" style={{ fontFamily: T.font }} placeholder="Town name e.g. Naivasha Town" />
@@ -731,8 +766,8 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                         </div>
                                     </div>
                                 </div>
-                                <button onClick={handleCreateHotel} disabled={submitting || !hotelForm.name || !hotelForm.slug || !hotelForm.zoneId || !hotelForm.adminUsername || !hotelForm.adminName || !hotelForm.adminPhone}
-                                    style={{ background: T.primary, color: "white", border: "none", padding: s(4), borderRadius: T.radius, fontWeight: 700, fontSize: "0.95rem", cursor: submitting ? "not-allowed" : "pointer", opacity: submitting || !hotelForm.name || !hotelForm.slug || !hotelForm.zoneId || !hotelForm.adminUsername || !hotelForm.adminName || !hotelForm.adminPhone ? 0.6 : 1, alignSelf: "flex-start", minWidth: "200px" }}>
+                                <button onClick={handleCreateHotel} disabled={submitting || !hotelForm.name || !hotelForm.slug || !hotelForm.zoneId || !hotelForm.townRegionId || !hotelForm.adminUsername || !hotelForm.adminName || !hotelForm.adminPhone}
+                                    style={{ background: T.primary, color: "white", border: "none", padding: s(4), borderRadius: T.radius, fontWeight: 700, fontSize: "0.95rem", cursor: submitting ? "not-allowed" : "pointer", opacity: submitting || !hotelForm.name || !hotelForm.slug || !hotelForm.zoneId || !hotelForm.townRegionId || !hotelForm.adminUsername || !hotelForm.adminName || !hotelForm.adminPhone ? 0.6 : 1, alignSelf: "flex-start", minWidth: "200px" }}>
                                     {submitting ? "Creating…" : "Create Hotel & Seed Admin"}
                                 </button>
                             </div>
@@ -742,7 +777,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                     <section className="platform-workspace">
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: s(6) }}>
                             <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: T.text, margin: 0 }}>Platform Admins</h1>
-                            <button onClick={() => setView("create_admin")} style={{ background: T.primary, color: "white", border: "none", padding: `${s(2)} ${s(5)}`, borderRadius: T.radius, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>＋ Add Admin</button>
+                            <button onClick={() => navigateTo("create_admin")} style={{ background: T.primary, color: "white", border: "none", padding: `${s(2)} ${s(5)}`, borderRadius: T.radius, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>＋ Add Admin</button>
                         </div>
                         {admins.length === 0 ? (
                             <div style={{ textAlign: "center", padding: s(10), color: T.textMuted }}>No platform admins yet.</div>
@@ -781,7 +816,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                 <div style={{ color: T.textMuted, wordBreak: "break-all" }}>Link: <strong>{adminResult.setupLink}</strong></div>
                             </div>
                             <div style={{ fontSize: "0.85rem", color: T.textMuted, marginTop: s(2) }}>The link has also been sent via SMS to their phone and expires in 2h.</div>
-                            <button onClick={() => { setAdminResult(null); setAdminForm({ username: "", name: "", phone: "" }); setView("admins"); }}
+                            <button onClick={() => { setAdminResult(null); setAdminForm({ username: "", name: "", phone: "" }); navigateTo("admins"); }}
                                 style={{ background: T.primary, color: "white", border: "none", padding: `${s(3)} ${s(6)}`, borderRadius: T.radius, fontWeight: 700, cursor: "pointer", marginTop: s(4) }}>Done</button>
                         </div>
                     ) : (
@@ -861,7 +896,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                         </section>
                     </div>
                 ) : view === "communications" ? (
-                    <InboxPage token={token} actorId={user?.id} mode="global" title="Communications" onBack={() => setView("overview")} />
+                    <InboxPage token={token} actorId={user?.id} mode="global" title="Communications" onBack={() => navigateTo("overview")} />
                 ) : view === "outbox" ? (
                     <section className="platform-workspace">
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: s(6) }}>
@@ -915,10 +950,11 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
 };
 
 // ── Hotel Detail sub-view ──
-function HotelDetail({ hotelId, onBack, onToggle, onToggleListing, onDelete, token: tok, regions: townOptions }: { hotelId: string; onBack: () => void; onToggle: (id: string, action: "open" | "close") => void; onToggleListing: (id: string, currentlyListed: boolean) => void; onDelete: (id: string) => void; token: string; regions: { id: string; name: string }[] }) {
+function HotelDetail({ hotelId, onBack, onToggle, onToggleListing, onDelete, token: tok, regions: townOptions, deliveryAreas }: { hotelId: string; onBack: () => void; onToggle: (id: string, action: "open" | "close") => void; onToggleListing: (id: string, currentlyListed: boolean) => void; onDelete: (id: string) => void; token: string; regions: { id: string; name: string }[]; deliveryAreas: DeliveryArea[] }) {
     const [hotel, setHotel] = useState<Hotel | null>(null);
     const [detailLoading, setDetailLoading] = useState(true);
     const [zoneId, setZoneId] = useState("");
+    const [townRegionId, setTownRegionId] = useState("");
     const [zoneSaving, setZoneSaving] = useState(false);
     const [editForm, setEditForm] = useState({ name: "", slug: "", imageUrl: "", isOpen: true, autoCloseAt: "" });
     const [editSaving, setEditSaving] = useState(false);
@@ -931,6 +967,7 @@ function HotelDetail({ hotelId, onBack, onToggle, onToggleListing, onDelete, tok
             if (res.success && res.data) {
                 setHotel(res.data);
                 setZoneId(res.data.zone?.id ?? "");
+                setTownRegionId(res.data.townRegion?.id ?? "");
                 setEditForm({
                     name: res.data.name,
                     slug: res.data.slug,
@@ -946,7 +983,7 @@ function HotelDetail({ hotelId, onBack, onToggle, onToggleListing, onDelete, tok
     const saveRegion = async () => {
         if (!hotel || !zoneId || zoneSaving) return;
         setZoneSaving(true);
-        const res = await apiPatch<Hotel>(`/platform/hotels/${hotel.id}`, { zoneId }, tok);
+        const res = await apiPatch<Hotel>(`/platform/hotels/${hotel.id}`, { zoneId, townRegionId }, tok);
         setZoneSaving(false);
         if (res.success && res.data) setHotel(res.data);
     };
@@ -1048,14 +1085,18 @@ function HotelDetail({ hotelId, onBack, onToggle, onToggleListing, onDelete, tok
             </div>
 
             <div style={{ marginBottom: s(6), padding: s(4), background: T2.surface, border: `1px solid ${T2.border}`, borderRadius: T2.radius, maxWidth: "520px" }}>
-                <h3 style={{ fontSize: "0.9rem", fontWeight: 700, color: T2.text, marginBottom: s(2) }}>Hotel Relocation & Delivery Town</h3>
-                <p style={{ color: T2.textMuted, fontSize: "0.8rem", marginBottom: s(2) }}>Relocate this hotel to a different town or delivery area. Customers browsing in the chosen town will discover this hotel.</p>
-                <div style={{ display: "flex", gap: s(2) }}>
-                    <select value={zoneId} onChange={(event) => setZoneId(event.target.value)} className="input-field" style={{ fontFamily: T2.font, flex: 1 }}>
+                <h3 style={{ fontSize: "0.9rem", fontWeight: 700, color: T2.text, marginBottom: s(2) }}>Hotel location</h3>
+                <p style={{ color: T2.textMuted, fontSize: "0.8rem", marginBottom: s(2) }}>A hotel must have one home delivery area. Relocating it updates both its town and its exact delivery-area branch.</p>
+                <div style={{ display: "grid", gap: s(2) }}>
+                    <select value={zoneId} onChange={(event) => { const nextZoneId = event.target.value; setZoneId(nextZoneId); setTownRegionId(deliveryAreas.find((area) => area.townId === nextZoneId && area.active)?.id ?? ""); }} className="input-field" style={{ fontFamily: T2.font, width: "100%" }}>
                         <option value="">Select target town</option>
                         {townOptions.map((region) => <option key={region.id} value={region.id}>{region.name}</option>)}
                     </select>
-                    <button type="button" onClick={() => void saveRegion()} disabled={zoneSaving || !zoneId || zoneId === hotel.zone?.id} style={{ background: T2.primary, color: "white", border: "none", borderRadius: T2.radius, padding: `${s(2)} ${s(4)}`, fontWeight: 700, opacity: zoneSaving || !zoneId || zoneId === hotel.zone?.id ? 0.6 : 1, cursor: zoneSaving || !zoneId || zoneId === hotel.zone?.id ? "not-allowed" : "pointer" }}>{zoneSaving ? "Relocating…" : "Relocate Hotel"}</button>
+                    <select value={townRegionId} onChange={(event) => setTownRegionId(event.target.value)} className="input-field" style={{ fontFamily: T2.font, width: "100%" }} disabled={!zoneId}>
+                        <option value="">Select target delivery area</option>
+                        {deliveryAreas.filter((area) => area.townId === zoneId && area.active).map((area) => <option key={area.id} value={area.id}>{area.name}{area.isFallback ? " · General area" : ""}</option>)}
+                    </select>
+                    <button type="button" onClick={() => void saveRegion()} disabled={zoneSaving || !zoneId || !townRegionId || (zoneId === hotel.zone?.id && townRegionId === hotel.townRegion?.id)} style={{ background: T2.primary, color: "white", border: "none", borderRadius: T2.radius, padding: `${s(2)} ${s(4)}`, fontWeight: 700, opacity: zoneSaving || !zoneId || !townRegionId || (zoneId === hotel.zone?.id && townRegionId === hotel.townRegion?.id) ? 0.6 : 1, cursor: zoneSaving || !zoneId || !townRegionId ? "not-allowed" : "pointer" }}>{zoneSaving ? "Relocating…" : "Save location"}</button>
                 </div>
             </div>
 

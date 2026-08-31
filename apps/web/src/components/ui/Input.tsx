@@ -23,14 +23,11 @@ export const Input: React.FC<InputProps> = ({
   ...props
 }) => {
   const [focused, setFocused] = useState(false);
+  const valueStr = String((props.value ?? "") as any);
+  const hasValue = focused || valueStr.length > 0;
 
   return (
     <div className="w-full">
-      {label && (
-        <label className="block text-sm font-semibold text-[#374151] mb-1.5">
-          {label}
-        </label>
-      )}
       <div
         className={`
           relative flex items-center rounded-xl border-2 bg-white
@@ -39,12 +36,17 @@ export const Input: React.FC<InputProps> = ({
           ${error ? "border-[#EF4444] ring-3 ring-[rgba(239,68,68,0.1)]" : ""}
         `}
       >
+        {label && (
+          <label className={`absolute left-4 pointer-events-none transition-all duration-150 ${hasValue ? "-translate-y-5 text-xs text-[#114B36] font-semibold" : "translate-y-0 text-sm text-[#374151]"}`}>
+            {label}
+          </label>
+        )}
         {icon && (
           <span className="pl-4 text-[#9CA3AF] flex-shrink-0">{icon}</span>
         )}
         <input
           className={`
-            w-full bg-transparent px-4 py-3.5 text-base text-[#1F2937]
+            w-full bg-transparent px-4 ${label ? "pt-6 pb-3" : "py-3.5"} text-base text-[#1F2937]
             placeholder:text-[#9CA3AF] outline-none
             ${icon ? "pl-3" : ""}
             ${className}
@@ -81,14 +83,11 @@ export const Textarea: React.FC<TextareaProps> = ({
   ...props
 }) => {
   const [focused, setFocused] = useState(false);
+  const valueStr = String((props.value ?? "") as any);
+  const hasValue = focused || valueStr.length > 0;
 
   return (
     <div className="w-full">
-      {label && (
-        <label className="block text-sm font-semibold text-[#374151] mb-1.5">
-          {label}
-        </label>
-      )}
       <div
         className={`
           relative rounded-xl border-2 bg-white transition-all duration-200
@@ -96,9 +95,14 @@ export const Textarea: React.FC<TextareaProps> = ({
           ${error ? "border-[#EF4444] ring-3 ring-[rgba(239,68,68,0.1)]" : ""}
         `}
       >
+        {label && (
+          <label className={`absolute left-4 pointer-events-none transition-all duration-150 ${hasValue ? "-translate-y-5 text-xs text-[#114B36] font-semibold" : "translate-y-0 text-sm text-[#374151]"}`}>
+            {label}
+          </label>
+        )}
         <textarea
           className={`
-            w-full bg-transparent px-4 py-3.5 text-base text-[#1F2937]
+            w-full bg-transparent px-4 ${label ? "pt-6 pb-3" : "py-3.5"} text-base text-[#1F2937]
             placeholder:text-[#9CA3AF] outline-none resize-none
             ${className}
           `}

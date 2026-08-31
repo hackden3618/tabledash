@@ -114,6 +114,7 @@ export const platformRoute = new Elysia({
         include: {
           adminUsers: { select: { id: true, name: true, username: true, role: true } },
           zone: { include: { megaRegion: true } },
+          townRegion: true,
         },
       });
 
@@ -143,6 +144,7 @@ export const platformRoute = new Elysia({
           adminUsers: { select: { id: true, name: true, username: true, role: true, createdAt: true } },
           staffUsers: { select: { id: true, name: true, phone: true, createdAt: true } },
           zone: true,
+          townRegion: true,
           _count: { select: { orders: true } },
         },
       });
@@ -168,9 +170,14 @@ export const platformRoute = new Elysia({
       try {
         // No inactive town may be used for hotel onboarding — geography rules
         // are enforced server-side, never by hiding UI options.
-        const town = await prisma.zone.findUnique({ where: { id: body.zoneId } });
+        const [town, deliveryArea] = await Promise.all([
+          prisma.zone.findUnique({ where: { id: body.zoneId } }),
+          prisma.townRegion.findUnique({ where: { id: body.townRegionId } }),
+        ]);
         if (!town) { set.status = 400; return { success: false, error: "The selected town no longer exists." }; }
         if (!town.active) { set.status = 400; return { success: false, error: `Town "${town.name}" is inactive. Activate it before onboarding hotels.` }; }
+        if (!deliveryArea || deliveryArea.townId !== town.id) { set.status = 400; return { success: false, error: "Choose an active delivery area within the selected town." }; }
+        if (!deliveryArea.active) { set.status = 400; return { success: false, error: `Delivery area "${deliveryArea.name}" is inactive. Activate it before onboarding hotels.` }; }
 
         // No password is ever generated or stored in plaintext for new accounts.
         // The account starts locked (unknowable random hash); the SMS sent by the
@@ -186,6 +193,7 @@ export const platformRoute = new Elysia({
               isOpen: body.isOpen ?? true,
               autoCloseAt: body.autoCloseAt ? new Date(body.autoCloseAt) : null,
               zone: { connect: { id: body.zoneId } },
+              townRegion: { connect: { id: body.townRegionId } },
             },
           });
 
@@ -261,6 +269,7 @@ export const platformRoute = new Elysia({
         isOpen: t.Optional(t.Boolean()),
         autoCloseAt: t.Optional(t.String()),
         zoneId: t.String({ format: "uuid" }),
+        townRegionId: t.String({ format: "uuid" }),
       }),
     }
   )
@@ -387,17 +396,23 @@ export const platformRoute = new Elysia({
       try { admin = await requirePlatformActor(headers, jwt, "hotels:write"); }
       catch (err: any) { set.status = err.status ?? 401; return { success: false, error: err.message }; }
 
-      const hotel = await prisma.hotel.findUnique({ where: { id: params.id }, include: { zone: true } });
+      const hotel = await prisma.hotel.findUnique({ where: { id: params.id }, include: { zone: true, townRegion: true } });
       if (!hotel) { set.status = 404; return { success: false, error: "Hotel not found" }; }
 
       // Reassigning a hotel to another town is a sensitive geography change:
       // audit it explicitly and never allow moving into an inactive town.
       let moved = "";
-      if (body.zoneId && body.zoneId !== hotel.zoneId) {
-        const targetTown = await prisma.zone.findUnique({ where: { id: body.zoneId } });
+      if (body.zoneId || body.townRegionId) {
+        const targetZoneId = body.zoneId ?? hotel.zoneId;
+        const [targetTown, targetArea] = await Promise.all([
+          prisma.zone.findUnique({ where: { id: targetZoneId } }),
+          prisma.townRegion.findUnique({ where: { id: body.townRegionId ?? hotel.townRegionId } }),
+        ]);
         if (!targetTown) { set.status = 400; return { success: false, error: "The selected town no longer exists." }; }
         if (!targetTown.active) { set.status = 400; return { success: false, error: `Town "${targetTown.name}" is inactive. Activate it before moving the hotel.` }; }
-        moved = `; moved to town "${targetTown.name}"`;
+        if (!targetArea || targetArea.townId !== targetTown.id) { set.status = 400; return { success: false, error: "Choose a delivery area within the selected town." }; }
+        if (!targetArea.active) { set.status = 400; return { success: false, error: `Delivery area "${targetArea.name}" is inactive. Activate it before moving the hotel.` }; }
+        if (targetZoneId !== hotel.zoneId || targetArea.id !== hotel.townRegionId) moved = `; moved to ${targetArea.name}, ${targetTown.name}`;
       }
 
       const updated = await prisma.$transaction(async (tx) => {
@@ -410,8 +425,9 @@ export const platformRoute = new Elysia({
             imageUrl: body.imageUrl !== undefined ? body.imageUrl : hotel.imageUrl,
             autoCloseAt: body.autoCloseAt !== undefined ? (body.autoCloseAt ? new Date(body.autoCloseAt) : null) : hotel.autoCloseAt,
             ...(body.zoneId ? { zoneId: body.zoneId } : {}),
+            ...(body.townRegionId ? { townRegionId: body.townRegionId } : {}),
           },
-          include: { zone: { include: { megaRegion: true } } },
+          include: { zone: { include: { megaRegion: true } }, townRegion: true },
         });
         if (moved) await writeAudit(tx, admin, "hotel", hotel.id, "reassign_hotel", `Updated "${hotel.name}"${moved}`);
         return result;
@@ -428,6 +444,7 @@ export const platformRoute = new Elysia({
         imageUrl: t.Optional(t.String()),
         autoCloseAt: t.Optional(t.String()),
         zoneId: t.Optional(t.String({ format: "uuid" })),
+        townRegionId: t.Optional(t.String({ format: "uuid" })),
       }),
     }
   )

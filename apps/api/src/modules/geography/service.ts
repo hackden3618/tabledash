@@ -454,6 +454,8 @@ export const updateArea = async (id: string, input: AreaInput, actor: PlatformAc
   if (input.active === false) {
     const activeAreas = await prisma.townRegion.count({ where: { townId: area.townId, active: true, NOT: { id } } });
     if (activeAreas === 0) throw new Error("This is the only active local area in the town. Create another before deactivating it.");
+    const assignedHotels = await prisma.hotel.count({ where: { townRegionId: id, deletedAt: null } });
+    if (assignedHotels > 0) throw new Error(`Relocate ${assignedHotels} hotel${assignedHotels === 1 ? "" : "s"} from "${area.name}" before deactivating this delivery area.`);
   }
 
   const data: any = {};
@@ -475,6 +477,7 @@ export const deactivateArea = async (id: string, actor: PlatformActor) => {
   const deps = await areaDependencies(id);
   const activeAreas = await prisma.townRegion.count({ where: { townId: area.townId, active: true } });
   if (activeAreas <= 1) throw new Error("A town must always have at least one active local area. Deactivation blocked.");
+  if (deps.hotels > 0) throw new Error(`Relocate ${deps.hotels} hotel${deps.hotels === 1 ? "" : "s"} from "${area.name}" before deactivating this delivery area.`);
 
   return prisma.$transaction(async (tx) => {
     // Customers who saved this area must never be left pointing at an inactive
@@ -510,7 +513,7 @@ export const areaDependencies = async (id: string) => {
   if (!area) throw new Error("Local area not found");
   const [customers, hotels] = await Promise.all([
     prisma.customer.count({ where: { townRegionId: id } }),
-    prisma.hotel.count({ where: { zoneId: area.townId, deletedAt: null } }),
+    prisma.hotel.count({ where: { townRegionId: id, deletedAt: null } }),
   ]);
   return { areaId: id, townId: area.townId, customers, hotels, active: area.active, isFallback: area.isFallback, townName: area.town.name };
 };

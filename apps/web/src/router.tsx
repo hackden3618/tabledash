@@ -705,7 +705,43 @@ function AdminPendingCollectionRoute() {
 
 function PlatformRoute() {
     const navigate = useNavigate();
-    return <PlatformAdminPage onBack={() => navigate("/")} />;
+    const location = useLocation();
+    const platformPath = location.pathname.replace(/^\/platform\/?/, "").replace(/\/$/, "");
+    const segments = platformPath ? platformPath.split("/") : [];
+    const hotelId = segments[0] === "hotels" && segments[1] && segments[1] !== "new" ? segments[1] : undefined;
+    const routeView =
+        platformPath === "login" ? "login" :
+        platformPath === "hotels" ? "hotels" :
+        platformPath === "hotels/new" ? "create_hotel" :
+        hotelId ? "hotel_detail" :
+        platformPath === "geography" ? "geography" :
+        platformPath === "admins" ? "admins" :
+        platformPath === "admins/new" ? "create_admin" :
+        platformPath === "communications" ? "communications" :
+        platformPath === "delivery-health" ? "outbox" :
+        platformPath === "audit-log" ? "audit" :
+        platformPath === "settings/appearance" ? "settings" :
+        platformPath === "profile" ? "profile" : "overview";
+
+    const navigatePlatform = (view: string, targetHotelId?: string) => {
+        const destination: Record<string, string> = {
+            login: "/platform/login",
+            overview: "/platform",
+            hotels: "/platform/hotels",
+            create_hotel: "/platform/hotels/new",
+            geography: "/platform/geography",
+            admins: "/platform/admins",
+            create_admin: "/platform/admins/new",
+            communications: "/platform/communications",
+            outbox: "/platform/delivery-health",
+            audit: "/platform/audit-log",
+            settings: "/platform/settings/appearance",
+            profile: "/platform/profile",
+        };
+        navigate(view === "hotel_detail" && targetHotelId ? `/platform/hotels/${targetHotelId}` : (destination[view] ?? "/platform"));
+    };
+
+    return <PlatformAdminPage onBack={() => navigate("/")} routeView={routeView} routeHotelId={hotelId} onNavigate={navigatePlatform} />;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -763,7 +799,7 @@ export const router = createBrowserRouter([
                 ],
             },
             {
-                path: "platform",
+                path: "platform/*",
                 element: <PlatformRoute />,
             },
             { path: "set-password", element: <SetPasswordPage /> },

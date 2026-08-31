@@ -150,6 +150,7 @@ export const GeographyWorkspace: React.FC<{ token: string; user: GeoActor; focus
   // ── Hotel Relocation state ──
   const [relocateHotel, setRelocateHotel] = useState<{ id: string; name: string; currentTownId: string } | null>(null);
   const [relocateTargetTownId, setRelocateTargetTownId] = useState("");
+  const [relocateTargetAreaId, setRelocateTargetAreaId] = useState("");
   const [relocating, setRelocating] = useState(false);
 
   // ── Cleanup (legacy reclassification) state ──
@@ -166,15 +167,17 @@ export const GeographyWorkspace: React.FC<{ token: string; user: GeoActor; focus
   }, []);
 
   const submitRelocateHotel = async () => {
-    if (!relocateHotel || !relocateTargetTownId || relocating) return;
+    if (!relocateHotel || !relocateTargetTownId || !relocateTargetAreaId || relocating) return;
     setRelocating(true);
-    const res = await apiPatch(`/platform/hotels/${relocateHotel.id}`, { zoneId: relocateTargetTownId }, token);
+    const res = await apiPatch(`/platform/hotels/${relocateHotel.id}`, { zoneId: relocateTargetTownId, townRegionId: relocateTargetAreaId }, token);
     setRelocating(false);
     if (res.success) {
-      const targetTownName = counties.flatMap((c) => c.towns).find((t) => t.id === relocateTargetTownId)?.name ?? "new town";
-      showNotice("success", `Relocated "${relocateHotel.name}" to ${targetTownName}.`);
+      const targetTown = counties.flatMap((c) => c.towns).find((t) => t.id === relocateTargetTownId);
+      const targetAreaName = targetTown?.areas.find((area) => area.id === relocateTargetAreaId)?.name ?? "selected delivery area";
+      showNotice("success", `Relocated "${relocateHotel.name}" to ${targetAreaName}, ${targetTown?.name ?? "new town"}.`);
       setRelocateHotel(null);
       setRelocateTargetTownId("");
+      setRelocateTargetAreaId("");
       await load();
     } else {
       showNotice("danger", res.error || "Could not relocate hotel");
@@ -717,7 +720,7 @@ export const GeographyWorkspace: React.FC<{ token: string; user: GeoActor; focus
                                   </div>
                                   <div style={{ display: "flex", alignItems: "center", gap: px(3) }}>
                                     <span style={{ fontSize: "0.72rem", fontWeight: 800, color: h.isOpen ? G.success : G.textDim }}>{h.isOpen ? "OPEN" : "CLOSED"}</span>
-                                    <button type="button" onClick={(e) => { e.stopPropagation(); setRelocateHotel({ id: h.id, name: h.name, currentTownId: selectedTownId! }); setRelocateTargetTownId(""); }} style={linkStyle}>Relocate Hotel</button>
+                                    <button type="button" onClick={(e) => { e.stopPropagation(); setRelocateHotel({ id: h.id, name: h.name, currentTownId: selectedTownId! }); setRelocateTargetTownId(""); setRelocateTargetAreaId(""); }} style={linkStyle}>Relocate Hotel</button>
                                   </div>
                                 </div>
                               ))}
@@ -874,10 +877,10 @@ export const GeographyWorkspace: React.FC<{ token: string; user: GeoActor; focus
         {/* Relocate Hotel Modal */}
         <Modal isOpen={Boolean(relocateHotel)} onClose={() => setRelocateHotel(null)} title={`Relocate ${relocateHotel?.name ?? "Hotel"}`} type="info">
           <div style={{ display: "flex", flexDirection: "column", gap: px(3) }}>
-            <p style={{ color: G.textMuted, fontSize: "0.85rem", margin: 0 }}>Select the target town / delivery region to relocate <strong>{relocateHotel?.name}</strong> to.</p>
+            <p style={{ color: G.textMuted, fontSize: "0.85rem", margin: 0 }}>Select the destination town and its exact delivery area for <strong>{relocateHotel?.name}</strong>.</p>
             <div>
               <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: G.textMuted, marginBottom: px(1) }}>Target Town / Delivery Region</label>
-              <select value={relocateTargetTownId} onChange={(e) => setRelocateTargetTownId(e.target.value)} className="input-field" style={{ fontFamily: "inherit" }}>
+              <select value={relocateTargetTownId} onChange={(e) => { const townId = e.target.value; setRelocateTargetTownId(townId); const town = counties.flatMap((c) => c.towns).find((t) => t.id === townId); setRelocateTargetAreaId(town?.areas.find((area) => area.active)?.id ?? ""); }} className="input-field" style={{ fontFamily: "inherit" }}>
                 <option value="">Select target town…</option>
                 {counties.filter((c) => c.active !== false).map((c) => (
                   <optgroup key={c.id} label={c.name}>
@@ -889,11 +892,15 @@ export const GeographyWorkspace: React.FC<{ token: string; user: GeoActor; focus
                   </optgroup>
                 ))}
               </select>
+              <select value={relocateTargetAreaId} onChange={(e) => setRelocateTargetAreaId(e.target.value)} className="input-field" style={{ fontFamily: "inherit" }} disabled={!relocateTargetTownId}>
+                <option value="">Select delivery area</option>
+                {counties.flatMap((c) => c.towns).find((t) => t.id === relocateTargetTownId)?.areas.filter((area) => area.active).map((area) => <option key={area.id} value={area.id}>{area.name}{area.isFallback ? " · General area" : ""}</option>)}
+              </select>
             </div>
           </div>
           <div style={{ display: "flex", gap: px(3), marginTop: px(5) }}>
             <Button variant="secondary" fullWidth onClick={() => setRelocateHotel(null)}>Cancel</Button>
-            <Button variant="primary" fullWidth onClick={() => void submitRelocateHotel()} loading={relocating} disabled={!relocateTargetTownId || relocateTargetTownId === relocateHotel?.currentTownId}>
+            <Button variant="primary" fullWidth onClick={() => void submitRelocateHotel()} loading={relocating} disabled={!relocateTargetTownId || !relocateTargetAreaId}>
               Confirm Relocation
             </Button>
           </div>
