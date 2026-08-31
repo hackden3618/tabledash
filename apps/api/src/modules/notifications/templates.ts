@@ -232,3 +232,19 @@ export const hotelStatusChanged = (p: HotelStatusChangedParams): string =>
   `${p.hotelName} has been ${p.action}.\n` +
   `Changed by: ${p.changedBy}\n` +
   `Check your dashboard for details.`;
+
+export interface ReviewPromptParams {
+  firstName: string;
+  orderNumber: number;
+  hotelName: string;
+  itemNames: string[];
+  link: string;
+}
+export const reviewPromptToCustomer = (p: ReviewPromptParams): string => {
+  const items = p.itemNames.length ? p.itemNames.join(", ") : "your order";
+  return (
+    `${BRAND}\n` +
+    `Hi ${p.firstName}, how was ${items} from ${p.hotelName} (order #${p.orderNumber})?\n` +
+    `Tap to rate your experience: ${p.link}`
+  );
+};

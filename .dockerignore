@@ -1,0 +1,9 @@
+node_modules
+**/node_modules
+**/*generated*
+apps/api/uploads
+apps/web/dist
+.git
+.env
+.env.*
+generated

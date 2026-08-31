@@ -1,0 +1,61 @@
+# Render Blueprint — declarative deployment for Ladha
+# Web service builds the image with the repo's Dockerfile (Bun multi-stage).
+# Database is Neon (permanent free Postgres); object storage is IDrive e2
+# (free, permanent S3-compatible bucket).
+
+services:
+  - type: web
+    name: ladha
+    runtime: docker
+    plan: free
+    region: oregon
+    healthCheckPath: /api/v1/ready
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: PUBLIC_URL
+        value: https://ladha.co.ke
+      - key: CORS_ORIGIN
+        value: https://ladha.co.ke
+      - key: MEDIA_STORAGE
+        value: s3
+      - key: MEDIA_ENDPOINT
+        value: https://s3.eu-west-3.idrivee2.com
+      - key: MEDIA_REGION
+        value: eu-west-3
+      - key: MEDIA_BUCKET
+        value: ladha-storage
+      - key: MEDIA_BASE_URL
+        value: https://ladha.co.ke
+      # ⚠️ The vars below are `sync: false` — set their values in the Render
+      # dashboard (Environment tab), copying from your local .env file.
+      - key: MEDIA_ACCESS_KEY_ID
+        sync: false
+      - key: MEDIA_SECRET_ACCESS_KEY
+        sync: false
+      - key: SEED_ADMIN_USERNAME
+        sync: false
+      - key: SEED_ADMIN_PASSWORD
+        sync: false
+      - key: SMS_PROVIDER
+        sync: false
+      - key: TEXTSMS_API_KEY
+        sync: false
+      - key: TEXTSMS_PARTNER_ID
+        sync: false
+      - key: TEXTSMS_SENDER_ID
+        sync: false
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false

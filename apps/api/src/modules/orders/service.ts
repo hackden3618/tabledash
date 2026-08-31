@@ -55,6 +55,25 @@ export interface DeliveryFeeQuote {
     deliveryFee: number;
 }
 
+/** A money value that a hotel row can carry: a Postgres numeric surfaces as a
+ * Prisma Decimal, and tests pass plain strings/numbers, so accept any
+ * string/number-compatible value. */
+type FeeAmount = string | number | { toString(): string };
+
+/** A single hotel's delivery-fee source of truth: the fee it charges for a
+ * given delivery sub-area (TownRegion). Returns the explicitly configured
+ * row for that sub-area when one exists (including KSh 0), otherwise the
+ * hotel's generic fee. This is the pure precedence rule that quote surfaces
+ * and order placement both resolve through, so the number shown in the cart
+ * equals the number charged at placement. */
+export function resolveDeliveryFee(
+    hotel: { genericDeliveryFee: FeeAmount; deliveryFees: { townRegionId?: string | null; amount: FeeAmount }[] },
+    deliveryZoneId?: string
+): number {
+    const configured = deliveryZoneId ? hotel.deliveryFees.find((fee) => fee.townRegionId === deliveryZoneId) : undefined;
+    return Number(configured?.amount ?? hotel.genericDeliveryFee);
+}
+
 /** Server-side delivery pricing. Every hotel charges its configured price for
  * the selected delivery sub-area (TownRegion), falling back to its generic fee
  * (KSh 50 by default). Hotels in the customer's exact sub-area typically get a
@@ -67,10 +86,10 @@ export async function getDeliveryFeeQuote(hotelIds: string[], deliveryZoneId?: s
         select: { id: true, zoneId: true, genericDeliveryFee: true, deliveryFees: { select: { townRegionId: true, amount: true } } },
     });
     if (hotels.length !== uniqueHotelIds.length) throw new Error("One or more hotels are unavailable");
-    return hotels.map((hotel) => {
-        const configured = deliveryZoneId ? hotel.deliveryFees.find((fee) => fee.townRegionId === deliveryZoneId) : undefined;
-        return { hotelId: hotel.id, deliveryFee: Number(configured?.amount ?? hotel.genericDeliveryFee) };
-    });
+    return hotels.map((hotel) => ({
+        hotelId: hotel.id,
+        deliveryFee: resolveDeliveryFee(hotel, deliveryZoneId),
+    }));
 }
 
 // On-behalf orders require the recipient's number to be OTP-verified, and the

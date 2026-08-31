@@ -50,15 +50,12 @@ describe("resolveDeliveryFee — precedence", () => {
     expect(resolveDeliveryFee(hotel, "zone-home")).toBe(30);
   });
 
-  test("the hotel's own delivery zone is free by default when not explicitly priced", async () => {
+  test("falls back to the generic fee when the delivery zone has no configured row", async () => {
     const { resolveDeliveryFee } = await import("./service");
     const hotel: any = { townRegionId: "home", genericDeliveryFee: "50", deliveryFees: [] };
-    expect(resolveDeliveryFee(hotel, "home")).toBe(0);
-  });
-
-  test("any other zone without a configured row falls back to the generic fee", async () => {
-    const { resolveDeliveryFee } = await import("./service");
-    const hotel: any = { townRegionId: "home", genericDeliveryFee: "50", deliveryFees: [] };
+    // No explicit row for the hotel's own zone means the generic fee applies.
+    expect(resolveDeliveryFee(hotel, "home")).toBe(50);
+    // Any other zone without a configured row also falls back to generic.
     expect(resolveDeliveryFee(hotel, "neighbourhood")).toBe(50);
     // No zone supplied at all (customer hasn't picked one) → generic fee.
     expect(resolveDeliveryFee(hotel, undefined)).toBe(50);
@@ -90,14 +87,14 @@ describe("getDeliveryFeeQuote — cart and checkout must quote identical amounts
     expect(first[1]!.deliveryFee).toBe(resolveDeliveryFee(HOTELS[1] as any, zoneId));
   });
 
-  test("the quoted amount equals the fee charged at order placement (same zone id)", async () => {
+  test("a zone without a configured row quotes the hotel's generic fee", async () => {
     // Order placement (POST /orders) reads deliveryFees via getDeliveryFeeQuote
     // with the order's deliveryZoneId — the same function the fee endpoint
     // serves to the cart and checkout pages. Same input ⇒ same number.
     const { getDeliveryFeeQuote } = await import("./service");
-    const deliveryZoneId = "zone-b-home"; // hotel-2's own zone → free
+    const deliveryZoneId = "zone-b-home"; // hotel-2 has no configured row → generic
     const quote = await getDeliveryFeeQuote(["hotel-2"], deliveryZoneId);
-    expect(quote).toEqual([{ hotelId: "hotel-2", deliveryFee: 0 }]);
+    expect(quote).toEqual([{ hotelId: "hotel-2", deliveryFee: 75 }]);
   });
 
   test("deduplicates repeated hotel ids", async () => {
@@ -105,7 +102,7 @@ describe("getDeliveryFeeQuote — cart and checkout must quote identical amounts
     const quote = await getDeliveryFeeQuote(["hotel-1", "hotel-1", "hotel-2"], "zone-b-home");
     expect(quote).toEqual([
       { hotelId: "hotel-1", deliveryFee: 50 },
-      { hotelId: "hotel-2", deliveryFee: 0 },
+      { hotelId: "hotel-2", deliveryFee: 75 },
     ]);
   });
 

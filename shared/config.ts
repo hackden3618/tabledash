@@ -53,7 +53,7 @@ export class Environment {
   public readonly vapidPublicKey: string = process.env.VAPID_PUBLIC_KEY ?? "";
   public readonly vapidPrivateKey: string = process.env.VAPID_PRIVATE_KEY ?? "";
   /** Contact URI web-push includes in the signed JWT it sends to push services, e.g. "mailto:ops@ladha.co.ke". */
-  public readonly vapidSubject: string = process.env.VAPID_SUBJECT ?? "mailto:support@ladha.app";
+  public readonly vapidSubject: string = process.env.VAPID_SUBJECT ?? "mailto:support@ladha.co.ke";
 
   /** Fails fast on unsafe production defaults before accepting traffic. */
   public assertProductionSafety(): void {
@@ -70,8 +70,11 @@ export class Environment {
     if (process.env.MEDIA_STORAGE === "r2" && (!process.env.R2_ACCOUNT_ID || !process.env.R2_ACCESS_KEY_ID || !process.env.R2_SECRET_ACCESS_KEY || !process.env.R2_BUCKET_NAME || !process.env.MEDIA_BASE_URL)) {
       errors.push("R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, and MEDIA_BASE_URL are required for R2 storage");
     }
-    if (process.env.MEDIA_STORAGE === "s3" && (!process.env.S3_ENDPOINT || !process.env.S3_BUCKET || !process.env.S3_ACCESS_KEY_ID || !process.env.S3_SECRET_ACCESS_KEY)) {
-      errors.push("S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, and S3_SECRET_ACCESS_KEY are required for S3 storage");
+    if (
+      process.env.MEDIA_STORAGE === "s3" &&
+      (!process.env.MEDIA_ENDPOINT || !process.env.MEDIA_BUCKET || !process.env.MEDIA_ACCESS_KEY_ID || !process.env.MEDIA_SECRET_ACCESS_KEY)
+    ) {
+      errors.push("MEDIA_ENDPOINT, MEDIA_BUCKET, MEDIA_ACCESS_KEY_ID, and MEDIA_SECRET_ACCESS_KEY are required for S3 storage");
     }
     if (this.smsProvider === "textsms" && (!this.textSmsApiKey || !this.textSmsPartnerId)) errors.push("TextSMS credentials are required when SMS_PROVIDER=textsms");
     if (this.smsProvider === "console") errors.push("SMS_PROVIDER=console is not allowed in production");
