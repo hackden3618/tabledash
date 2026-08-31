@@ -89,7 +89,7 @@ export const SetPasswordPage: React.FC = () => {
               <p className="text-sm text-[#374151]">
                 Your password has been set. You can now sign in with it.
               </p>
-              <Button onClick={() => navigate("/")} fullWidth>Go to Home</Button>
+              <Button onClick={() => navigate("/kitchen")} fullWidth>Go to Kitchen</Button>
             </motion.div>
           ) : (
             <motion.form
