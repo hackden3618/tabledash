@@ -642,8 +642,8 @@ export const PlatformAdminPage: React.FC<{
                 ) : view === "hotels" ? (
                     <section className="platform-workspace">
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: s(6) }}>
-                            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: T.text, margin: 0 }}>Hotels</h1>
-                            <button onClick={() => navigateTo("create_hotel")} style={{ background: T.primary, color: "white", border: "none", padding: `${s(2)} ${s(5)}`, borderRadius: T.radius, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>＋ Add Hotel</button>
+                            <h1 className="platform-page-title" style={{ fontSize: "1.5rem", fontWeight: 700, color: T.text, margin: 0 }}>Hotels</h1>
+                            <button className="platform-action primary" onClick={() => navigateTo("create_hotel")} style={{ background: T.primary, color: "white", border: "none", padding: `${s(2)} ${s(5)}`, borderRadius: T.radius, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>＋ Add Hotel</button>
                         </div>
                         <input placeholder="Search by name or slug…" value={searchQ} onChange={(e) => setSearchQ(e.target.value)}
                             style={{ width: "100%", padding: s(3), border: `1px solid ${T.border}`, borderRadius: T.radius, fontSize: "0.9rem", marginBottom: s(4), fontFamily: T.font, outline: "none", boxSizing: "border-box" }} />
@@ -701,7 +701,7 @@ export const PlatformAdminPage: React.FC<{
                         </div>
                     ) : (
                         <section className="platform-workspace platform-form-workspace">
-                            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: T.text, marginBottom: s(6) }}>Add Hotel</h1>
+                            <h1 className="platform-page-title" style={{ fontSize: "1.5rem", fontWeight: 700, color: T.text, marginBottom: s(6) }}>Add Hotel</h1>
                             <div style={{ display: "flex", flexDirection: "column", gap: s(6), maxWidth: "520px" }}>
                                 {/* Section 1: Hotel entity */}
                                 <div>
@@ -766,7 +766,7 @@ export const PlatformAdminPage: React.FC<{
                                         </div>
                                     </div>
                                 </div>
-                                <button onClick={handleCreateHotel} disabled={submitting || !hotelForm.name || !hotelForm.slug || !hotelForm.zoneId || !hotelForm.townRegionId || !hotelForm.adminUsername || !hotelForm.adminName || !hotelForm.adminPhone}
+                                <button className="platform-action primary form-submit" onClick={handleCreateHotel} disabled={submitting || !hotelForm.name || !hotelForm.slug || !hotelForm.zoneId || !hotelForm.townRegionId || !hotelForm.adminUsername || !hotelForm.adminName || !hotelForm.adminPhone}
                                     style={{ background: T.primary, color: "white", border: "none", padding: s(4), borderRadius: T.radius, fontWeight: 700, fontSize: "0.95rem", cursor: submitting ? "not-allowed" : "pointer", opacity: submitting || !hotelForm.name || !hotelForm.slug || !hotelForm.zoneId || !hotelForm.townRegionId || !hotelForm.adminUsername || !hotelForm.adminName || !hotelForm.adminPhone ? 0.6 : 1, alignSelf: "flex-start", minWidth: "200px" }}>
                                     {submitting ? "Creating…" : "Create Hotel & Seed Admin"}
                                 </button>
@@ -776,8 +776,8 @@ export const PlatformAdminPage: React.FC<{
                 ) : view === "admins" ? (
                     <section className="platform-workspace">
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: s(6) }}>
-                            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: T.text, margin: 0 }}>Platform Admins</h1>
-                            <button onClick={() => navigateTo("create_admin")} style={{ background: T.primary, color: "white", border: "none", padding: `${s(2)} ${s(5)}`, borderRadius: T.radius, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>＋ Add Admin</button>
+                            <h1 className="platform-page-title" style={{ fontSize: "1.5rem", fontWeight: 700, color: T.text, margin: 0 }}>Platform Admins</h1>
+                            <button className="platform-action primary" onClick={() => navigateTo("create_admin")} style={{ background: T.primary, color: "white", border: "none", padding: `${s(2)} ${s(5)}`, borderRadius: T.radius, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>＋ Add Admin</button>
                         </div>
                         {admins.length === 0 ? (
                             <div style={{ textAlign: "center", padding: s(10), color: T.textMuted }}>No platform admins yet.</div>
@@ -796,7 +796,7 @@ export const PlatformAdminPage: React.FC<{
                                                 onConfirm: () => handleDeleteAdmin(a.id),
                                             });
                                         }}
-                                            style={{ background: "none", border: `1px solid #FCA5A5`, color: T.danger, padding: `${s(1)} ${s(3)}`, borderRadius: T.radius, fontSize: "0.8rem", fontWeight: 600, cursor: "pointer" }}>
+                                            className="platform-action danger compact" style={{ background: "none", border: `1px solid #FCA5A5`, color: T.danger, padding: `${s(1)} ${s(3)}`, borderRadius: T.radius, fontSize: "0.8rem", fontWeight: 600, cursor: "pointer" }}>
                                             Remove
                                         </button>}
                                     </div>
@@ -821,7 +821,7 @@ export const PlatformAdminPage: React.FC<{
                         </div>
                     ) : (
                         <section className="platform-workspace platform-form-workspace">
-                            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: T.text, marginBottom: s(2) }}>Add Platform Admin</h1>
+                            <h1 className="platform-page-title" style={{ fontSize: "1.5rem", fontWeight: 700, color: T.text, marginBottom: s(2) }}>Add Platform Admin</h1>
                             <p style={{ fontSize: "0.9rem", color: T.warning, background: T.warningMuted, padding: s(3), borderRadius: T.radius, marginBottom: s(6), border: `1px solid #FDE68A` }}>
                                 ⚠ This grants full platform-level access to create and manage hotels and other platform administrators.
                             </p>
@@ -843,7 +843,7 @@ export const PlatformAdminPage: React.FC<{
                                         className="input-field" style={{ fontFamily: T.font }} />
                                     <div style={{ fontSize: "0.75rem", color: T.textDim, marginTop: s(1) }}>They will receive login credentials via SMS</div>
                                 </div>
-                                <button onClick={handleCreateAdmin} disabled={adminSubmitting || !adminForm.name || !adminForm.username || !adminForm.phone}
+                                <button className="platform-action primary form-submit" onClick={handleCreateAdmin} disabled={adminSubmitting || !adminForm.name || !adminForm.username || !adminForm.phone}
                                     style={{ background: T.primary, color: "white", border: "none", padding: s(4), borderRadius: T.radius, fontWeight: 700, fontSize: "0.95rem", cursor: adminSubmitting ? "not-allowed" : "pointer", opacity: adminSubmitting || !adminForm.name || !adminForm.username || !adminForm.phone ? 0.6 : 1, alignSelf: "flex-start", minWidth: "180px" }}>
                                     {adminSubmitting ? "Creating…" : "Create Platform Admin"}
                                 </button>
@@ -852,7 +852,7 @@ export const PlatformAdminPage: React.FC<{
                     )
                 ) : view === "audit" ? (
                     <section className="platform-workspace">
-                        <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: T.text, marginBottom: s(6) }}>Audit Log</h1>
+                        <h1 className="platform-page-title" style={{ fontSize: "1.5rem", fontWeight: 700, color: T.text, marginBottom: s(6) }}>Audit Log</h1>
                         {auditRows.length === 0 ? (
                             <div style={{ textAlign: "center", padding: s(10), color: T.textMuted }}>No platform events recorded yet.</div>
                         ) : (
@@ -876,13 +876,13 @@ export const PlatformAdminPage: React.FC<{
                     </section>
                 ) : view === "profile" ? (
                     <div style={{ maxWidth: "640px" }}>
-                        <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: T.text, marginBottom: s(2) }}>My Profile</h1>
+                        <h1 className="platform-page-title" style={{ fontSize: "1.5rem", fontWeight: 700, color: T.text, marginBottom: s(2) }}>My Profile</h1>
                         <p style={{ color: T.textMuted, fontSize: "0.9rem", marginBottom: s(6) }}>Manage your platform administrator identity and password.</p>
                         <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radius, padding: s(5), display: "flex", flexDirection: "column", gap: s(3) }}>
                             <input value={profileForm.name} onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })} placeholder="Display name" className="input-field" />
                             <input value={profileForm.username} onChange={(e) => setProfileForm({ ...profileForm, username: e.target.value })} placeholder="Username" className="input-field" />
                             <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: s(3), display: "grid", gap: s(3) }}><input type="password" value={profileForm.currentPassword} onChange={(e) => setProfileForm({ ...profileForm, currentPassword: e.target.value })} placeholder="Current password" className="input-field" /><input type="password" value={profileForm.newPassword} onChange={(e) => setProfileForm({ ...profileForm, newPassword: e.target.value })} placeholder="New password (optional)" className="input-field" /><input type="password" value={profileForm.confirmPassword} onChange={(e) => setProfileForm({ ...profileForm, confirmPassword: e.target.value })} placeholder="Confirm new password" className="input-field" /></div>
-                            <button onClick={() => void handleSaveProfile()} disabled={profileSaving || !profileForm.name.trim() || !profileForm.username.trim()} style={{ background: T.primary, color: "white", border: "none", padding: s(3), borderRadius: T.radius, fontWeight: 700, cursor: profileSaving ? "wait" : "pointer", opacity: profileSaving ? 0.65 : 1 }}>{profileSaving ? "Saving…" : "Save Profile"}</button>
+                            <button className="platform-action primary form-submit" onClick={() => void handleSaveProfile()} disabled={profileSaving || !profileForm.name.trim() || !profileForm.username.trim()} style={{ background: T.primary, color: "white", border: "none", padding: s(3), borderRadius: T.radius, fontWeight: 700, cursor: profileSaving ? "wait" : "pointer", opacity: profileSaving ? 0.65 : 1 }}>{profileSaving ? "Saving…" : "Save Profile"}</button>
                         </div>
                     </div>
                 ) : view === "settings" ? (
@@ -900,8 +900,8 @@ export const PlatformAdminPage: React.FC<{
                 ) : view === "outbox" ? (
                     <section className="platform-workspace">
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: s(6) }}>
-                            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: T.text, margin: 0 }}>Outbox</h1>
-                            <button onClick={fetch} style={{ background: "none", border: `1px solid ${T.border}`, padding: `${s(1)} ${s(4)}`, borderRadius: T.radius, fontSize: "0.85rem", cursor: "pointer", color: T.textMuted }}>Refresh</button>
+                            <h1 className="platform-page-title" style={{ fontSize: "1.5rem", fontWeight: 700, color: T.text, margin: 0 }}>Delivery Health</h1>
+                            <button className="platform-action secondary" onClick={fetch} style={{ background: "none", border: `1px solid ${T.border}`, padding: `${s(1)} ${s(4)}`, borderRadius: T.radius, fontSize: "0.85rem", cursor: "pointer", color: T.textMuted }}>Refresh</button>
                         </div>
                         {outboxRows.length === 0 ? (
                             <div style={{ textAlign: "center", padding: s(10), color: T.textMuted }}>No outbox events.</div>
@@ -918,7 +918,7 @@ export const PlatformAdminPage: React.FC<{
                                         {r.status === "pending" && r.nextAttemptAt && <div style={{ color: T.textMuted, marginTop: s(1) }}>Next retry: {new Date(r.nextAttemptAt).toLocaleString()}</div>}
                                         {r.lastError && <div style={{ color: T.danger, marginTop: s(1) }}>Error: {r.lastError}</div>}
                                         {r.status === "failed" && (
-                                            <button onClick={() => handleRetryOutbox(r.id)} style={{ marginTop: s(2), background: T.surface, color: T.danger, border: `1px solid #FECACA`, padding: `${s(1)} ${s(3)}`, borderRadius: T.radius, fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: s(1) }}>
+                                            <button className="platform-action danger compact" onClick={() => handleRetryOutbox(r.id)} style={{ marginTop: s(2), background: T.surface, color: T.danger, border: `1px solid #FECACA`, padding: `${s(1)} ${s(3)}`, borderRadius: T.radius, fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: s(1) }}>
                                                 <RefreshCw size={13} /> Retry delivery
                                             </button>
                                         )}
@@ -1018,8 +1018,8 @@ function HotelDetail({ hotelId, onBack, onToggle, onToggleListing, onDelete, tok
     if (!hotel) return <div style={{ color: T2.danger }}>Hotel not found.</div>;
 
     return (
-        <>
-            <button onClick={onBack} style={{ background: "none", border: "none", color: T2.primary, fontSize: "0.9rem", cursor: "pointer", padding: 0, marginBottom: s(4), fontWeight: 600 }}>← Back to Hotels</button>
+        <section className="platform-workspace hotel-detail-workspace">
+            <button className="platform-back-link" onClick={onBack} style={{ background: "none", border: "none", color: T2.primary, fontSize: "0.9rem", cursor: "pointer", padding: 0, marginBottom: s(4), fontWeight: 600 }}>← Back to Hotels</button>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: s(6) }}>
                 <div>
                     <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: T2.text, margin: 0 }}>{hotel.name}</h1>
@@ -1030,15 +1030,15 @@ function HotelDetail({ hotelId, onBack, onToggle, onToggleListing, onDelete, tok
                     </div>
                 </div>
                 <div style={{ display: "flex", gap: s(2), flexWrap: "wrap", justifyContent: "flex-end" }}>
-                    <button onClick={() => onToggle(hotel.id, hotel.isOpen ? "close" : "open")}
+                    <button className={`platform-action ${hotel.isOpen ? "danger" : "primary"}`} onClick={() => onToggle(hotel.id, hotel.isOpen ? "close" : "open")}
                         style={{ background: hotel.isOpen ? T2.dangerMuted : T2.successMuted, color: hotel.isOpen ? T2.danger : T2.success, border: `1px solid ${hotel.isOpen ? "#FECACA" : "#A7F3D0"}`, padding: `${s(2)} ${s(4)}`, borderRadius: T2.radius, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>
                         {hotel.isOpen ? "Suspend" : "Activate"}
                     </button>
-                    <button onClick={() => onToggleListing(hotel.id, hotel.isListed !== false)}
+                    <button className="platform-action secondary" onClick={() => onToggleListing(hotel.id, hotel.isListed !== false)}
                         style={{ background: T2.surface, color: T2.text, border: `1px solid ${T2.border}`, padding: `${s(2)} ${s(4)}`, borderRadius: T2.radius, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>
                         {hotel.isListed === false ? "Show on marketplace" : "Hide from marketplace"}
                     </button>
-                    <button onClick={() => onDelete(hotel.id)}
+                    <button className="platform-action danger" onClick={() => onDelete(hotel.id)}
                         style={{ background: T2.dangerMuted, color: T2.danger, border: `1px solid #FECACA`, padding: `${s(2)} ${s(4)}`, borderRadius: T2.radius, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>
                         Delete Hotel
                     </button>
@@ -1076,7 +1076,7 @@ function HotelDetail({ hotelId, onBack, onToggle, onToggleListing, onDelete, tok
                     </label>
                     {editError && <p style={{ color: T2.danger, fontSize: "0.8rem" }}>{editError}</p>}
                     <div style={{ display: "flex", gap: s(2) }}>
-                        <button type="button" onClick={() => void saveDetails()} disabled={editSaving || !editForm.name.trim()}
+                        <button className="platform-action primary" type="button" onClick={() => void saveDetails()} disabled={editSaving || !editForm.name.trim()}
                             style={{ background: T2.primary, color: "white", border: "none", borderRadius: T2.radius, padding: `${s(2)} ${s(4)}`, fontWeight: 700, fontSize: "0.85rem", cursor: editSaving ? "wait" : "pointer", opacity: editSaving || !editForm.name.trim() ? 0.6 : 1 }}>
                             {editSaving ? "Saving…" : "Save Changes"}
                         </button>
@@ -1096,7 +1096,7 @@ function HotelDetail({ hotelId, onBack, onToggle, onToggleListing, onDelete, tok
                         <option value="">Select target delivery area</option>
                         {deliveryAreas.filter((area) => area.townId === zoneId && area.active).map((area) => <option key={area.id} value={area.id}>{area.name}{area.isFallback ? " · General area" : ""}</option>)}
                     </select>
-                    <button type="button" onClick={() => void saveRegion()} disabled={zoneSaving || !zoneId || !townRegionId || (zoneId === hotel.zone?.id && townRegionId === hotel.townRegion?.id)} style={{ background: T2.primary, color: "white", border: "none", borderRadius: T2.radius, padding: `${s(2)} ${s(4)}`, fontWeight: 700, opacity: zoneSaving || !zoneId || !townRegionId || (zoneId === hotel.zone?.id && townRegionId === hotel.townRegion?.id) ? 0.6 : 1, cursor: zoneSaving || !zoneId || !townRegionId ? "not-allowed" : "pointer" }}>{zoneSaving ? "Relocating…" : "Save location"}</button>
+                    <button className="platform-action primary" type="button" onClick={() => void saveRegion()} disabled={zoneSaving || !zoneId || !townRegionId || (zoneId === hotel.zone?.id && townRegionId === hotel.townRegion?.id)} style={{ background: T2.primary, color: "white", border: "none", borderRadius: T2.radius, padding: `${s(2)} ${s(4)}`, fontWeight: 700, opacity: zoneSaving || !zoneId || !townRegionId || (zoneId === hotel.zone?.id && townRegionId === hotel.townRegion?.id) ? 0.6 : 1, cursor: zoneSaving || !zoneId || !townRegionId ? "not-allowed" : "pointer" }}>{zoneSaving ? "Relocating…" : "Save location"}</button>
                 </div>
             </div>
 
@@ -1157,6 +1157,6 @@ function HotelDetail({ hotelId, onBack, onToggle, onToggleListing, onDelete, tok
                     </div>
                 )}
             </div>
-        </>
+        </section>
     );
 }
