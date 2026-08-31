@@ -213,12 +213,21 @@ export const InboxPage: React.FC<{ token?: string; actorId?: string; onBack: () 
     };
 
     useEffect(() => { if (isNearBottom) scrollToBottom(); }, [messages, typing, isNearBottom]);
-    useEffect(() => { setBody(""); setIsNearBottom(true); }, [selected?.id]);
+    useEffect(() => {
+        setBody("");
+        setIsNearBottom(true);
+        if (textareaRef.current) {
+            textareaRef.current.style.height = "";
+            textareaRef.current.style.overflowY = "hidden";
+        }
+    }, [selected?.id]);
 
     const autoResizeTextarea = () => {
         if (textareaRef.current) {
             textareaRef.current.style.height = "auto";
-            textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+            const maxComposerHeight = 96;
+            textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, maxComposerHeight)}px`;
+            textareaRef.current.style.overflowY = textareaRef.current.scrollHeight > maxComposerHeight ? "auto" : "hidden";
         }
     };
 
@@ -270,7 +279,9 @@ export const InboxPage: React.FC<{ token?: string; actorId?: string; onBack: () 
         const result = await apiPost<Message>(`/messaging/conversations/${selected.id}/messages`, { body: body.trim(), replyToId: replyTo?.id || undefined }, token);
         if (result.success && result.data) {
             setMessages((current) => current.some((message) => message.id === result.data!.id) ? current : [...current, result.data!]);
-            setBody(""); setReplyTo(null); void loadInbox();
+            setBody(""); setReplyTo(null);
+            if (textareaRef.current) { textareaRef.current.style.height = ""; textareaRef.current.style.overflowY = "hidden"; }
+            void loadInbox();
         } else setActionError(result.error || "Unable to send message");
         setSending(false);
     };
@@ -386,7 +397,7 @@ export const InboxPage: React.FC<{ token?: string; actorId?: string; onBack: () 
     );
 
     return (
-        <div className="app-container">
+        <div className={mode === "customer" ? "app-container" : "admin-container inbox-workspace"}>
             <Header title={selected ? (selected.type === "ORDER" ? `Order #${selected.orderInfo?.orderNumber || ""}` : selected.sourceName || "Conversation") : title} subtitle={selected ? selected.sourceContext || "" : "Messages, updates and support"} onBack={selected ? () => setSelected(null) : onBack} />
             {!selected ? (
                 <div className="px-4 py-5">
@@ -459,10 +470,10 @@ export const InboxPage: React.FC<{ token?: string; actorId?: string; onBack: () 
                         </div>
                     )}
                     {!isReadOnly && (
-                        <div className="shrink-0 bg-[#FFF8F0] border-t border-[#E5E7EB]">
+                        <div className="shrink-0 border-t border-[#DCE9E1] bg-[#F7FBF8]">
                             {replyTo && <div className="flex items-start gap-2 px-3 pt-2 pb-1 bg-[#EBF5F0] border-b border-[#D1E4D8]"><Reply size={13} className="shrink-0 mt-1 text-[#114B36]" /><div className="flex-1 min-w-0"><p className="text-[0.6rem] font-bold text-[#114B36]">Replying</p><p className="text-xs text-[#6B7280] truncate">{replyTo.body || "Message deleted"}</p></div><button onClick={() => setReplyTo(null)} className="shrink-0 w-6 h-6 rounded-full border-none bg-transparent text-[#6B7280] hover:text-[#1F2937] flex items-center justify-center cursor-pointer" aria-label="Cancel reply"><X size={14} /></button></div>}
-                            <div className="p-3 flex gap-2 items-end">
-                                <textarea ref={textareaRef} value={body} onChange={(event) => { setBody(event.target.value); conversationSocket.send({ type: "TYPING_START", conversationId: selected?.id }); if (typingTimer.current) clearTimeout(typingTimer.current); typingTimer.current = setTimeout(() => conversationSocket.send({ type: "TYPING_STOP", conversationId: selected?.id }), 1200); }} onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void send(); } }} onInput={autoResizeTextarea} placeholder={replyTo ? "Write a reply…" : "Write a message…"} aria-label="Message" rows={1} className="flex-1 min-w-0 rounded-2xl border-2 border-[#E5E7EB] bg-white px-4 py-3 outline-none focus:border-[#114B36] resize-none max-h-32" />
+                            <div className="flex items-end gap-2 p-3">
+                                <textarea ref={textareaRef} value={body} onChange={(event) => { setBody(event.target.value); conversationSocket.send({ type: "TYPING_START", conversationId: selected?.id }); if (typingTimer.current) clearTimeout(typingTimer.current); typingTimer.current = setTimeout(() => conversationSocket.send({ type: "TYPING_STOP", conversationId: selected?.id }), 1200); }} onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void send(); } }} onInput={autoResizeTextarea} placeholder={replyTo ? "Write a reply…" : "Write a message…"} aria-label="Message" rows={1} className="min-h-12 max-h-24 min-w-0 flex-1 resize-none rounded-2xl border-2 border-[#CFE1D6] bg-white px-4 py-3 text-sm text-[#1F2937] outline-none transition focus:border-[#114B36] focus:ring-4 focus:ring-[#114B36]/10" />
                                 <Button size="sm" onClick={() => void send()} loading={sending} disabled={!body.trim()} icon={<Send size={16} />}>Send</Button>
                             </div>
                         </div>
@@ -495,10 +506,30 @@ export const InboxPage: React.FC<{ token?: string; actorId?: string; onBack: () 
                 secondaryAction={{ label: "Cancel", onClick: () => setShowDeleteConversationModal(false) }}
             />
 
-            {/* Create Channel modal */}
-            {showPlatformSupport && <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4"><div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl bg-[#FFF8F0] pt-5 px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] shadow-2xl"><div className="flex items-center justify-between mb-4"><div><p className="text-xs font-bold uppercase tracking-wider text-[#114B36]">Ladha Support</p><h3 className="text-lg font-black text-[#1F2937]">How can we help?</h3></div><button onClick={() => setShowPlatformSupport(false)} className="w-9 h-9 rounded-full border-none bg-white text-[#6B7280] flex items-center justify-center cursor-pointer"><X size={18} /></button></div><p className="text-sm text-[#6B7280] mb-3">This private conversation is visible only to you and Platform Administration.</p><textarea value={supportBody} onChange={(event) => setSupportBody(event.target.value)} rows={5} placeholder="Describe the problem, what you expected, and what happened…" className="w-full resize-none rounded-2xl border-2 border-[#E5E7EB] bg-white px-4 py-3 text-sm outline-none focus:border-[#114B36]" /><div className="flex gap-2 mt-4"><button onClick={() => setShowPlatformSupport(false)} className="flex-1 rounded-xl bg-white border-2 border-[#E5E7EB] text-[#6B7280] py-3 font-bold text-sm border-none cursor-pointer">Cancel</button><button onClick={() => void startPlatformSupport()} disabled={!supportBody.trim() || startingSupport} className="flex-1 rounded-xl bg-[#114B36] text-white py-3 font-bold text-sm border-none cursor-pointer disabled:opacity-50">{startingSupport ? "Starting…" : "Contact support"}</button></div></div></div>}
+            <Modal
+                isOpen={showPlatformSupport}
+                onClose={() => setShowPlatformSupport(false)}
+                type="info"
+                title="How can we help?"
+                message="This private conversation is visible only to you and Platform Administration."
+                primaryAction={{ label: startingSupport ? "Starting…" : "Contact support", loading: startingSupport, disabled: !supportBody.trim(), onClick: () => { if (supportBody.trim()) void startPlatformSupport(); } }}
+                secondaryAction={{ label: "Cancel", onClick: () => setShowPlatformSupport(false) }}
+            >
+                <textarea value={supportBody} onChange={(event) => setSupportBody(event.target.value)} rows={4} placeholder="Describe the problem, what you expected, and what happened…" className="w-full resize-none rounded-2xl border-2 border-[#D7E5DD] bg-[#FBFDFC] px-4 py-3 text-sm text-[#1F2937] outline-none transition focus:border-[#114B36] focus:ring-4 focus:ring-[#114B36]/10" />
+            </Modal>
 
-            {showCreateChannel && <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4"><div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl bg-[#FFF8F0] pt-5 px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] shadow-2xl"><div className="flex items-center justify-between mb-4"><div><p className="text-xs font-bold uppercase tracking-wider text-[#114B36]">Community</p><h3 className="text-lg font-black text-[#1F2937]">Create channel</h3></div><button onClick={() => setShowCreateChannel(false)} className="w-9 h-9 rounded-full border-none bg-white text-[#6B7280] flex items-center justify-center cursor-pointer"><X size={18} /></button></div><p className="text-sm text-[#6B7280] mb-3">Channels are where your hotel team can chat. Pick a name — it will be turned into a slug like <span className="font-mono font-bold text-[#114B36]">#channel-name</span>.</p><input value={newChannelName} onChange={(e) => setNewChannelName(e.target.value)} placeholder="e.g. announcements, random, kitchen" className="w-full rounded-2xl border-2 border-[#E5E7EB] bg-white px-4 py-3 text-sm outline-none focus:border-[#114B36]" /><div className="flex gap-2 mt-4"><button onClick={() => setShowCreateChannel(false)} className="flex-1 rounded-xl bg-white border-2 border-[#E5E7EB] text-[#6B7280] py-3 font-bold text-sm border-none cursor-pointer">Cancel</button><button onClick={async () => { if (!newChannelName.trim() || creatingChannel) return; setCreatingChannel(true); const res = await apiPost("/messaging/community-channels", { hotelId, channelName: newChannelName.trim() }, token); setCreatingChannel(false); if (res.success) { setShowCreateChannel(false); setNewChannelName(""); void loadInbox(); } else { setActionError(res.error || "Unable to create channel"); } }} disabled={!newChannelName.trim()} className="flex-1 rounded-xl bg-[#114B36] text-white py-3 font-bold text-sm border-none cursor-pointer disabled:opacity-50">{creatingChannel ? "Creating…" : "Create channel"}</button></div></div></div>}
+            <Modal
+                isOpen={showCreateChannel}
+                onClose={() => setShowCreateChannel(false)}
+                type="confirm"
+                title="Create community channel"
+                message="Channels keep hotel staff communication organised. The name becomes a searchable #channel-name."
+                primaryAction={{ label: creatingChannel ? "Creating…" : "Create channel", loading: creatingChannel, disabled: !newChannelName.trim(), onClick: async () => { if (!newChannelName.trim() || creatingChannel) return; setCreatingChannel(true); const res = await apiPost("/messaging/community-channels", { hotelId, channelName: newChannelName.trim() }, token); setCreatingChannel(false); if (res.success) { setShowCreateChannel(false); setNewChannelName(""); void loadInbox(); } else setActionError(res.error || "Unable to create channel"); } }}
+                secondaryAction={{ label: "Cancel", onClick: () => setShowCreateChannel(false) }}
+            >
+                <label className="mb-1.5 block text-xs font-bold text-[#374151]" htmlFor="community-channel-name">Channel name</label>
+                <input id="community-channel-name" value={newChannelName} onChange={(e) => setNewChannelName(e.target.value)} placeholder="e.g. announcements, kitchen" className="w-full rounded-2xl border-2 border-[#D7E5DD] bg-[#FBFDFC] px-4 py-3 text-sm text-[#1F2937] outline-none transition focus:border-[#114B36] focus:ring-4 focus:ring-[#114B36]/10" />
+            </Modal>
         </div>
     );
 };

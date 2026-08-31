@@ -165,18 +165,18 @@
   padding-bottom: var(--admin-nav-height, calc(72px + env(safe-area-inset-bottom, 0px)));
 }
 
-/* Kitchen operations are intentionally a distinct, warm work surface. These
-   rules are scoped to /kitchen only, leaving the customer marketplace green. */
+/* Kitchen operations use a warm, distinct work surface while the marketplace
+   stays green. The distinction is intentional and scoped to /kitchen. */
 .kitchen-theme .admin-container {
   background: linear-gradient(180deg, #FFF9F4 0%, #FFF3E8 100%);
 }
 .kitchen-theme .glass-nav {
-  background: rgba(255, 249, 244, 0.9);
+  background: rgba(255, 249, 244, 0.94);
   border-color: rgba(234, 88, 12, 0.18);
   box-shadow: 0 -8px 28px rgba(154, 52, 18, 0.12);
 }
 .kitchen-theme .glass-header {
-  background: linear-gradient(135deg, rgba(154, 52, 18, 0.94), rgba(124, 45, 18, 0.82));
+  background: linear-gradient(135deg, #9A3412 0%, #7C2D12 100%);
   box-shadow: 0 8px 24px rgba(124, 45, 18, 0.18);
 }
 .kitchen-theme .bg-primary { background-color: #9A3412 !important; }
@@ -346,6 +346,10 @@
 
 @media (max-width: 899px) {
   .platform-main { padding: 5rem 1rem 2rem !important; }
+  /* Communications owns its mobile header. Do not nest it beneath the
+     platform drawer controls or add desktop workspace padding above it. */
+  .platform-main.platform-main-communications { max-width: 480px !important; padding: 0 !important; }
+  .platform-main-communications .inbox-workspace { height: 100dvh; padding-bottom: 0; }
   .command-header { align-items: flex-start; flex-direction: column; }
 }
 

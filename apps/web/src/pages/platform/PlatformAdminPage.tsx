@@ -482,7 +482,7 @@ export const PlatformAdminPage: React.FC<{
     return (
         <div className="platform-shell" style={{ minHeight: "100vh", background: T.bg, fontFamily: T.font, display: "flex" }}>
             {/* Subtle menu toggle — thin line icon, no background blob */}
-            <button onClick={() => setSidebarOpen(true)}
+            {view !== "communications" && <button onClick={() => setSidebarOpen(true)}
                 style={{
                     position: "fixed", top: s(4), right: s(4), zIndex: 60,
                     background: sidebarOpen ? "transparent" : T.surface,
@@ -497,10 +497,10 @@ export const PlatformAdminPage: React.FC<{
                 aria-label="Open menu"
             >
                 <Menu size={18} color={T.textMuted} aria-hidden="true" />
-            </button>
+            </button>}
 
             {/* Notification bell — fixed top-right, platform-scoped */}
-            <button onClick={() => setPanelOpen(true)}
+            {view !== "communications" && <button onClick={() => setPanelOpen(true)}
                 style={{
                     position: "fixed", top: s(4), right: "calc(16px + 44px)", zIndex: 60,
                     background: T.surface,
@@ -525,7 +525,7 @@ export const PlatformAdminPage: React.FC<{
                         border: `2px solid ${T.surface}`,
                     }}>{unreadCount > 9 ? "9+" : unreadCount}</span>
                 )}
-            </button>
+            </button>}
 
             {/* Overlay backdrop */}
             {sidebarOpen && (
@@ -596,7 +596,7 @@ export const PlatformAdminPage: React.FC<{
 
             {/* Main content */}
             <main style={{ flex: 1, height: "100dvh", overflowY: "auto", WebkitOverflowScrolling: "touch", padding: s(8), maxWidth: "960px", marginLeft: "auto", marginRight: "auto" }}
-                className="platform-main">
+                className={`platform-main${view === "communications" ? " platform-main-communications" : ""}`}>
                 {loading ? (
                     <div className="platform-loading" style={{ color: T.textDim }}>Loading your command center…</div>
                 ) : view === "overview" ? (

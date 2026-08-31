@@ -10,6 +10,7 @@ interface ModalAction {
   onClick: () => void;
   variant?: "primary" | "secondary" | "danger";
   loading?: boolean;
+  disabled?: boolean;
 }
 
 interface ModalProps {
@@ -95,10 +96,10 @@ export const Modal: React.FC<ModalProps> = ({
             {(primaryAction || secondaryAction) && (
               <div className="mt-5 flex flex-col-reverse gap-2.5 sm:flex-row">
                 {secondaryAction && (
-                  <div className="min-w-0 flex-1"><Button variant="secondary" onClick={secondaryAction.onClick} loading={secondaryAction.loading} fullWidth size="md">{secondaryAction.label}</Button></div>
+                  <div className="min-w-0 flex-1"><Button variant="secondary" onClick={secondaryAction.onClick} loading={secondaryAction.loading} disabled={secondaryAction.disabled} fullWidth size="md">{secondaryAction.label}</Button></div>
                 )}
                 {primaryAction && (
-                  <div className="min-w-0 flex-1"><Button variant={primaryAction.variant === "danger" ? "danger" : "primary"} onClick={primaryAction.onClick} loading={primaryAction.loading} fullWidth size="md">{primaryAction.label}</Button></div>
+                  <div className="min-w-0 flex-1"><Button variant={primaryAction.variant === "danger" ? "danger" : "primary"} onClick={primaryAction.onClick} loading={primaryAction.loading} disabled={primaryAction.disabled} fullWidth size="md">{primaryAction.label}</Button></div>
                 )}
               </div>
             )}

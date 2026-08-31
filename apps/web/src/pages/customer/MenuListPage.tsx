@@ -487,7 +487,7 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
                 <PageTransition>
                     <PersistentNotificationCard variant="banner" />
                     <div className="px-4 py-6 space-y-8">
-                        <section className="relative -mx-4 -mt-6 min-h-[19rem] overflow-hidden bg-[#114B36] px-5 pb-12 pt-5 text-white">
+                        <section className="relative -mx-4 -mt-6 min-h-[19rem] overflow-hidden bg-[#114B36] px-5 pb-28 pt-5 text-white">
                             {heroImage && <><img src={heroImage} alt="Homepage food discovery" loading="eager" fetchPriority="high" decoding="async" className="absolute inset-0 z-0 h-full w-full object-cover" /><div className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-br from-[#063522]/92 via-[#114B36]/62 to-[#0B3E2C]/20" /><div className="pointer-events-none absolute -right-16 -top-20 z-[1] h-52 w-52 rounded-full border border-white/15 bg-white/10" /></>}
                             <div className="relative z-10 max-w-[76%]">
                                 <button type="button" onClick={openLocationPicker} disabled={zonesLoading || zones.length === 0} className="inline-flex items-center gap-2 rounded-full border border-white/25 bg-black/15 px-3 py-2 text-left text-xs font-bold text-white backdrop-blur-sm transition hover:bg-black/25 disabled:opacity-70" aria-label="Choose delivery area"><MapPin size={16} /><span>{zonesLoading ? "Loading areas…" : zoneError ? "Delivery area unavailable" : (() => { const town = zones.find((zone) => zone.id === activeZoneId); if (!town) return "Choose delivery area"; return activeTownRegionName ? `${activeTownRegionName}, ${town.name}` : town.name; })()}</span><ChevronDown size={14} /></button>
