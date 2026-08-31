@@ -61,7 +61,7 @@ export const Modal: React.FC<ModalProps> = ({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.12 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-[#10271e]/55 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-[#10271e]/55 p-4 backdrop-blur-sm"
           onClick={dismissible && onClose ? onClose : undefined}
         >
           <motion.div

@@ -228,12 +228,13 @@ function CustomerShell() {
     };
 
     const isImmersiveMealPreview = /^\/h\/[^/]+\/items\/[^/]+$/.test(location.pathname);
+    const isCheckout = location.pathname === "/checkout";
 
     return (
         <>
             <InstallBanner scope="customer" />
             <Outlet />
-            {!isImmersiveMealPreview && <BottomNav
+            {!isImmersiveMealPreview && !isCheckout && <BottomNav
                 activeTab={getActiveTab(location.pathname)}
                 onSelectTab={handleSelectTab}
                 hasActiveOrder={Boolean(placedOrder)}

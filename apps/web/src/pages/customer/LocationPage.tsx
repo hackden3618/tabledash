@@ -842,12 +842,12 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
       <AnimatePresence>
         {showConfirmModal && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/45 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/55 backdrop-blur-sm"
             onClick={() => setShowConfirmModal(false)}
           >
             <motion.div initial={{ y: "100%", opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: "100%", opacity: 0 }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="bg-white rounded-3xl rounded-b-none sm:rounded-3xl w-full max-w-md p-6 shadow-[0_-8px_30px_rgba(0,0,0,0.12)] sm:mx-4"
+              className="bg-white rounded-3xl rounded-b-none sm:rounded-3xl w-full max-w-md p-6 pb-[max(2rem,env(safe-area-inset-bottom))] shadow-[0_-8px_30px_rgba(0,0,0,0.22)] sm:mx-4"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="w-14 h-14 rounded-2xl bg-[#EBF5F0] text-[#114B36] flex items-center justify-center mx-auto mb-4">
@@ -873,12 +873,12 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
       <AnimatePresence>
         {showGuestIdentityModal && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/45 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/55 backdrop-blur-sm"
             onClick={() => setShowGuestIdentityModal(false)}
           >
             <motion.div initial={{ y: "100%", opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: "100%", opacity: 0 }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="bg-white rounded-3xl rounded-b-none sm:rounded-3xl w-full max-w-md p-6 shadow-[0_-8px_30px_rgba(0,0,0,0.12)] sm:mx-4"
+              className="bg-white rounded-3xl rounded-b-none sm:rounded-3xl w-full max-w-md p-6 pb-[max(2rem,env(safe-area-inset-bottom))] shadow-[0_-8px_30px_rgba(0,0,0,0.22)] sm:mx-4"
               onClick={(event) => event.stopPropagation()}
             >
               <div className="w-14 h-14 rounded-2xl bg-[#EBF5F0] text-[#114B36] flex items-center justify-center mx-auto mb-4">
@@ -921,12 +921,12 @@ export const LocationPage: React.FC<LocationPageProps> = ({ onBackToCart, onOrde
       <AnimatePresence>
         {showPinModal && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/45 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/55 backdrop-blur-sm"
             onClick={() => { setShowPinModal(false); setPin(""); setPinError(""); }}
           >
             <motion.div initial={{ y: "100%", opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: "100%", opacity: 0 }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="bg-white rounded-3xl rounded-b-none sm:rounded-3xl w-full max-w-md p-6 shadow-[0_-8px_30px_rgba(0,0,0,0.12)] sm:mx-4"
+              className="bg-white rounded-3xl rounded-b-none sm:rounded-3xl w-full max-w-md p-6 pb-[max(2rem,env(safe-area-inset-bottom))] shadow-[0_-8px_30px_rgba(0,0,0,0.22)] sm:mx-4"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="w-14 h-14 rounded-2xl bg-[#FEF3C7] text-[#D97706] flex items-center justify-center mx-auto mb-4">
