@@ -8,7 +8,7 @@ import { InboxPage } from "../InboxPage";
 import { GeographyWorkspace } from "./GeographyWorkspace";
 import { Activity, ArrowUpRight, Bell, Building2, ChevronRight, ClipboardList, LayoutDashboard, LogOut, MapPin, Menu, MessageCircle, Plus, RefreshCw, Send, Settings2, ShieldCheck, UserPlus, Users, UserCircle, X } from "lucide-react";
 
-type PlatformView = "login" | "overview" | "hotels" | "hotel_detail" | "create_hotel" | "geography" | "admins" | "create_admin" | "audit" | "outbox" | "communications" | "profile" | "settings";
+export type PlatformView = "login" | "overview" | "hotels" | "hotel_detail" | "create_hotel" | "geography" | "admins" | "create_admin" | "audit" | "outbox" | "communications" | "profile" | "settings";
 
 interface PlatformMe {
     id: string; username: string; name: string; role: string;
@@ -105,8 +105,8 @@ export const PlatformAdminPage: React.FC<{
     const { unreadCount, pushNotification } = useNotifications();
 
     const navigateTo = useCallback((nextView: PlatformView, hotelId?: string) => {
-        setView(nextView);
-        onNavigate?.(nextView, hotelId);
+        if (onNavigate) onNavigate(nextView, hotelId);
+        else setView(nextView);
     }, [onNavigate]);
 
     useEffect(() => {
@@ -150,7 +150,7 @@ export const PlatformAdminPage: React.FC<{
     const [confirm, setConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
 
     const fetch = useCallback(async () => {
-        if (!token) { setLoading(false); return; }
+        if (!token || view === "login") { setLoading(false); return; }
         setLoading(true);
         const [dashRes, hotelsRes, adminsRes, auditRes, outboxRes, geoRes, heroRes] = await Promise.all([
             apiGet<PlatformDashboard>("/platform/dashboard", token),
@@ -208,7 +208,7 @@ export const PlatformAdminPage: React.FC<{
         }
         if (heroRes.success && heroRes.data) setHeroImageUrl(heroRes.data.imageUrl);
         setLoading(false);
-    }, [token, navigateTo]);
+    }, [token, view, authLogout, navigateTo]);
 
     const saveHeroImage = async () => {
         if (heroSaving) return;

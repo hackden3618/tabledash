@@ -11,7 +11,7 @@
  * When to modify: When adding pages, routes, or changing top-level flows.
  */
 
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { createBrowserRouter, Navigate, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useCustomerAuth } from "./context/CustomerAuthContext";
 import { useAdminAuth } from "./context/AdminAuthContext";
@@ -55,7 +55,7 @@ import { AdminOrdersPage } from "./pages/admin/AdminOrdersPage";
 import { AdminSettingsPage } from "./pages/admin/AdminSettingsPage";
 import { FinanceDashboardPage } from "./pages/admin/FinanceDashboardPage";
 import { PendingCollectionPage } from "./pages/admin/PendingCollectionPage";
-import { PlatformAdminPage } from "./pages/platform/PlatformAdminPage";
+import { PlatformAdminPage, type PlatformView } from "./pages/platform/PlatformAdminPage";
 import { SetPasswordPage } from "./pages/SetPasswordPage";
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -706,24 +706,27 @@ function AdminPendingCollectionRoute() {
 function PlatformRoute() {
     const navigate = useNavigate();
     const location = useLocation();
-    const platformPath = location.pathname.replace(/^\/platform\/?/, "").replace(/\/$/, "");
-    const segments = platformPath ? platformPath.split("/") : [];
-    const hotelId = segments[0] === "hotels" && segments[1] && segments[1] !== "new" ? segments[1] : undefined;
-    const routeView =
-        platformPath === "login" ? "login" :
-        platformPath === "hotels" ? "hotels" :
-        platformPath === "hotels/new" ? "create_hotel" :
-        hotelId ? "hotel_detail" :
-        platformPath === "geography" ? "geography" :
-        platformPath === "admins" ? "admins" :
-        platformPath === "admins/new" ? "create_admin" :
-        platformPath === "communications" ? "communications" :
-        platformPath === "delivery-health" ? "outbox" :
-        platformPath === "audit-log" ? "audit" :
-        platformPath === "settings/appearance" ? "settings" :
-        platformPath === "profile" ? "profile" : "overview";
+    const { routeView, hotelId } = useMemo(() => {
+        const platformPath = location.pathname.replace(/^\/platform\/?/, "").replace(/\/$/, "");
+        const segments = platformPath ? platformPath.split("/") : [];
+        const hotelId = segments[0] === "hotels" && segments[1] && segments[1] !== "new" ? segments[1] : undefined;
+        const routeView: PlatformView =
+            platformPath === "login" ? "login" :
+            platformPath === "hotels" ? "hotels" :
+            platformPath === "hotels/new" ? "create_hotel" :
+            hotelId ? "hotel_detail" :
+            platformPath === "geography" ? "geography" :
+            platformPath === "admins" ? "admins" :
+            platformPath === "admins/new" ? "create_admin" :
+            platformPath === "communications" ? "communications" :
+            platformPath === "delivery-health" ? "outbox" :
+            platformPath === "audit-log" ? "audit" :
+            platformPath === "settings/appearance" ? "settings" :
+            platformPath === "profile" ? "profile" : "overview";
+        return { routeView, hotelId };
+    }, [location.pathname]);
 
-    const navigatePlatform = (view: string, targetHotelId?: string) => {
+    const navigatePlatform = useCallback((view: string, targetHotelId?: string) => {
         const destination: Record<string, string> = {
             login: "/platform/login",
             overview: "/platform",
@@ -739,7 +742,7 @@ function PlatformRoute() {
             profile: "/platform/profile",
         };
         navigate(view === "hotel_detail" && targetHotelId ? `/platform/hotels/${targetHotelId}` : (destination[view] ?? "/platform"));
-    };
+    }, [navigate]);
 
     return <PlatformAdminPage onBack={() => navigate("/")} routeView={routeView} routeHotelId={hotelId} onNavigate={navigatePlatform} />;
 }
