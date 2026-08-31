@@ -35,6 +35,7 @@ import { ConfirmationPage } from "./pages/customer/ConfirmationPage";
 import { CustomerAuthPage } from "./pages/customer/CustomerAuthPage";
 import { LocationPage } from "./pages/customer/LocationPage";
 import { MenuListPage } from "./pages/customer/MenuListPage";
+import { MealPreviewPage } from "./pages/customer/MealPreviewPage";
 import { MyOrdersPage } from "./pages/customer/MyOrdersPage";
 import { OrderTrackingPage } from "./pages/customer/OrderTrackingPage";
 import { SearchPage } from "./pages/customer/SearchPage";
@@ -226,15 +227,17 @@ function CustomerShell() {
         else if (tab === "account") navigate("/account");
     };
 
+    const isImmersiveMealPreview = /^\/h\/[^/]+\/items\/[^/]+$/.test(location.pathname);
+
     return (
         <>
             <InstallBanner scope="customer" />
             <Outlet />
-            <BottomNav
+            {!isImmersiveMealPreview && <BottomNav
                 activeTab={getActiveTab(location.pathname)}
                 onSelectTab={handleSelectTab}
                 hasActiveOrder={Boolean(placedOrder)}
-            />
+            />}
         </>
     );
 }
@@ -309,6 +312,7 @@ function MenuRoute() {
             // When a hotel is tapped on the marketplace, push its slug into
             // the URL so the address bar always holds a shareable/QR-able link.
             onNavigateToHotel={(slug) => navigate(`/h/${slug}`)}
+            onNavigateToMeal={(hotelSlug, productId) => navigate(`/h/${hotelSlug}/items/${productId}`)}
         />
     );
 }
@@ -325,8 +329,16 @@ function HotelDirectRoute() {
             onNavigateToConversations={() => navigate("/inbox")}
             // Back from hotel menu returns to marketplace root
             onBackToMarketplace={() => navigate("/")}
+            onNavigateToMeal={(hotelSlug, productId) => navigate(`/h/${hotelSlug}/items/${productId}`)}
         />
     );
+}
+
+function MealPreviewRoute() {
+    const navigate = useNavigate();
+    const { hotelSlug, productId } = useParams();
+    if (!hotelSlug || !productId) return <Navigate to="/" replace />;
+    return <MealPreviewPage hotelSlug={hotelSlug} productId={productId} onBack={() => navigate(`/h/${hotelSlug}`)} onOpenCart={() => navigate("/cart")} />;
 }
 
 function InboxRoute() {
@@ -765,6 +777,7 @@ export const router = createBrowserRouter([
                 errorElement: <RouteErrorBoundary />,
                 children: [
                     { index: true, element: <MenuRoute /> },
+                    { path: "h/:hotelSlug/items/:productId", element: <MealPreviewRoute /> },
                     { path: "h/:hotelSlug", element: <HotelDirectRoute /> },
                     { path: "search", element: <SearchRoute /> },
                     { path: "cart", element: <CartRoute /> },

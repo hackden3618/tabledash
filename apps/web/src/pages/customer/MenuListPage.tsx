@@ -96,6 +96,8 @@ interface MenuListPageProps {
      *  direct link — navigates back to the marketplace root. When absent,
      *  backToHotels resets internal state (for in-page transitions). */
     onBackToMarketplace?: () => void;
+    /** Opens a standalone, URL-addressable full-screen meal preview. */
+    onNavigateToMeal?: (hotelSlug: string, productId: string) => void;
 }
 
 export const MenuListPage: React.FC<MenuListPageProps> = ({
@@ -105,6 +107,7 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
     initialHotelSlug,
     onNavigateToHotel,
     onBackToMarketplace,
+    onNavigateToMeal,
 }) => {
     const [hotels, setHotels] = useState<HotelItem[]>([]);
     const [selectedHotel, setSelectedHotel] = useState<HotelItem | null>(null);
@@ -258,9 +261,14 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
             return;
         }
         const loadLocations = async () => {
-            const heroResult = await apiGet<{ imageUrl: string }>("/discovery/hero");
+            // These two independent requests gate the first marketplace paint.
+            // Start them together so a first-time visitor reaches location choice
+            // as quickly as the network allows instead of paying two round trips.
+            const [heroResult, zonesResult] = await Promise.all([
+                apiGet<{ imageUrl: string }>("/discovery/hero"),
+                apiGet<ZoneItem[]>("/discovery/zones"),
+            ]);
             if (heroResult.success && heroResult.data?.imageUrl) setPlatformHeroImage(heroResult.data.imageUrl);
-            const zonesResult = await apiGet<ZoneItem[]>("/discovery/zones");
             if (!zonesResult.success || !zonesResult.data?.length) {
                 setZonesLoading(false);
                 setZoneError(true);
@@ -480,7 +488,7 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
                     <PersistentNotificationCard variant="banner" />
                     <div className="px-4 py-6 space-y-8">
                         <section className="relative -mx-4 -mt-6 min-h-[19rem] overflow-hidden bg-[#114B36] px-5 pb-12 pt-5 text-white">
-                            {heroImage && <><img src={heroImage} alt="Homepage food discovery" loading="eager" className="absolute inset-0 z-0 h-full w-full object-cover opacity-100" /><div className="pointer-events-none absolute inset-y-0 left-0 z-[1] w-[68%] bg-gradient-to-r from-[#063522]/80 via-[#114B36]/45 to-transparent backdrop-blur-[10px] [mask-image:linear-gradient(to_right,black_0%,black_52%,transparent_100%)]" /></>}
+                            {heroImage && <><img src={heroImage} alt="Homepage food discovery" loading="eager" fetchPriority="high" decoding="async" className="absolute inset-0 z-0 h-full w-full object-cover opacity-100" /><div className="pointer-events-none absolute inset-y-0 left-0 z-[1] w-[68%] bg-gradient-to-r from-[#063522]/80 via-[#114B36]/45 to-transparent backdrop-blur-[10px] [mask-image:linear-gradient(to_right,black_0%,black_52%,transparent_100%)]" /></>}
                             <div className="relative z-10 max-w-[76%]">
                                 <button type="button" onClick={openLocationPicker} disabled={zonesLoading || zones.length === 0} className="inline-flex items-center gap-2 rounded-full border border-white/25 bg-black/15 px-3 py-2 text-left text-xs font-bold text-white backdrop-blur-sm transition hover:bg-black/25 disabled:opacity-70" aria-label="Choose delivery area"><MapPin size={16} /><span>{zonesLoading ? "Loading areas…" : zoneError ? "Delivery area unavailable" : (() => { const town = zones.find((zone) => zone.id === activeZoneId); if (!town) return "Choose delivery area"; return activeTownRegionName ? `${activeTownRegionName}, ${town.name}` : town.name; })()}</span><ChevronDown size={14} /></button>
                                 <p className="mt-7 text-sm font-semibold text-white/75">{discovery?.greeting ?? "Good food, close to you."}</p>
@@ -744,6 +752,7 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
                                             onDecrement={() => updateQuantity(item.id, getQuantityInCart(item.id) - 1)}
                                             onQuantityChange={(quantity) => updateQuantity(item.id, quantity)}
                                             disabled={isEffectivelyClosed}
+                                            onPreview={() => onNavigateToMeal?.(selectedHotel.slug, item.id)}
                                         />
                                     ))}
                                 </div>
@@ -780,8 +789,9 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
                                                 onAdd={() => { }}
                                                 onIncrement={() => { }}
                                                 onDecrement={() => { }}
-                                                onQuantityChange={() => { }}
-                                                disabled={true}
+                                            onQuantityChange={() => { }}
+                                            disabled={true}
+                                            onPreview={() => onNavigateToMeal?.(selectedHotel.slug, item.id)}
                                             />
                                         ))}
                                     </div>

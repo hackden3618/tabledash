@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
+import { Expand } from "lucide-react";
 import { QuantitySelector, AddToCartButton } from "./QuantitySelector";
 import { Badge } from "./Badge";
 import { RatingStars } from "./RatingStars";
@@ -25,6 +26,7 @@ interface ProductCardProps {
   onIncrement: () => void;
   onDecrement: () => void;
   onQuantityChange: (quantity: number) => void;
+  onPreview?: () => void;
   disabled?: boolean;
 }
 
@@ -50,6 +52,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   onIncrement,
   onDecrement,
   onQuantityChange,
+  onPreview,
   disabled = false,
 }) => {
   const [imgError, setImgError] = useState(false);
@@ -61,18 +64,27 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       layout
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
+      onClick={() => { if (item.imageUrl && !imgError) onPreview?.(); }}
       className={`
-        glass-surface relative flex gap-4 items-center p-4 rounded-2xl
+        glass-surface relative flex gap-4 items-center p-4 rounded-2xl cursor-pointer
         transition-shadow duration-200
         ${isOutOfStock ? "opacity-55 bg-[#FAFAFA]" : "shadow-[0_2px_8px_rgba(17,75,54,0.06)] hover:shadow-[0_8px_24px_rgba(17,75,54,0.1)]"}
       `}
     >
-      <div className="w-20 h-20 rounded-xl overflow-hidden shrink-0 bg-[#F3F4F6]">
+      <button
+        type="button"
+        onClick={(event) => { event.stopPropagation(); if (item.imageUrl && !imgError) onPreview?.(); }}
+        disabled={!item.imageUrl || imgError}
+        className="group/image relative h-24 w-24 shrink-0 overflow-hidden rounded-2xl border-none bg-[#F3F4F6] p-0 text-left disabled:cursor-default"
+        aria-label={item.imageUrl && !imgError ? `View ${item.name} photo` : undefined}
+      >
         {item.imageUrl && !imgError ? (
           <img
             src={item.imageUrl}
             alt={item.name}
-            className="w-full h-full object-cover"
+            loading="lazy"
+            decoding="async"
+            className="h-full w-full object-cover transition duration-500 group-hover/image:scale-105"
             onError={() => setImgError(true)}
           />
         ) : (
@@ -80,7 +92,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             🍽
           </div>
         )}
-      </div>
+        {item.imageUrl && !imgError && <span className="absolute inset-0 grid place-items-center bg-[#10271E]/0 text-white opacity-0 transition group-hover/image:bg-[#10271E]/35 group-hover/image:opacity-100"><span className="rounded-full bg-black/30 p-2 backdrop-blur-sm"><Expand size={16} /></span></span>}
+      </button>
 
       <div className="flex-1 min-w-0">
         <h3 className={`font-semibold text-sm ${isOutOfStock ? "text-[#6B7280]" : "text-[#1F2937]"}`}>
@@ -104,7 +117,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         )}
       </div>
 
-      <div className="shrink-0">
+      <div className="shrink-0" onClick={(event) => event.stopPropagation()}>
         {isOutOfStock ? (
           <span className="text-[0.65rem] font-bold text-[#DC2626] bg-[#FEE2E2] px-3 py-1.5 rounded-lg uppercase tracking-wide">
             Sold Out
@@ -122,6 +135,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           />
         )}
       </div>
+
     </motion.div>
   );
 };
