@@ -22,16 +22,18 @@ export const CartPage: React.FC<CartPageProps> = ({ onBackToMenu, onContinueToDe
   const [deliveryFeeLoading, setDeliveryFeeLoading] = useState(false);
 
   const cartHotelIds = [...new Set(cart.map((item) => item.hotelId).filter((id): id is string => Boolean(id)))];
+  // Delivery prices are configured against a town's final delivery area, not
+  // the town itself. Keep the cart quote aligned with checkout/order placement.
+  const deliveryAreaId = localStorage.getItem("ladha_town_region_id");
   useEffect(() => {
     if (!cartHotelIds.length) { setDeliveryFee(0); return; }
     setDeliveryFeeLoading(true);
     const query = new URLSearchParams({ hotelIds: cartHotelIds.join(",") });
-    const zoneId = localStorage.getItem("ladha_zone_id");
-    if (zoneId) query.set("zoneId", zoneId);
+    if (deliveryAreaId) query.set("zoneId", deliveryAreaId);
     void apiGet<Array<{ deliveryFee: number }>>(`/orders/delivery-fees?${query}`)
       .then((res) => setDeliveryFee(res.success && res.data ? res.data.reduce((sum, row) => sum + Number(row.deliveryFee), 0) : null))
       .finally(() => setDeliveryFeeLoading(false));
-  }, [cartHotelIds.join(",")]);
+  }, [cartHotelIds.join(","), deliveryAreaId]);
 
   useEffect(() => {
     const hotelIds = [...new Set(cart.map((item) => item.hotelId).filter((id): id is string => Boolean(id)))];

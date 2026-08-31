@@ -449,6 +449,8 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
 
     const discoveryMeals = mealRanking === "trending" ? (discovery?.trendingMeals ?? []) : (discovery?.popularMeals ?? []);
     const heroImage = platformHeroImage || discovery?.hero.imageUrl || discovery?.restaurants.find((hotel) => hotel.imageUrl)?.imageUrl || discovery?.popularMeals[0]?.imageUrl || discovery?.trendingMeals[0]?.imageUrl;
+    const openKitchenCount = hotels.filter((hotel) => hotel.isOpen).length;
+    const readyMealCount = discovery ? [...discovery.popularMeals, ...discovery.trendingMeals].filter((meal, index, meals) => meals.findIndex((candidate) => candidate.id === meal.id) === index).length : 0;
 
     // ── Discovery Screen ──
     if (!selectedHotel) {
@@ -487,15 +489,16 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
                 <PageTransition>
                     <PersistentNotificationCard variant="banner" />
                     <div className="px-4 py-6 space-y-8">
-                        <section className="relative -mx-4 -mt-6 min-h-[19rem] overflow-hidden bg-[#114B36] px-5 pb-28 pt-5 text-white">
-                            {heroImage && <><img src={heroImage} alt="Homepage food discovery" loading="eager" fetchPriority="high" decoding="async" className="absolute inset-0 z-0 h-full w-full object-cover" /><div className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-br from-[#063522]/92 via-[#114B36]/62 to-[#0B3E2C]/20" /><div className="pointer-events-none absolute -right-16 -top-20 z-[1] h-52 w-52 rounded-full border border-white/15 bg-white/10" /></>}
+                        <section className="relative -mx-4 -mt-6 min-h-[22rem] overflow-hidden bg-[#114B36] px-5 pb-28 pt-5 text-white">
+                            {heroImage && <><img src={heroImage} alt="Fresh food from a Ladha kitchen" loading="eager" fetchPriority="high" decoding="async" className="absolute inset-0 z-0 h-full w-full object-cover object-center" /><div className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-br from-[#062F20]/95 via-[#0B4933]/72 to-[#0B3E2C]/18" /><div className="pointer-events-none absolute -right-16 -top-20 z-[1] h-52 w-52 rounded-full border border-white/15 bg-white/10" /><div className="pointer-events-none absolute -bottom-24 -left-16 z-[1] h-48 w-48 rounded-full border border-white/10 bg-white/5" /></>}
                             <div className="relative z-10 max-w-[76%]">
-                                <button type="button" onClick={openLocationPicker} disabled={zonesLoading || zones.length === 0} className="inline-flex items-center gap-2 rounded-full border border-white/25 bg-black/15 px-3 py-2 text-left text-xs font-bold text-white backdrop-blur-sm transition hover:bg-black/25 disabled:opacity-70" aria-label="Choose delivery area"><MapPin size={16} /><span>{zonesLoading ? "Loading areas…" : zoneError ? "Delivery area unavailable" : (() => { const town = zones.find((zone) => zone.id === activeZoneId); if (!town) return "Choose delivery area"; return activeTownRegionName ? `${activeTownRegionName}, ${town.name}` : town.name; })()}</span><ChevronDown size={14} /></button>
+                                <button type="button" onClick={openLocationPicker} disabled={zonesLoading || zones.length === 0} className="inline-flex max-w-full items-center gap-2 rounded-full border border-white/25 bg-black/15 px-3 py-2 text-left text-xs font-bold text-white shadow-lg backdrop-blur-sm transition hover:bg-black/25 disabled:opacity-70" aria-label="Choose delivery area"><MapPin size={16} className="shrink-0" /><span className="truncate">{zonesLoading ? "Loading areas…" : zoneError ? "Delivery area unavailable" : (() => { const town = zones.find((zone) => zone.id === activeZoneId); if (!town) return "Choose delivery area"; return activeTownRegionName ? `${activeTownRegionName}, ${town.name}` : town.name; })()}</span><ChevronDown size={14} className="shrink-0" /></button>
                                 <p className="mt-7 text-sm font-semibold text-white/75">{discovery?.greeting ?? "Good food, close to you."}</p>
-                                <h2 className="mt-2 text-[2.35rem] leading-[1.02] text-white font-black tracking-tight">{discovery?.hero.title ?? "Taste moments that matter."}</h2>
+                                <h2 className="mt-2 font-black tracking-[-0.045em] text-[2.55rem] leading-[0.98] text-white">{discovery?.hero.title ?? "Taste moments that matter."}</h2>
                                 <p className="mt-3 max-w-xs text-sm leading-relaxed text-white/75">{discovery?.hero.description ?? "Fresh meals from trusted local kitchens."}</p>
                             </div>
-                            {heroImage && <span className="absolute bottom-4 right-5 z-10 rounded-full border border-white/35 bg-white/90 px-3 py-1 text-[0.62rem] font-bold text-[#114B36] shadow-lg">Fresh from a local kitchen</span>}
+                            <div className="absolute bottom-5 left-5 z-10 flex items-center gap-2 text-[0.65rem] font-bold text-white/85"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#87D9AA] text-[#07301F]"><Check size={13} strokeWidth={3} /></span><span>{openKitchenCount > 0 ? `${openKitchenCount} kitchen${openKitchenCount === 1 ? "" : "s"} ready nearby` : "Freshly prepared for you"}</span>{readyMealCount > 0 && <><span className="h-1 w-1 rounded-full bg-white/60" /><span>{readyMealCount} popular picks</span></>}</div>
+                            {heroImage && <span className="absolute bottom-5 right-5 z-10 rounded-full border border-white/35 bg-white/90 px-3 py-1 text-[0.62rem] font-bold text-[#114B36] shadow-lg">Fresh today</span>}
                         </section>
 
                         {locationPickerOpen && (() => {
@@ -599,11 +602,11 @@ export const MenuListPage: React.FC<MenuListPageProps> = ({
                             </div>}
                         </section>
 
-                        <section className="flex gap-3 overflow-x-auto scrollbar-hide -mx-1 px-1" aria-label="Meal categories">
+                        <section className="flex gap-2.5 overflow-x-auto scrollbar-hide -mx-1 px-1" aria-label="Meal categories">
                             <MealCategoryChips onSelect={(label) => setSearchQuery(label === "All" ? "" : label)} />
                         </section>
 
-                        {(discovery?.trustIndicators?.length ?? 0) > 0 && <section aria-label="Ladha trust indicators"><p className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-[#789083]">Why customers choose Ladha</p><div className="grid grid-cols-2 gap-2 rounded-2xl border border-[#E5E9E1] bg-[#F5F7F1] p-3 sm:grid-cols-4">
+                        {(discovery?.trustIndicators?.length ?? 0) > 0 && <section aria-label="Ladha trust indicators"><p className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-[#789083]">Why customers choose Ladha</p><div className="grid grid-cols-2 gap-2 rounded-[1.35rem] border border-[#E2ECE5] bg-[#F5F8F4] p-3.5 sm:grid-cols-4">
                             {discovery!.trustIndicators.map((item) => { const Icon = item.icon === "shield" ? ShieldCheck : item.icon === "leaf" ? Leaf : item.icon === "route" ? Route : LockKeyhole; return <div key={item.label} className="flex items-center gap-2 text-[0.65rem] font-semibold leading-tight text-[#3B4A42]"><Icon size={15} className="shrink-0 text-[#114B36]" />{item.label}</div>; })}
                         </div></section>}
 
@@ -897,8 +900,6 @@ const MEAL_CATEGORIES = [
     { label: "Lunch", icon: "🍲" },
     { label: "Drinks", icon: "🥤" },
     { label: "Desserts", icon: "🍰" },
-    { label: "Dinner", icon: "🍛" },
-    { label: "All", icon: "•••" },
 ];
 
 function MealCategoryChips({ onSelect }: { onSelect: (label: string) => void }) {
@@ -908,7 +909,7 @@ function MealCategoryChips({ onSelect }: { onSelect: (label: string) => void }) 
                 <button
                     key={category.label}
                     onClick={() => onSelect(category.label)}
-                    className="min-w-[74px] rounded-2xl border border-[#E8DED2] bg-white px-3 py-3 text-center shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                    className="min-w-[82px] rounded-2xl border border-[#E7E2D9] bg-white px-3 py-3 text-center shadow-[0_4px_14px_rgba(17,75,54,0.06)] transition hover:-translate-y-0.5 hover:border-[#B9DCCB] hover:shadow-[0_8px_20px_rgba(17,75,54,0.1)]"
                 >
                     <span className="flex h-9 items-center justify-center text-lg">{category.icon}</span>
                     <span className="mt-1 block text-[0.68rem] font-bold text-[#3B4A42]">{category.label}</span>
