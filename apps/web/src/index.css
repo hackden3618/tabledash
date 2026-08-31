@@ -206,7 +206,7 @@
 .platform-login-shell { position: relative; isolation: isolate; }
 .platform-login-shell::before, .platform-login-shell::after { content: ""; position: absolute; z-index: -1; border-radius: 999px; filter: blur(1px); }
 .platform-login-shell::before { width: 30rem; height: 30rem; top: -15rem; right: -8rem; background: rgba(163, 220, 185, .38); }.platform-login-shell::after { width: 23rem; height: 23rem; bottom: -12rem; left: -10rem; background: rgba(208, 229, 216, .8); }
-.platform-login-mark { width: 50px; height: 50px; display: grid; place-items: center; margin: 0 auto 16px; border-radius: 15px; background: #123D2E; box-shadow: 0 13px 25px rgba(18,61,46,.22); color: #DDF4E6; font-size: .9rem; font-weight: 900; letter-spacing: -.1em; }.platform-login-eyebrow { margin: 0 0 7px; color: #39765a; font-size: .67rem; font-weight: 850; letter-spacing: .13em; text-transform: uppercase; }.platform-login-submit { box-shadow: 0 10px 18px rgba(18,61,46,.2); }
+.platform-login-mark { width: 58px; height: 58px; display: grid; place-items: center; overflow: hidden; margin: 0 auto 16px; border-radius: 18px; background: #123D2E; box-shadow: 0 13px 25px rgba(18,61,46,.22); }.platform-login-mark img { display: block; width: 100%; height: 100%; object-fit: cover; }.platform-login-eyebrow { margin: 0 0 7px; color: #39765a; font-size: .67rem; font-weight: 850; letter-spacing: .13em; text-transform: uppercase; }.platform-login-submit { box-shadow: 0 10px 18px rgba(18,61,46,.2); }.platform-sidebar-mark { display: grid; width: 34px; height: 34px; place-items: center; overflow: hidden; border-radius: 10px; background: #D7F0DF; }.platform-sidebar-mark img { width: 100%; height: 100%; object-fit: cover; }
 
 .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
 
@@ -246,46 +246,52 @@
 }
 .platform-shell input:not([type="checkbox"]) {
   min-height: 44px;
-  border: 1px solid #EADFD3;
-  border-radius: 14px;
-  background: #FFFFFF;
-  color: #1F2937;
-  font-size: 0.9rem;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0 14px;
+  border: 1px solid #D7E3DC;
+  border-radius: 12px;
+  background: rgba(255,255,255,.94);
+  color: #1E352A;
+  font-size: .875rem;
+  font-weight: 500;
   outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: inset 0 1px 1px rgba(18,61,46,.02);
+  transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
 }
 .platform-shell select,
 .platform-shell textarea,
 .platform-shell .input-field {
   min-height: 44px;
-  padding-inline: 16px;
-  border: 1px solid #EADFD3;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.84);
-  color: #1F2937;
-  font-size: 0.9rem;
+  box-sizing: border-box;
+  width: 100%;
+  padding-inline: 14px;
+  border: 1px solid #D7E3DC;
+  border-radius: 12px;
+  background: rgba(255,255,255,.94);
+  color: #1E352A;
+  font-size: .875rem;
+  font-weight: 500;
   outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  box-shadow: inset 0 1px 1px rgba(18,61,46,.02);
+  transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
 }
-.platform-shell select { padding: 0 2.5rem 0 0.85rem; appearance: auto; }
-.platform-shell textarea { padding: 0.75rem 0.85rem; }
+.platform-shell input:not([type="checkbox"])::placeholder, .platform-shell textarea::placeholder { color: #9AA9A1; font-weight: 450; }
+.platform-shell select { padding: 0 2.5rem 0 14px; appearance: auto; }
+.platform-shell textarea { padding: .75rem 14px; line-height: 1.45; }
 .platform-shell input:not([type="checkbox"]):focus,
 .platform-shell select:focus,
 .platform-shell textarea:focus,
 .platform-shell .input-field:focus {
-  border-color: #5CB08E;
+  border-color: #4D9B75;
   background: #FFFFFF;
-  box-shadow: 0 0 0 4px rgba(92, 176, 142, 0.16), 0 8px 20px rgba(17, 75, 54, 0.06);
+  box-shadow: 0 0 0 4px rgba(77,155,117,.14), 0 7px 18px rgba(17,75,54,.07);
 }
 .platform-shell button { transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease; }
 .platform-shell button:not(:disabled):active { transform: translateY(1px); }
 .platform-main > h1,
 .platform-main > div > h1 { letter-spacing: -0.025em; }
-.platform-shell input:not([type="checkbox"]):focus {
-  border-color: #94CCB5;
-  box-shadow: 0 0 0 3px rgba(148, 204, 181, 0.22);
-}
-.platform-shell button:disabled { cursor: not-allowed; }
+.platform-shell input:not([type="checkbox"]):disabled, .platform-shell select:disabled, .platform-shell textarea:disabled { color: #98A59E; background: #F1F5F2; border-color: #E0E8E3; cursor: not-allowed; }.platform-shell input[type="checkbox"] { width: 17px; height: 17px; margin: 0; accent-color: #246A4D; }.platform-shell label { color: #4E685D; font-weight: 650; }.platform-shell button:disabled { cursor: not-allowed; }
 .admin-container input,
 .admin-container textarea,
 .admin-container select { max-width: 100%; min-width: 0; box-sizing: border-box; }

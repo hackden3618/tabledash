@@ -438,7 +438,7 @@ export const PlatformAdminPage: React.FC<{
             <div className="platform-shell platform-login-shell" style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: T.font, padding: s(4) }}>
                 <div className="platform-login-card" style={{ width: "100%", maxWidth: "400px", background: T.surface, borderRadius: "20px", padding: s(8), border: `1px solid ${T.border}` }}>
                     <div style={{ textAlign: "center", marginBottom: s(6) }}>
-                        <div className="platform-login-mark">LD</div>
+                        <div className="platform-login-mark"><img src="/ladha_favicon.png" alt="Ladha" /></div>
                         <p className="platform-login-eyebrow">Ladha platform</p>
                         <h1 style={{ fontSize: "1.65rem", fontWeight: 800, color: T.text, margin: 0, letterSpacing: "-0.045em" }}>Welcome back</h1>
                         <p style={{ fontSize: "0.85rem", color: T.textMuted, marginTop: s(2) }}>Sign in to your platform command center.</p>
@@ -553,7 +553,7 @@ export const PlatformAdminPage: React.FC<{
                 {/* Sidebar header */}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: s(7) }}>
                     <div style={{ display: "flex", alignItems: "center", gap: s(3) }}>
-                        <div style={{ width: "34px", height: "34px", borderRadius: "10px", background: "#D7F0DF", color: T.primary, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: "0.78rem", letterSpacing: "-0.08em" }}>LD</div>
+                        <div className="platform-sidebar-mark"><img src="/ladha_favicon.png" alt="Ladha" /></div>
                         <div>
                             <div style={{ fontWeight: 750, color: "#FFFFFF", fontSize: "0.92rem", lineHeight: 1.3 }}>Ladha</div>
                             <div style={{ fontSize: "0.68rem", color: "rgba(231,244,237,0.55)", letterSpacing: "0.04em", textTransform: "uppercase" }}>Platform console</div>
