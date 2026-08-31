@@ -6,9 +6,9 @@ import { AdminNotificationPanel } from "../../components/AdminNotificationPanel"
 import { Modal } from "../../components/ui/Modal";
 import { InboxPage } from "../InboxPage";
 import { GeographyWorkspace } from "./GeographyWorkspace";
-import { Activity, Bell, Building2, ChevronRight, ClipboardList, LayoutDashboard, LogOut, MapPin, Menu, MessageCircle, Plus, RefreshCw, Send, UserPlus, Users, UserCircle, X } from "lucide-react";
+import { Activity, ArrowUpRight, Bell, Building2, ChevronRight, ClipboardList, LayoutDashboard, LogOut, MapPin, Menu, MessageCircle, Plus, RefreshCw, Send, Settings2, ShieldCheck, UserPlus, Users, UserCircle, X } from "lucide-react";
 
-type PlatformView = "login" | "overview" | "hotels" | "hotel_detail" | "create_hotel" | "geography" | "admins" | "create_admin" | "audit" | "outbox" | "communications" | "profile";
+type PlatformView = "login" | "overview" | "hotels" | "hotel_detail" | "create_hotel" | "geography" | "admins" | "create_admin" | "audit" | "outbox" | "communications" | "profile" | "settings";
 
 interface PlatformMe {
     id: string; username: string; name: string; role: string;
@@ -36,26 +36,38 @@ interface GeoCountyNode { id: string; name: string; type: string; active: boolea
 interface GeoHierarchyNode { counties: GeoCountyNode[]; summary: { countyCount: number; townCount: number; areaCount: number; hotelCount: number }; }
 
 const T = {
-    bg: "#FFF8F0",
+    bg: "#F4F7F5",
     surface: "#FFFFFF",
-    border: "#EADFD3",
-    primary: "#114B36",
-    primaryMuted: "#EBF5F0",
-    primaryLight: "#C2E2D3",
-    text: "#1F2937",
-    textMuted: "#6B7280",
-    textDim: "#9CA3AF",
+    border: "#DDE7E1",
+    primary: "#123D2E",
+    primaryMuted: "#E8F2EC",
+    primaryLight: "#C8E2D3",
+    text: "#20372D",
+    textMuted: "#6B7F74",
+    textDim: "#94A39B",
     danger: "#DC2626",
     dangerMuted: "#FEF2F2",
     success: "#15803D",
     successMuted: "#DCFCE7",
     warning: "#A16207",
     warningMuted: "#FFF7D6",
-    radius: "14px",
+    radius: "12px",
     font: "Inter, system-ui, -apple-system, sans-serif",
 };
 
 function s(num: number) { return `${num * 4}px`; }
+
+function formatAuditEventName(value: unknown) {
+    const eventName = typeof value === "string" && value.trim() ? value : "Platform event";
+    return eventName.replaceAll("_", " ").toLowerCase();
+}
+
+function formatAuditDate(value: unknown) {
+    const date = value ? new Date(String(value)) : null;
+    return date && !Number.isNaN(date.getTime())
+        ? date.toLocaleDateString(undefined, { month: "short", day: "numeric" })
+        : "Recently";
+}
 
 export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const { token, user, login: authLogin, logout: authLogout } = usePlatformAdminAuth();
@@ -365,6 +377,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
             case "outbox": return <Send size={17} />;
             case "communications": return <MessageCircle size={17} />;
             case "profile": return <UserCircle size={17} />;
+            case "settings": return <Settings2 size={17} />;
             default: return <Activity size={17} />;
         }
     };
@@ -373,9 +386,9 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
         <button
             onClick={() => { setView(v); setSidebarOpen(false); }}
             style={{
-                background: view === v ? T.primaryMuted : "transparent",
-                color: view === v ? T.primary : T.textMuted,
-                border: "none", padding: `${s(3)} ${s(4)}`, borderRadius: T.radius,
+                background: view === v ? "rgba(255,255,255,0.15)" : "transparent",
+                color: view === v ? "#FFFFFF" : "rgba(231,244,237,0.64)",
+                border: "none", padding: `${s(2)} ${s(3)}`, borderRadius: "10px",
                 fontWeight: view === v ? 700 : 500, fontSize: "0.9rem", cursor: "pointer",
                 textAlign: "left", width: "100%", transition: "all 0.15s",
                 display: "flex", alignItems: "center", gap: s(3),
@@ -387,20 +400,19 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
     );
 
     const navGroup = (label: string) => (
-        <div style={{ marginTop: s(4), marginBottom: s(1), fontSize: "0.62rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.textDim, padding: `0 ${s(3)}`, pointerEvents: "none" }}>{label}</div>
+        <div style={{ marginTop: s(5), marginBottom: s(1), fontSize: "0.62rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(231,244,237,0.36)", padding: `0 ${s(3)}`, pointerEvents: "none" }}>{label}</div>
     );
-
-    const healthRowStyle: React.CSSProperties = { background: T.bg, border: `1px solid ${T.border}`, borderRadius: T.radius, padding: `${s(2)} ${s(3)}`, display: "flex", justifyContent: "space-between", alignItems: "center", gap: s(2), fontFamily: T.font, fontSize: "0.82rem", color: T.text, cursor: "pointer", textAlign: "left", width: "100%", textDecoration: "none" };
 
     // ── Login View ──
     if (view === "login") {
         return (
-            <div className="platform-shell" style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: T.font, padding: s(4) }}>
-                <div className="platform-login-card" style={{ width: "100%", maxWidth: "400px", background: T.surface, borderRadius: "16px", padding: s(8), border: `1px solid ${T.border}` }}>
+            <div className="platform-shell platform-login-shell" style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: T.font, padding: s(4) }}>
+                <div className="platform-login-card" style={{ width: "100%", maxWidth: "400px", background: T.surface, borderRadius: "20px", padding: s(8), border: `1px solid ${T.border}` }}>
                     <div style={{ textAlign: "center", marginBottom: s(6) }}>
-                        <div style={{ width: "48px", height: "48px", borderRadius: "12px", background: T.primary, color: "white", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px", fontWeight: 800, fontSize: "1.2rem" }}>TD</div>
-                        <h1 style={{ fontSize: "1.3rem", fontWeight: 700, color: T.text, margin: 0 }}>Ladha Deliveries</h1>
-                        <p style={{ fontSize: "0.85rem", color: T.textMuted, marginTop: s(2) }}>Sign in to manage tenants and platform access</p>
+                        <div className="platform-login-mark">LD</div>
+                        <p className="platform-login-eyebrow">Ladha platform</p>
+                        <h1 style={{ fontSize: "1.65rem", fontWeight: 800, color: T.text, margin: 0, letterSpacing: "-0.045em" }}>Welcome back</h1>
+                        <p style={{ fontSize: "0.85rem", color: T.textMuted, marginTop: s(2) }}>Sign in to your platform command center.</p>
                     </div>
                     {loginError && <div style={{ background: T.dangerMuted, color: T.danger, padding: s(3), borderRadius: T.radius, fontSize: "0.85rem", marginBottom: s(4), fontWeight: 600 }}>{loginError}</div>}
                     <div style={{ display: "flex", flexDirection: "column", gap: s(4) }}>
@@ -408,7 +420,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                             className="input-field" style={{ fontFamily: T.font }} autoComplete="username" />
                         <input type="password" placeholder="Password" value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
                             className="input-field" style={{ fontFamily: T.font }} autoComplete="current-password" onKeyDown={(e) => e.key === "Enter" && handleLogin()} />
-                        <button onClick={handleLogin} disabled={loginSubmitting || !loginForm.username.trim() || !loginForm.password}
+                        <button className="platform-login-submit" onClick={handleLogin} disabled={loginSubmitting || !loginForm.username.trim() || !loginForm.password}
                             style={{ background: T.primary, color: "white", border: "none", padding: s(4), borderRadius: T.radius, fontWeight: 700, fontSize: "0.95rem", cursor: loginSubmitting ? "wait" : "pointer", opacity: loginSubmitting || !loginForm.username.trim() || !loginForm.password ? 0.6 : 1 }}>
                             {loginSubmitting ? "Signing in…" : "Sign In"}
                         </button>
@@ -431,6 +443,10 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
         groups.set(key, group);
         return groups;
     }, new Map<string, { megaRegion: string; town: string; hotels: Hotel[] }>()).values());
+    const geographyIssueCount = geoAlerts.townsMissingActiveArea.length + geoAlerts.hotelsInInactiveTowns.length + geoAlerts.inactiveAreasWithCustomers.length;
+    const attentionCount = (dashboard?.failedOutboxCount ?? 0) + geographyIssueCount;
+    const hotelsNeedingAttention = hotels.filter((hotel) => !hotel.isOpen || hotel.isListed === false).slice(0, 4);
+    const recentActivity = auditRows.slice(0, 4);
 
     // ── Layout ──
     const sidebarWidth = 240;
@@ -494,29 +510,29 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
 
             {/* Sidebar — clean drawer panel */}
             <nav style={{
-                width: sidebarWidth, background: T.surface,
+                width: sidebarWidth, background: "#123D2E",
                 display: "flex", flexDirection: "column",
                 position: "fixed", top: 0, left: 0, bottom: 0, zIndex: 50,
-                padding: s(6), gap: s(1),
+                padding: `${s(5)} ${s(4)}`, gap: s(1),
                 overflowY: "auto", WebkitOverflowScrolling: "touch",
                 transform: sidebarOpen ? "translateX(0)" : "translateX(-100%)",
                 transition: "transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
-                boxShadow: sidebarOpen ? "4px 0 24px rgba(0,0,0,0.08)" : "none",
+                boxShadow: sidebarOpen ? "8px 0 30px rgba(8,36,26,0.22)" : "none",
             }}
                 className="platform-sidebar"
             >
                 {/* Sidebar header */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: s(8) }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: s(7) }}>
                     <div style={{ display: "flex", alignItems: "center", gap: s(3) }}>
-                        <div style={{ width: "34px", height: "34px", borderRadius: "10px", background: T.primary, color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "0.9rem" }}>TD</div>
+                        <div style={{ width: "34px", height: "34px", borderRadius: "10px", background: "#D7F0DF", color: T.primary, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: "0.78rem", letterSpacing: "-0.08em" }}>LD</div>
                         <div>
-                            <div style={{ fontWeight: 700, color: T.text, fontSize: "0.95rem", lineHeight: 1.3 }}>Ladha Deliveries</div>
-                            <div style={{ fontSize: "0.75rem", color: T.textMuted }}>Platform Admin</div>
+                            <div style={{ fontWeight: 750, color: "#FFFFFF", fontSize: "0.92rem", lineHeight: 1.3 }}>Ladha</div>
+                            <div style={{ fontSize: "0.68rem", color: "rgba(231,244,237,0.55)", letterSpacing: "0.04em", textTransform: "uppercase" }}>Platform console</div>
                         </div>
                     </div>
                     <button onClick={() => setSidebarOpen(false)}
                         style={{
-                            background: "transparent", border: "none", color: T.textDim, cursor: "pointer",
+                            background: "rgba(255,255,255,0.08)", border: "none", color: "rgba(255,255,255,0.75)", cursor: "pointer",
                             width: "28px", height: "28px", borderRadius: "6px", display: "flex",
                             alignItems: "center", justifyContent: "center", fontSize: "1.1rem",
                             transition: "background 0.15s",
@@ -527,25 +543,25 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                     </button>
                 </div>
 
-                {navItem("overview", "Overview")}
+                {navItem("overview", "Command center")}
                 {navGroup("Operations")}
                 {navItem("hotels", "Hotels")}
                 {navItem("create_hotel", "Add Hotel")}
                 {navItem("geography", "Geography")}
-                {navGroup("People")}
-                {navItem("admins", "Platform Admins")}
-                {navItem("create_admin", "Add Admin")}
                 {navGroup("Communications")}
                 {navItem("communications", "Communications")}
                 {navGroup("Governance")}
-                {navItem("audit", "Audit Log")}
-                {navItem("outbox", "Outbox")}
+                {navItem("outbox", "Delivery health")}
+                {navItem("audit", "Audit log")}
+                {navItem("admins", "Platform admins")}
+                {navGroup("Settings")}
+                {navItem("settings", "Marketplace appearance")}
                 {navGroup("Account")}
                 {navItem("profile", "My Profile")}
 
-                <div style={{ marginTop: "auto", paddingTop: s(5), borderTop: `1px solid ${T.border}` }}>
-                    {user && <div style={{ fontSize: "0.8rem", color: T.textMuted, marginBottom: s(1), fontWeight: 500 }}>{user.name} <span style={{ fontSize: "0.68rem", color: T.textDim, fontWeight: 800 }}>· {user.role?.replace("PLATFORM_", "").toLowerCase()}</span></div>}
-                    <button onClick={handleLogout} style={{ background: "none", border: "none", color: T.textDim, fontSize: "0.85rem", cursor: "pointer", padding: 0, fontWeight: 500, display: "inline-flex", alignItems: "center", gap: s(2) }}><LogOut size={15} /> Sign Out</button>
+                <div style={{ marginTop: "auto", padding: `${s(3)} ${s(2)} 0`, borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+                    {user && <div style={{ fontSize: "0.78rem", color: "#F4FBF6", marginBottom: s(1), fontWeight: 650 }}>{user.name} <span style={{ fontSize: "0.66rem", color: "rgba(231,244,237,0.5)", fontWeight: 700 }}>· {user.role?.replace("PLATFORM_", "").toLowerCase()}</span></div>}
+                    <button onClick={handleLogout} style={{ background: "none", border: "none", color: "rgba(231,244,237,0.55)", fontSize: "0.78rem", cursor: "pointer", padding: 0, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: s(2) }}><LogOut size={14} /> Sign out</button>
                 </div>
             </nav>
 
@@ -553,94 +569,49 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
             <main style={{ flex: 1, height: "100dvh", overflowY: "auto", WebkitOverflowScrolling: "touch", padding: s(8), maxWidth: "960px", marginLeft: "auto", marginRight: "auto" }}
                 className="platform-main">
                 {loading ? (
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "40vh", color: T.textDim }}>Loading…</div>
+                    <div className="platform-loading" style={{ color: T.textDim }}>Loading your command center…</div>
                 ) : view === "overview" ? (
-                    <>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: s(4), marginBottom: s(6), flexWrap: "wrap" }}>
+                    <section className="command-center">
+                        <header className="command-header">
                             <div>
-                                <p style={{ color: T.primary, fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: s(1) }}>Ladha Deliveries</p>
-                                <h1 style={{ fontSize: "clamp(1.6rem, 4vw, 2.2rem)", fontWeight: 800, color: T.text, margin: 0 }}>Platform overview</h1>
-                                <p style={{ color: T.textMuted, fontSize: "0.9rem", marginTop: s(1) }}>A clear view of your marketplace, tenants, and delivery operations.</p>
+                                <div className="command-eyebrow"><span /> Platform operations</div>
+                                <h1>Command center</h1>
+                                <p>Good to see you, {user?.name?.split(" ")[0] || "there"}. Here’s how Ladha is running right now.</p>
                             </div>
-                            <span style={{ background: T.primaryMuted, color: T.primary, borderRadius: "999px", padding: `${s(2)} ${s(3)}`, fontSize: "0.75rem", fontWeight: 800 }}>Live operations</span>
+                            <div className="command-actions"><button className="command-secondary" onClick={() => void fetch()}><RefreshCw size={15} /> Refresh</button><button className="command-primary" onClick={() => setView("create_hotel")}><Plus size={16} /> Add hotel</button></div>
+                        </header>
+
+                        <div className="command-pulse">
+                            <div className="pulse-copy"><div className="pulse-label"><span /> Platform health</div><strong>{attentionCount === 0 ? "Everything is running smoothly" : `${attentionCount} item${attentionCount === 1 ? "" : "s"} need attention`}</strong><p>{dashboard?.activeHotelCount ?? 0} of {dashboard?.hotelCount ?? 0} hotels are currently accepting orders.</p></div>
+                            <div className="pulse-actions"><div className="pulse-ring"><ShieldCheck size={24} /><span>{attentionCount === 0 ? "Healthy" : "Review"}</span></div><button onClick={() => attentionCount ? setView(dashboard?.failedOutboxCount ? "outbox" : "geography") : setView("hotels")}>{attentionCount ? "Review now" : "View hotels"} <ArrowUpRight size={15} /></button></div>
                         </div>
-                        {/* ── Stats grid ── */}
-                        {dashboard && (
-                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 180px), 1fr))", gap: s(3), marginBottom: s(5) }}>
-                                {[
-                                    { label: "Total Hotels", value: dashboard.hotelCount, color: T.text },
-                                    { label: "Active", value: dashboard.activeHotelCount, color: T.success },
-                                    { label: "Platform Admins", value: dashboard.platformAdminCount, color: T.primary },
-                                    { label: "Platform Orders", value: dashboard.totalOrders, color: T.text },
-                                ].map((stat) => (
-                                    <div key={stat.label} style={{ background: T.surface, borderRadius: "18px", padding: s(5), border: `1px solid ${T.border}`, boxShadow: "0 8px 24px rgba(17,75,54,0.06)" }}>
-                                        <div style={{ fontSize: "2rem", fontWeight: 800, color: stat.color, lineHeight: 1 }}>{stat.value}</div>
-                                        <div style={{ fontSize: "0.8rem", color: T.textMuted, marginTop: s(1) }}>{stat.label}</div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: "20px", padding: s(5), marginBottom: s(5) }}>
-                            <div style={{ color: T.textDim, fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase" }}>Marketplace presentation</div>
-                            <h2 style={{ color: T.text, fontSize: "1.05rem", margin: `${s(2)} 0 ${s(1)}` }}>Homepage hero image</h2>
-                            <p style={{ color: T.textMuted, fontSize: "0.82rem", margin: `0 0 ${s(3)}` }}>Use a calm, well-lit food or local-kitchen image. Leave blank to use the discovery fallback.</p>
-                            <div style={{ display: "flex", gap: s(2), flexWrap: "wrap" }}><input aria-label="Homepage hero image URL" value={heroImageUrl} onChange={(e) => setHeroImageUrl(e.target.value)} placeholder="https://…" style={{ flex: "1 1 280px", padding: s(3), border: `1px solid ${T.border}`, borderRadius: T.radius, fontFamily: T.font }} /><button type="button" onClick={() => void saveHeroImage()} disabled={heroSaving} style={{ background: T.primary, color: "white", border: "none", padding: `${s(2)} ${s(4)}`, borderRadius: T.radius, fontWeight: 700 }}>{heroSaving ? "Saving…" : "Save hero image"}</button></div>
+
+                        {dashboard && <div className="command-metrics">
+                            <div className="metric-card metric-primary"><span>Platform orders</span><strong>{dashboard.totalOrders.toLocaleString()}</strong><small>All time</small></div>
+                            <div className="metric-card"><span>Active hotels</span><strong>{dashboard.activeHotelCount}</strong><small>of {dashboard.hotelCount} onboarded</small></div>
+                            <div className="metric-card"><span>Platform admins</span><strong>{dashboard.platformAdminCount}</strong><small>Access-controlled</small></div>
+                            <div className={`metric-card ${attentionCount ? "metric-alert" : ""}`}><span>Open issues</span><strong>{attentionCount}</strong><small>{attentionCount ? "Needs review" : "No action needed"}</small></div>
+                        </div>}
+
+                        <div className="command-grid">
+                            <section className="command-panel attention-panel"><div className="panel-heading"><div><span className="panel-kicker">Priority queue</span><h2>Needs attention</h2></div><span className={attentionCount ? "count-badge warning" : "count-badge"}>{attentionCount}</span></div>
+                                {dashboard?.failedOutboxCount ? <button className="attention-row danger" onClick={() => setView("outbox")}><span className="attention-icon">!</span><span><strong>Message delivery failures</strong><small>{dashboard.failedOutboxCount} outbox event{dashboard.failedOutboxCount === 1 ? "" : "s"} failed to send</small></span><ChevronRight size={17} /></button> : null}
+                                {geoAlerts.townsMissingActiveArea.slice(0, 2).map((town) => <button key={town.id} className="attention-row" onClick={() => { setFocusTownId(town.id); setView("geography"); }}><span className="attention-icon">⌖</span><span><strong>Coverage gap in {town.name}</strong><small>No active local delivery area</small></span><ChevronRight size={17} /></button>)}
+                                {geoAlerts.hotelsInInactiveTowns.slice(0, 2).map((town) => <button key={town.id} className="attention-row" onClick={() => { setFocusTownId(town.id); setView("geography"); }}><span className="attention-icon">⌖</span><span><strong>Inactive town: {town.name}</strong><small>{town.count} hotel{town.count === 1 ? "" : "s"} affected</small></span><ChevronRight size={17} /></button>)}
+                                {attentionCount === 0 && <div className="empty-state"><ShieldCheck size={22} /><span><strong>All clear</strong><small>There are no delivery, geography, or messaging issues.</small></span></div>}
+                            </section>
+                            <section className="command-panel"><div className="panel-heading"><div><span className="panel-kicker">Network</span><h2>Hotel status</h2></div><button className="text-action" onClick={() => setView("hotels")}>See all <ArrowUpRight size={14} /></button></div>
+                                {(hotelsNeedingAttention.length ? hotelsNeedingAttention : hotels.slice(0, 4)).map((hotel) => <button className="hotel-row" key={hotel.id} onClick={() => { setSelectedHotel(hotel); setView("hotel_detail"); }}><span className={`hotel-avatar ${hotel.isOpen ? "" : "offline"}`}>{hotel.name.slice(0, 1)}</span><span><strong>{hotel.name}</strong><small>{hotel.zone?.name ?? "Location pending"}</small></span><span className={`status-pill ${hotel.isOpen ? "open" : "closed"}`}>{hotel.isOpen ? "Open" : "Closed"}</span><ChevronRight size={16} /></button>)}
+                                {hotels.length === 0 && <div className="empty-state"><Building2 size={22} /><span><strong>No hotels yet</strong><small>Start building your marketplace by adding the first hotel.</small></span></div>}
+                            </section>
                         </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))", gap: s(4), marginBottom: s(5) }}>
-                            <div style={{ background: T.primary, color: "white", borderRadius: "20px", padding: s(5), boxShadow: "0 12px 28px rgba(17,75,54,0.18)" }}>
-                                <div style={{ fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", opacity: 0.7 }}>Tenant operations</div>
-                                <div style={{ fontSize: "1.25rem", fontWeight: 800, marginTop: s(2) }}>{dashboard?.activeHotelCount ?? 0} hotels accepting orders</div>
-                                <p style={{ margin: `${s(2)} 0 0`, fontSize: "0.82rem", lineHeight: 1.5, opacity: 0.78 }}>Manage availability, onboarding, and hotel-level teams from one workspace.</p>
-                            </div>
-                            <div style={{ background: T.surface, borderRadius: "20px", padding: s(5), border: `1px solid ${T.border}`, boxShadow: "0 8px 24px rgba(17,75,54,0.05)" }}>
-                                <div style={{ fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.textDim }}>Recent tenants</div>
-                                <div style={{ display: "flex", flexDirection: "column", gap: s(2), marginTop: s(3) }}>
-                                    {hotels.slice(0, 3).map((hotel) => <div key={hotel.id} style={{ display: "flex", justifyContent: "space-between", gap: s(2), fontSize: "0.85rem" }}><span style={{ color: T.text, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hotel.name}</span><span style={{ color: hotel.isOpen ? T.success : T.textDim, fontWeight: 800, fontSize: "0.72rem" }}>{hotel.isOpen ? "OPEN" : "CLOSED"}</span></div>)}
-                                    {hotels.length === 0 && <span style={{ color: T.textMuted, fontSize: "0.82rem" }}>No tenants onboarded yet.</span>}
-                                </div>
-                            </div>
-                        </div>
-                        {dashboard && dashboard.failedOutboxCount > 0 && (
-                            <div style={{ background: T.dangerMuted, border: `1px solid #FECACA`, borderRadius: T.radius, padding: s(4), marginBottom: s(6), fontSize: "0.85rem", color: T.danger, fontWeight: 600, cursor: "pointer" }}
-                                onClick={() => setView("outbox")}>
-                                ⚠ {dashboard.failedOutboxCount} failed outbox message{dashboard.failedOutboxCount > 1 ? "s" : ""} — review
-                            </div>
-                        )}
-                        {(geoAlerts.townsMissingActiveArea.length > 0 || geoAlerts.hotelsInInactiveTowns.length > 0 || geoAlerts.inactiveAreasWithCustomers.length > 0) && (
-                            <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: "18px", padding: s(4), marginBottom: s(5) }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: s(2), marginBottom: s(3) }}>
-                                    <MapPin size={16} color={T.warning} />
-                                    <h2 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 800, color: T.text }}>Geography health</h2>
-                                </div>
-                                <div style={{ display: "flex", flexDirection: "column", gap: s(1) }}>
-                                    {geoAlerts.townsMissingActiveArea.map((t) => (
-                                        <button key={t.id} onClick={() => { setFocusTownId(t.id); setView("geography"); }} style={healthRowStyle}>
-                                            <span style={{ fontWeight: 700 }}>⚠<span style={{ marginLeft: s(1) }}>"{t.name}" has no active local area</span></span>
-                                            <span style={{ color: T.textDim }}>Open →</span>
-                                        </button>
-                                    ))}
-                                    {geoAlerts.hotelsInInactiveTowns.map((t) => (
-                                        <button key={`h-${t.id}`} onClick={() => { setFocusTownId(t.id); setView("geography"); }} style={healthRowStyle}>
-                                            <span style={{ fontWeight: 700 }}>⚠<span style={{ marginLeft: s(1) }}>{t.count} hotel{t.count > 1 ? "s are" : " is"} in the inactive town "{t.name}"</span></span>
-                                            <span style={{ color: T.textDim }}>Open →</span>
-                                        </button>
-                                    ))}
-                                    {geoAlerts.inactiveAreasWithCustomers.map((a) => (
-                                        <a key={`a-${a.id}`} href="#" onClick={(e) => { e.preventDefault(); setFocusTownId(a.townId); setView("geography"); }} style={healthRowStyle}>
-                                            <span style={{ fontWeight: 700 }}>⚠<span style={{ marginLeft: s(1) }}>{a.count} saved customer{a.count > 1 ? "s" : ""} on inactive area "{a.name}" ({a.townName})</span></span>
-                                            <span style={{ color: T.textDim }}>Open →</span>
-                                        </a>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                        <div style={{ display: "flex", gap: s(4) }}>
-                            <button onClick={() => setView("create_hotel")} style={{ background: T.primary, color: "white", border: "none", padding: `${s(3)} ${s(6)}`, borderRadius: T.radius, fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}>＋ Add Hotel</button>
-                            <button onClick={() => setView("create_admin")} style={{ background: T.surface, color: T.primary, border: `1px solid ${T.primary}`, padding: `${s(3)} ${s(6)}`, borderRadius: T.radius, fontWeight: 600, fontSize: "0.9rem", cursor: "pointer" }}>＋ Add Platform Admin</button>
-                        </div>
-                    </>
+
+                        <section className="command-panel activity-panel"><div className="panel-heading"><div><span className="panel-kicker">Governance</span><h2>Recent platform activity</h2></div><button className="text-action" onClick={() => setView("audit")}>Audit log <ArrowUpRight size={14} /></button></div>
+                            {recentActivity.length ? recentActivity.map((event: any, index: number) => <div className="activity-row" key={event?.id ?? `activity-${index}`}><span className="activity-dot" /><span><strong>{formatAuditEventName(event?.eventName)}</strong><small>{event?.payload?.hotelName || event?.payload?.adminName || event?.payload?.createdBy || "Platform event"}</small></span><time>{formatAuditDate(event?.createdAt)}</time></div>) : <div className="empty-state"><Activity size={22} /><span><strong>No recent activity</strong><small>Important platform changes will appear here.</small></span></div>}
+                        </section>
+                    </section>
                 ) : view === "hotels" ? (
-                    <>
+                    <section className="platform-workspace">
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: s(6) }}>
                             <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: T.text, margin: 0 }}>Hotels</h1>
                             <button onClick={() => setView("create_hotel")} style={{ background: T.primary, color: "white", border: "none", padding: `${s(2)} ${s(5)}`, borderRadius: T.radius, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>＋ Add Hotel</button>
@@ -679,7 +650,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                 ))}</div></section>)}
                             </div>
                         )}
-                    </>
+                    </section>
                 ) : view === "hotel_detail" && selectedHotel ? (
                     <HotelDetail hotelId={selectedHotel.id} onBack={() => setView("hotels")} onToggle={handleToggleHotel} onToggleListing={handleToggleListing} onDelete={handleDeleteHotel} token={token} regions={regions} />
                 ) : view === "geography" ? (
@@ -700,7 +671,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                 style={{ background: T.primary, color: "white", border: "none", padding: `${s(3)} ${s(6)}`, borderRadius: T.radius, fontWeight: 700, cursor: "pointer", marginTop: s(4) }}>Done</button>
                         </div>
                     ) : (
-                        <>
+                        <section className="platform-workspace platform-form-workspace">
                             <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: T.text, marginBottom: s(6) }}>Add Hotel</h1>
                             <div style={{ display: "flex", flexDirection: "column", gap: s(6), maxWidth: "520px" }}>
                                 {/* Section 1: Hotel entity */}
@@ -765,10 +736,10 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                     {submitting ? "Creating…" : "Create Hotel & Seed Admin"}
                                 </button>
                             </div>
-                        </>
+                        </section>
                     )
                 ) : view === "admins" ? (
-                    <>
+                    <section className="platform-workspace">
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: s(6) }}>
                             <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: T.text, margin: 0 }}>Platform Admins</h1>
                             <button onClick={() => setView("create_admin")} style={{ background: T.primary, color: "white", border: "none", padding: `${s(2)} ${s(5)}`, borderRadius: T.radius, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>＋ Add Admin</button>
@@ -797,7 +768,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                 ))}
                             </div>
                         )}
-                    </>
+                    </section>
                 ) : view === "create_admin" ? (
                     adminResult ? (
                         <div style={{ textAlign: "center", padding: s(10), maxWidth: "480px" }}>
@@ -814,7 +785,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                 style={{ background: T.primary, color: "white", border: "none", padding: `${s(3)} ${s(6)}`, borderRadius: T.radius, fontWeight: 700, cursor: "pointer", marginTop: s(4) }}>Done</button>
                         </div>
                     ) : (
-                        <>
+                        <section className="platform-workspace platform-form-workspace">
                             <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: T.text, marginBottom: s(2) }}>Add Platform Admin</h1>
                             <p style={{ fontSize: "0.9rem", color: T.warning, background: T.warningMuted, padding: s(3), borderRadius: T.radius, marginBottom: s(6), border: `1px solid #FDE68A` }}>
                                 ⚠ This grants full platform-level access to create and manage hotels and other platform administrators.
@@ -842,10 +813,10 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                     {adminSubmitting ? "Creating…" : "Create Platform Admin"}
                                 </button>
                             </div>
-                        </>
+                        </section>
                     )
                 ) : view === "audit" ? (
-                    <>
+                    <section className="platform-workspace">
                         <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: T.text, marginBottom: s(6) }}>Audit Log</h1>
                         {auditRows.length === 0 ? (
                             <div style={{ textAlign: "center", padding: s(10), color: T.textMuted }}>No platform events recorded yet.</div>
@@ -867,7 +838,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                 ))}
                             </div>
                         )}
-                    </>
+                    </section>
                 ) : view === "profile" ? (
                     <div style={{ maxWidth: "640px" }}>
                         <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: T.text, marginBottom: s(2) }}>My Profile</h1>
@@ -879,10 +850,20 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                             <button onClick={() => void handleSaveProfile()} disabled={profileSaving || !profileForm.name.trim() || !profileForm.username.trim()} style={{ background: T.primary, color: "white", border: "none", padding: s(3), borderRadius: T.radius, fontWeight: 700, cursor: profileSaving ? "wait" : "pointer", opacity: profileSaving ? 0.65 : 1 }}>{profileSaving ? "Saving…" : "Save Profile"}</button>
                         </div>
                     </div>
+                ) : view === "settings" ? (
+                    <div style={{ maxWidth: "720px" }}>
+                        <div className="settings-page-heading"><span className="panel-kicker">Marketplace settings</span><h1>Marketplace appearance</h1><p>Manage the visual details customers see when they discover Ladha.</p></div>
+                        <section className="command-panel settings-card">
+                            <div className="panel-heading"><div><h2>Homepage hero image</h2><p>Use a calm, well-lit food or local-kitchen image. Leave this blank to use the discovery fallback.</p></div><div className="settings-icon"><Settings2 size={18} /></div></div>
+                            <label className="field-label" htmlFor="platformHeroImage">Image URL</label>
+                            <input id="platformHeroImage" aria-label="Homepage hero image URL" value={heroImageUrl} onChange={(e) => setHeroImageUrl(e.target.value)} placeholder="https://…" style={{ width: "100%", boxSizing: "border-box", padding: s(3), fontFamily: T.font }} />
+                            <div className="settings-actions"><button type="button" className="command-primary" onClick={() => void saveHeroImage()} disabled={heroSaving}>{heroSaving ? "Saving…" : "Save changes"}</button></div>
+                        </section>
+                    </div>
                 ) : view === "communications" ? (
                     <InboxPage token={token} actorId={user?.id} mode="global" title="Communications" onBack={() => setView("overview")} />
                 ) : view === "outbox" ? (
-                    <>
+                    <section className="platform-workspace">
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: s(6) }}>
                             <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: T.text, margin: 0 }}>Outbox</h1>
                             <button onClick={fetch} style={{ background: "none", border: `1px solid ${T.border}`, padding: `${s(1)} ${s(4)}`, borderRadius: T.radius, fontSize: "0.85rem", cursor: "pointer", color: T.textMuted }}>Refresh</button>
@@ -910,7 +891,7 @@ export const PlatformAdminPage: React.FC<{ onBack: () => void }> = ({ onBack }) 
                                 ))}
                             </div>
                         )}
-                    </>
+                    </section>
                 ) : null}
             </main>
 
