@@ -66,7 +66,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       animate={{ opacity: 1, y: 0 }}
       onClick={() => { if (item.imageUrl && !imgError) onPreview?.(); }}
       className={`
-        glass-surface relative flex gap-4 items-center p-4 rounded-2xl cursor-pointer
+        glass-surface relative grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-3 p-3.5 rounded-2xl cursor-pointer sm:grid-cols-[96px_minmax(0,1fr)_auto] sm:gap-x-4 sm:p-4
         transition-shadow duration-200
         ${isOutOfStock ? "opacity-55 bg-[#FAFAFA]" : "shadow-[0_2px_8px_rgba(17,75,54,0.06)] hover:shadow-[0_8px_24px_rgba(17,75,54,0.1)]"}
       `}
@@ -75,7 +75,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         type="button"
         onClick={(event) => { event.stopPropagation(); if (item.imageUrl && !imgError) onPreview?.(); }}
         disabled={!item.imageUrl || imgError}
-        className="group/image relative h-24 w-24 shrink-0 overflow-hidden rounded-2xl border-none bg-[#F3F4F6] p-0 text-left disabled:cursor-default"
+        className="group/image relative h-[88px] w-[88px] shrink-0 overflow-hidden rounded-2xl border-none bg-[#F3F4F6] p-0 text-left disabled:cursor-default sm:h-24 sm:w-24"
         aria-label={item.imageUrl && !imgError ? `View ${item.name} photo` : undefined}
       >
         {item.imageUrl && !imgError ? (
@@ -95,8 +95,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         {item.imageUrl && !imgError && <span className="absolute inset-0 grid place-items-center bg-[#10271E]/0 text-white opacity-0 transition group-hover/image:bg-[#10271E]/35 group-hover/image:opacity-100"><span className="rounded-full bg-black/30 p-2 backdrop-blur-sm"><Expand size={16} /></span></span>}
       </button>
 
-      <div className="flex-1 min-w-0">
-        <h3 className={`font-semibold text-sm ${isOutOfStock ? "text-[#6B7280]" : "text-[#1F2937]"}`}>
+      <div className="min-w-0 self-center">
+        <h3 className={`line-clamp-2 font-semibold text-sm leading-snug ${isOutOfStock ? "text-[#6B7280]" : "text-[#1F2937]"}`}>
           {item.name}
         </h3>
         <RatingStars rating={item.rating} count={item.ratingCount} className="mt-0.5" />
@@ -117,7 +117,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         )}
       </div>
 
-      <div className="shrink-0" onClick={(event) => event.stopPropagation()}>
+      <div className="col-span-2 flex min-w-0 justify-end border-t border-[#E7EEE9] pt-3 sm:col-span-1 sm:border-0 sm:pt-0" onClick={(event) => event.stopPropagation()}>
         {isOutOfStock ? (
           <span className="text-[0.65rem] font-bold text-[#DC2626] bg-[#FEE2E2] px-3 py-1.5 rounded-lg uppercase tracking-wide">
             Sold Out

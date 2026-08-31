@@ -56,22 +56,22 @@ export const Modal: React.FC<ModalProps> = ({
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          initial={{ opacity: 0 }}
+          initial={{ opacity: 1 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/45 backdrop-blur-sm"
+          transition={{ duration: 0.12 }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#10271e]/55 p-4 backdrop-blur-sm"
           onClick={dismissible && onClose ? onClose : undefined}
         >
           <motion.div
-            initial={{ y: "100%", opacity: 0 }}
+            initial={{ y: 0, opacity: 1 }}
             animate={{ y: 0, opacity: 1 }}
-            exit={{ y: "100%", opacity: 0 }}
-            transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="bg-white rounded-3xl rounded-b-none sm:rounded-3xl w-full max-w-md p-6 shadow-[0_-8px_30px_rgba(0,0,0,0.12)] sm:mx-4"
+            exit={{ y: 20, opacity: 0 }}
+            transition={{ duration: 0.12, ease: "easeOut" }}
+            className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-5 shadow-[0_18px_46px_rgba(0,0,0,0.22)] sm:p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex justify-between items-start mb-4">
+            <div className="mb-4 flex items-start justify-between">
               <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${typeIconBg[type]}`}>
                 {typeIcons[type]}
               </div>
@@ -86,35 +86,19 @@ export const Modal: React.FC<ModalProps> = ({
               )}
             </div>
 
-            <h3 className="text-lg font-bold text-[#1F2937] mb-2">{title}</h3>
+            <h3 className="mb-2 text-lg font-black tracking-[-0.01em] text-[#1F2937]">{title}</h3>
             {message && (
               <p className="text-sm text-[#6B7280] leading-relaxed mb-6">{message}</p>
             )}
             {children}
 
             {(primaryAction || secondaryAction) && (
-              <div className="flex gap-3 mt-2">
+              <div className="mt-5 flex flex-col-reverse gap-2.5 sm:flex-row">
                 {secondaryAction && (
-                  <Button
-                    variant="secondary"
-                    onClick={secondaryAction.onClick}
-                    loading={secondaryAction.loading}
-                    fullWidth
-                    size="md"
-                  >
-                    {secondaryAction.label}
-                  </Button>
+                  <div className="min-w-0 flex-1"><Button variant="secondary" onClick={secondaryAction.onClick} loading={secondaryAction.loading} fullWidth size="md">{secondaryAction.label}</Button></div>
                 )}
                 {primaryAction && (
-                  <Button
-                    variant={primaryAction.variant === "danger" ? "danger" : "primary"}
-                    onClick={primaryAction.onClick}
-                    loading={primaryAction.loading}
-                    fullWidth
-                    size="md"
-                  >
-                    {primaryAction.label}
-                  </Button>
+                  <div className="min-w-0 flex-1"><Button variant={primaryAction.variant === "danger" ? "danger" : "primary"} onClick={primaryAction.onClick} loading={primaryAction.loading} fullWidth size="md">{primaryAction.label}</Button></div>
                 )}
               </div>
             )}

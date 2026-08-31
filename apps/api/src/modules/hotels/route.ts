@@ -99,7 +99,7 @@ export const hotelsRoute = new Elysia({
             isOpen: h.isOpen,
             imageUrl: h.imageUrl,
             location: h.zone,
-            locationName: h.zone.name,
+            locationName: `${h.townRegion.name}, ${h.zone.name}`,
             productCount,
           };
         })
@@ -127,6 +127,7 @@ export const hotelsRoute = new Elysia({
           isOpen: true,
           imageUrl: true,
           isListed: true,
+          townRegion: { select: { name: true } },
           zone: { select: { id: true, name: true, type: true } },
         },
       });
@@ -158,7 +159,7 @@ export const hotelsRoute = new Elysia({
             slug: hotel.slug,
             isOpen: hotel.isOpen,
             imageUrl: hotel.imageUrl ? (toPublicMediaUrl(hotel.imageUrl) ?? hotel.imageUrl) : null,
-            locationName: hotel.zone.name,
+            locationName: `${hotel.townRegion.name}, ${hotel.zone.name}`,
             locationType: hotel.zone.type,
           },
           products: products.map((p) => ({
@@ -329,4 +330,3 @@ export const hotelsRoute = new Elysia({
       return { success: false, error: "Sitemap unavailable" };
     }
   });
-

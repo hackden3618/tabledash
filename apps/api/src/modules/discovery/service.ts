@@ -19,7 +19,7 @@ const getMealRatings = async () => {
   }
 };
 
-const formatProduct = (product: { id: string; name: string; category: string; mealCategories: string[]; imageUrl: string; price: unknown; available: boolean; stockQty: number; hotelId: string; hotel: { id: string; name: string; imageUrl: string | null; isOpen: boolean; zone: { id: string; name: string; type: string } } }, salesCount: number, recentSalesCount: number, rating: number | null, ratingCount: number) => ({
+const formatProduct = (product: { id: string; name: string; category: string; mealCategories: string[]; imageUrl: string; price: unknown; available: boolean; stockQty: number; hotelId: string; hotel: { id: string; name: string; imageUrl: string | null; isOpen: boolean; zone: { id: string; name: string; type: string }; townRegion: { name: string } } }, salesCount: number, recentSalesCount: number, rating: number | null, ratingCount: number) => ({
   id: product.id,
   name: product.name,
   category: product.category,
@@ -32,7 +32,7 @@ const formatProduct = (product: { id: string; name: string; category: string; me
   hotelName: product.hotel.name,
   hotelImageUrl: product.hotel.imageUrl ? (toPublicMediaUrl(product.hotel.imageUrl) ?? product.hotel.imageUrl) : null,
   hotelIsOpen: product.hotel.isOpen,
-  locationName: product.hotel.zone.name,
+  locationName: `${product.hotel.townRegion.name}, ${product.hotel.zone.name}`,
   salesCount,
   recentSalesCount,
   rating,
@@ -41,7 +41,7 @@ const formatProduct = (product: { id: string; name: string; category: string; me
 
 const buildHomeDiscovery = async (zoneId?: string, customerId?: string) => {
   const [hotels, products, paidItems, heroSetting, ratingRows, mealRatingRows, recentOrders] = await Promise.all([
-    prisma.hotel.findMany({ where: { deletedAt: null, isListed: true, ...(zoneId ? { zoneId } : {}) }, select: { id: true, name: true, slug: true, imageUrl: true, isOpen: true, zone: { select: { id: true, name: true, type: true, megaRegion: { select: { id: true, name: true, type: true } } } } }, orderBy: { name: "asc" } }),
+    prisma.hotel.findMany({ where: { deletedAt: null, isListed: true, ...(zoneId ? { zoneId } : {}) }, select: { id: true, name: true, slug: true, imageUrl: true, isOpen: true, townRegion: { select: { name: true } }, zone: { select: { id: true, name: true, type: true, megaRegion: { select: { id: true, name: true, type: true } } } } }, orderBy: { name: "asc" } }),
     prisma.product.findMany({
       where: {
         deleted: false, available: true, stockQty: { gt: 0 },
@@ -52,7 +52,7 @@ const buildHomeDiscovery = async (zoneId?: string, customerId?: string) => {
         // that then can't be found in the marketplace at all.
         hotel: { isListed: true, deletedAt: null, ...(zoneId ? { zoneId } : {}) },
       },
-      include: { hotel: { select: { id: true, name: true, imageUrl: true, isOpen: true, zone: { select: { id: true, name: true, type: true, megaRegion: { select: { id: true, name: true, type: true } } } } } } },
+      include: { hotel: { select: { id: true, name: true, imageUrl: true, isOpen: true, townRegion: { select: { name: true } }, zone: { select: { id: true, name: true, type: true, megaRegion: { select: { id: true, name: true, type: true } } } } } } },
       orderBy: { createdAt: "asc" },
     }),
     prisma.orderItem.findMany({
@@ -105,7 +105,7 @@ const buildHomeDiscovery = async (zoneId?: string, customerId?: string) => {
     imageUrl: hotel.imageUrl ? (toPublicMediaUrl(hotel.imageUrl) ?? hotel.imageUrl) : null,
     productCount: products.filter((product) => product.hotelId === hotel.id).length,
     completedSales: hotelSales.get(hotel.id) ?? 0,
-    locationName: hotel.zone.name,
+    locationName: `${hotel.townRegion.name}, ${hotel.zone.name}`,
     locationType: hotel.zone.type,
     rating: ratingRows.find((row) => row.hotelId === hotel.id)?._avg.rating ?? null,
     ratingCount: ratingRows.find((row) => row.hotelId === hotel.id)?._count._all ?? 0,
